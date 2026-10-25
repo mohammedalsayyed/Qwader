@@ -120,6 +120,7 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 app.UseSerilogRequestLogging(); // outermost, so it records the final status written by the exception handler
 app.UseExceptionHandler();
+app.UseProxyGate(app.Configuration);
 
 if (app.Environment.IsDevelopment())
 {

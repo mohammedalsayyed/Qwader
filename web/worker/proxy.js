@@ -15,6 +15,8 @@ export async function proxyToApi(request, env) {
   if (clientIp) headers.set('X-Forwarded-For', clientIp);
   headers.set('X-Forwarded-Proto', 'https');
   headers.set('X-Forwarded-Host', incoming.host);
+  // Proves to the backend that the request came through this Worker (set with `wrangler secret put PROXY_SECRET`).
+  if (env.PROXY_SECRET) headers.set('X-Qwader-Proxy', env.PROXY_SECRET);
 
   let response;
   try {
