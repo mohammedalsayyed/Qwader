@@ -93,3 +93,46 @@ public sealed class SupplierLedger(IAppDbContext db, ICurrentUser currentUser) :
         return balances[0];
     }
 }
+
+public interface ICustomerLedger
+{
+    /// <summary>Debit increases what the customer owes; credit decreases it. Returns the balance after.</summary>
+    Task<decimal> PostAsync(int customerId, Domain.Sales.CustomerEntryType type, decimal debit, decimal credit,
+        LedgerSource source, DateTime date, CancellationToken ct = default);
+}
+
+public sealed class CustomerLedger(IAppDbContext db, ICurrentUser currentUser) : ICustomerLedger
+{
+    public async Task<decimal> PostAsync(int customerId, Domain.Sales.CustomerEntryType type, decimal debit, decimal credit,
+        LedgerSource source, DateTime date, CancellationToken ct = default)
+    {
+        if (db.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("Customer postings must run inside a database transaction.");
+        if (debit < 0 || credit < 0 || debit + credit == 0) throw new ArgumentException("Exactly a positive debit or credit is required.");
+
+        var delta = debit - credit;
+        // The walk-in customer never carries a balance; the guard makes that a database-level guarantee.
+        var balances = await db.Database.SqlQuery<decimal>($"""
+            UPDATE Customers SET Balance = Balance + {delta}
+            OUTPUT inserted.Balance AS Value
+            WHERE Id = {customerId} AND IsWalkIn = 0;
+            """).ToListAsync(ct);
+        if (balances.Count == 0) throw new BusinessRuleException("لا يمكن تسجيل دين على «زبون نقدي»؛ اختر عميلًا أو أضف اسمه ورقم جواله");
+
+        db.CustomerLedgerEntries.Add(new Domain.Sales.CustomerLedgerEntry
+        {
+            CustomerId = customerId,
+            Date = date,
+            Type = type,
+            Debit = debit,
+            Credit = credit,
+            BalanceAfter = balances[0],
+            SourceType = source.SourceType,
+            SourceId = source.SourceId,
+            SourceNumber = source.SourceNumber,
+            Description = source.Description,
+            UserId = currentUser.UserId,
+        });
+        return balances[0];
+    }
+}

@@ -9,6 +9,7 @@ using Qwader.Domain.Catalog;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Identity;
 using Qwader.Domain.Inventory;
+using Qwader.Domain.Sales;
 
 namespace Qwader.Infrastructure.Persistence.Seed;
 
@@ -125,6 +126,9 @@ public static class DbInitializer
                 new FinancialAccount { Name = "بنك القدس", Type = FinancialAccountType.Bank, ProviderName = "بنك القدس" },
                 new FinancialAccount { Name = "البنك الإسلامي", Type = FinancialAccountType.Bank, ProviderName = "البنك الإسلامي" },
                 new FinancialAccount { Name = "بال بي", Type = FinancialAccountType.Wallet, ProviderName = "PalPay" });
+
+        if (!await db.Customers.AnyAsync(c => c.IsWalkIn, ct))
+            db.Customers.Add(new Customer { Code = "C-00000", Name = "زبون نقدي", NormalizedName = "زبون نقدي", IsWalkIn = true });
 
         await db.SaveChangesAsync(ct);
     }

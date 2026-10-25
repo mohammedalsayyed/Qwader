@@ -6,6 +6,7 @@ using Qwader.Domain.Files;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Inventory;
 using Qwader.Domain.Purchasing;
+using Qwader.Domain.Sales;
 
 namespace Qwader.Application.Abstractions;
 
@@ -37,6 +38,14 @@ public interface IAppDbContext
     DbSet<PurchaseReturnLine> PurchaseReturnLines { get; }
 
     DbSet<StoredFile> StoredFiles { get; }
+
+    DbSet<Customer> Customers { get; }
+    DbSet<CustomerLedgerEntry> CustomerLedgerEntries { get; }
+    DbSet<SaleInvoice> SaleInvoices { get; }
+    DbSet<SaleInvoiceLine> SaleInvoiceLines { get; }
+    DbSet<SalePayment> SalePayments { get; }
+    DbSet<SaleReturn> SaleReturns { get; }
+    DbSet<SaleReturnLine> SaleReturnLines { get; }
 
     /// <summary>Read-only use (names for history lists); user management goes through UserManager.</summary>
     DbSet<Domain.Identity.AppUser> Users { get; }

@@ -14,6 +14,8 @@ public enum SearchResultKind
     Category = 2,
     Supplier = 3,
     PurchaseInvoice = 4,
+    Customer = 5,
+    SaleInvoice = 6,
 }
 
 /// <summary>One hit, already shaped for a compact result row.</summary>
@@ -78,6 +80,26 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
                 .Where(s => s.NormalizedName.Contains(normalized) || s.Phone!.Contains(raw) || s.Code == raw)
                 .OrderBy(s => s.Name).Take(3)
                 .Select(s => new SearchHit(SearchResultKind.Supplier, s.Id, s.Name, s.Phone, s.Code, s.Balance, null, null))
+                .ToListAsync(ct));
+        }
+
+        if (currentUser.HasPermission(Permissions.CustomersManage) || currentUser.HasPermission(Permissions.SalesCreate))
+        {
+            var phone = Customers.PhoneNumbers.Normalize(raw);
+            hits.AddRange(await db.Customers.AsNoTracking()
+                .Where(c => !c.IsWalkIn && (c.NormalizedName.Contains(normalized) || c.Code == raw || (phone != null && phone.Length >= 4 && c.Phone!.Contains(phone))))
+                .OrderBy(c => c.Name).Take(4)
+                .Select(c => new SearchHit(SearchResultKind.Customer, c.Id, c.Name, c.Phone, c.Code, c.Balance, null, null))
+                .ToListAsync(ct));
+        }
+
+        if ((currentUser.HasPermission(Permissions.SalesCreate) || currentUser.HasPermission(Permissions.SalesViewAll)) && raw.Length >= 3)
+        {
+            var sales = db.SaleInvoices.AsNoTracking().Where(s => s.Number.EndsWith(raw) || s.Number == raw);
+            if (!currentUser.HasPermission(Permissions.SalesViewAll) && !currentUser.HasPermission(Permissions.ReportsSales))
+                sales = sales.Where(s => s.SalespersonId == currentUser.UserId);
+            hits.AddRange(await sales.OrderByDescending(s => s.Id).Take(3)
+                .Select(s => new SearchHit(SearchResultKind.SaleInvoice, s.Id, s.Number, s.CustomerName, null, s.Total, null, null))
                 .ToListAsync(ct));
         }
 

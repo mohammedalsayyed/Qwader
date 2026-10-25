@@ -10,6 +10,8 @@ internal static class Precision
 {
     public static PropertyBuilder<decimal> AsCost(this PropertyBuilder<decimal> p) => p.HasPrecision(18, 4);
     public static PropertyBuilder<decimal> AsQuantity(this PropertyBuilder<decimal> p) => p.HasPrecision(18, 3);
+    /// <summary>Totals of quantity × average cost keep 4 decimals so cost-of-goods sums do not drift.</summary>
+    public static PropertyBuilder<decimal> AsCostMoney(this PropertyBuilder<decimal> p) => p.HasPrecision(19, 4);
     public static PropertyBuilder<decimal?> AsQuantity(this PropertyBuilder<decimal?> p) => p.HasPrecision(18, 3);
 }
 

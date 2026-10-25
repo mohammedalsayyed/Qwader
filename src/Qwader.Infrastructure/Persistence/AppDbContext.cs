@@ -11,6 +11,7 @@ using Qwader.Domain.Finance;
 using Qwader.Domain.Identity;
 using Qwader.Domain.Inventory;
 using Qwader.Domain.Purchasing;
+using Qwader.Domain.Sales;
 
 namespace Qwader.Infrastructure.Persistence;
 
@@ -47,6 +48,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<PurchaseReturnLine> PurchaseReturnLines => Set<PurchaseReturnLine>();
 
     public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
+
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerLedgerEntry> CustomerLedgerEntries => Set<CustomerLedgerEntry>();
+    public DbSet<SaleInvoice> SaleInvoices => Set<SaleInvoice>();
+    public DbSet<SaleInvoiceLine> SaleInvoiceLines => Set<SaleInvoiceLine>();
+    public DbSet<SalePayment> SalePayments => Set<SalePayment>();
+    public DbSet<SaleReturn> SaleReturns => Set<SaleReturn>();
+    public DbSet<SaleReturnLine> SaleReturnLines => Set<SaleReturnLine>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

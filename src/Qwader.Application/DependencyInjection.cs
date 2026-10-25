@@ -1,6 +1,8 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Qwader.Application.Catalog;
+using Qwader.Application.Customers;
+using Qwader.Application.Sales;
 using Qwader.Application.Inventory;
 using Qwader.Application.Ledgers;
 using Qwader.Application.Lookups;
@@ -21,6 +23,7 @@ public static class DependencyInjection
         services.AddScoped<IInventoryLedger, InventoryLedger>();
         services.AddScoped<IAccountLedger, AccountLedger>();
         services.AddScoped<ISupplierLedger, SupplierLedger>();
+        services.AddScoped<ICustomerLedger, CustomerLedger>();
 
         services.AddScoped<ICategoryService, CategoryService>();
         services.AddScoped<IProductService, ProductService>();
@@ -29,6 +32,8 @@ public static class DependencyInjection
         services.AddScoped<ISupplierService, SupplierService>();
         services.AddScoped<IPurchaseService, PurchaseService>();
         services.AddScoped<ISearchService, SearchService>();
+        services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<ISaleService, SaleService>();
         return services;
     }
 }
