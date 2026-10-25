@@ -72,19 +72,14 @@ dotnet publish src/Qwader.Api -c Release -o publish-out
 
 `DoNotDeleteRule` يمنع حذف الصور المرفوعة في `App_Data` عند كل نشر. قاعدة البيانات تُحدَّث تلقائيًا عند التشغيل.
 
-### الواجهة (Cloudflare Pages)
-Workers & Pages ← Create ← Pages ← Connect to Git ← المستودع `Qwader`، ثم:
+### الواجهة (Cloudflare Worker `qwader` — https://qwader.ma8228354.workers.dev)
+الـ Worker مربوط بالمستودع على GitHub، و**كل `git push` إلى `main` ينشر تلقائيًا**. الإعدادات كلها في [wrangler.jsonc](wrangler.jsonc):
+- خطوة البناء تبني الواجهة إلى `web/dist`.
+- الملفات الثابتة تُخدم مباشرة، مع الرجوع إلى `index.html` لروابط الصفحات.
+- طلبات `/api/*` يمررها [web/worker/proxy.js](web/worker/proxy.js) إلى الخادم، فيبقى المتصفح على نطاق واحد آمن (HTTPS).
 
-| الإعداد | القيمة |
-|---|---|
-| Framework preset | None |
-| Root directory | `web` |
-| Build command | `npm ci && npm run build:pages` |
-| Build output directory | `dist` |
-| Environment variables | `API_ORIGIN = http://qwader.runasp.net` و `NODE_VERSION = 22` |
-
-الطلبات إلى `/api/*` تمر عبر `web/functions/api/[[path]].js` إلى الخادم، فيبقى المتصفح على نطاق واحد آمن (HTTPS).
-بعد تفعيل SSL على MonsterASP، غيّر `API_ORIGIN` إلى `https://qwader.runasp.net`.
+بعد تفعيل SSL على MonsterASP، غيّر `API_ORIGIN` في `wrangler.jsonc` إلى `https://qwader.runasp.net` وادفع التغيير.
+للتجربة محليًا: `web/node_modules/.bin/wrangler dev` من جذر المستودع.
 
 ## ترحيلات قاعدة البيانات
 
