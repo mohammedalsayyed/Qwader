@@ -25,6 +25,11 @@ const SupplierDetailPage = page(() => import('@/features/purchasing/SuppliersPag
 const PurchasesPage = page(() => import('@/features/purchasing/PurchasesPage'), 'PurchasesPage');
 const PurchaseFormPage = page(() => import('@/features/purchasing/PurchaseFormPage'), 'PurchaseFormPage');
 const PurchaseDetailPage = page(() => import('@/features/purchasing/PurchaseDetailPage'), 'PurchaseDetailPage');
+const PosPage = page(() => import('@/features/pos/PosPage'), 'PosPage');
+const SalesPage = page(() => import('@/features/sales/SalesPage'), 'SalesPage');
+const SaleDetailPage = page(() => import('@/features/sales/SaleDetailPage'), 'SaleDetailPage');
+const CustomersPage = page(() => import('@/features/customers/CustomersPage'), 'CustomersPage');
+const CustomerDetailPage = page(() => import('@/features/customers/CustomersPage'), 'CustomerDetailPage');
 
 
 function SessionGate() {
@@ -82,7 +87,6 @@ const soon = (path: string, title: string, phase: string, anyOf: Permission[]) =
   ),
 });
 
-const PHASE_4 = 'المرحلة الرابعة';
 const PHASE_5 = 'المرحلة الخامسة';
 const PHASE_6 = 'المرحلة السادسة';
 
@@ -133,9 +137,11 @@ export const router = createBrowserRouter([
           guarded('purchases/new', <PurchaseFormPage />, [P.PurchasesManage]),
           guarded('purchases/:id', <PurchaseDetailPage />, [P.PurchasesView]),
           guarded('purchases/:id/edit', <PurchaseFormPage />, [P.PurchasesManage]),
-          soon('pos', 'نقطة البيع', PHASE_4, [P.SalesCreate]),
-          soon('sales', 'فواتير المبيعات', PHASE_4, [P.SalesCreate, P.SalesViewAll]),
-          soon('customers', 'العملاء', PHASE_4, [P.CustomersManage, P.SalesCreate]),
+          guarded('pos', <PosPage />, [P.SalesCreate]),
+          guarded('sales', <SalesPage />, [P.SalesCreate, P.SalesViewAll]),
+          guarded('sales/:id', <SaleDetailPage />, [P.SalesCreate, P.SalesViewAll]),
+          guarded('customers', <CustomersPage />, [P.CustomersManage, P.SalesCreate]),
+          guarded('customers/:id', <CustomerDetailPage />, [P.CustomersManage, P.SalesCreate]),
           soon('accounts', 'الحسابات المالية', PHASE_5, [P.AccountsView]),
           soon('transfers', 'الحوالات والتحويلات', PHASE_5, [P.TransfersCreate, P.TransfersReview]),
           soon('receipts', 'سندات القبض', PHASE_5, [P.VouchersCreate]),

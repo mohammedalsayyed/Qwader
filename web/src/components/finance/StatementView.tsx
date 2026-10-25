@@ -13,6 +13,7 @@ import { formatDate, formatMoney } from '@/lib/format';
 function sourceLink(sourceType: string, sourceId: number | null): string | null {
   if (!sourceId) return null;
   if (sourceType === 'PurchaseInvoice') return `/purchases/${sourceId}`;
+  if (sourceType === 'SaleInvoice') return `/sales/${sourceId}`;
   return null;
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Bell, FileText, FolderTree, PackageX, Search, TrendingDown, Truck } from 'lucide-react';
+import { Bell, FileText, FolderTree, PackageX, Receipt, Search, TrendingDown, Truck, UserRound } from 'lucide-react';
 import { searchApi, type SearchHit, type SearchKind } from '@/api/catalog';
 import { useAuth } from '@/auth/AuthProvider';
 import { IconButton } from '@/components/ui/Button';
@@ -15,6 +15,8 @@ import { useDebouncedValue } from '@/lib/hooks';
 
 const GROUPS: { kind: SearchKind; label: string }[] = [
   { kind: 'Product', label: 'المنتجات' },
+  { kind: 'Customer', label: 'العملاء' },
+  { kind: 'SaleInvoice', label: 'فواتير المبيعات' },
   { kind: 'Category', label: 'الأصناف' },
   { kind: 'Supplier', label: 'الموردون' },
   { kind: 'PurchaseInvoice', label: 'فواتير الشراء' },
@@ -30,6 +32,10 @@ function hitLink(hit: SearchHit): string {
       return `/suppliers/${hit.id}`;
     case 'PurchaseInvoice':
       return `/purchases/${hit.id}`;
+    case 'Customer':
+      return `/customers/${hit.id}`;
+    case 'SaleInvoice':
+      return `/sales/${hit.id}`;
   }
 }
 
@@ -81,7 +87,7 @@ function GlobalSearchSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet open onClose={onClose} title="بحث سريع" size="lg">
       <div className="sticky top-0 z-10 -mx-4 bg-surface px-4 pb-3">
-        <SearchInput value={q} onChange={setQ} autoFocus placeholder="منتج، كود، باركود، صنف، مورد، رقم فاتورة…" />
+        <SearchInput value={q} onChange={setQ} autoFocus placeholder="منتج، كود، باركود، عميل، جوال، رقم فاتورة…" />
       </div>
       {!term ? (
         <p className="py-8 text-center text-sm text-muted">اكتب للبحث في كل أقسام النظام</p>
@@ -119,7 +125,7 @@ function GlobalSearchSheet({ onClose }: { onClose: () => void }) {
                           </span>
                         )}
                         {kind === 'Category' && <span className="shrink-0 text-xs text-muted">{h.quantity} منتج</span>}
-                        {(kind === 'Supplier' || kind === 'PurchaseInvoice') && h.price != null && (
+                        {(kind === 'Supplier' || kind === 'PurchaseInvoice' || kind === 'SaleInvoice' || (kind === 'Customer' && (h.price ?? 0) !== 0)) && h.price != null && (
                           <span className="tabular shrink-0 text-sm">{formatMoney(h.price)}</span>
                         )}
                       </button>
@@ -136,7 +142,7 @@ function GlobalSearchSheet({ onClose }: { onClose: () => void }) {
 }
 
 function HitIcon({ kind }: { kind: SearchKind }) {
-  const Icon = kind === 'Category' ? FolderTree : kind === 'Supplier' ? Truck : FileText;
+  const Icon = kind === 'Category' ? FolderTree : kind === 'Supplier' ? Truck : kind === 'Customer' ? UserRound : kind === 'SaleInvoice' ? Receipt : FileText;
   return (
     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
       <Icon className="size-5" />

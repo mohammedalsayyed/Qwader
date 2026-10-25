@@ -164,7 +164,7 @@ export const filesApi = {
 };
 
 // ---- Search & notifications ----
-export type SearchKind = 'Product' | 'Category' | 'Supplier' | 'PurchaseInvoice';
+export type SearchKind = 'Product' | 'Category' | 'Supplier' | 'PurchaseInvoice' | 'Customer' | 'SaleInvoice';
 
 export interface SearchHit {
   kind: SearchKind;

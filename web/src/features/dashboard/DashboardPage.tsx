@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { searchApi } from '@/api/catalog';
+import { salesApi } from '@/api/sales';
 import { Stat } from '@/components/ui/Layout';
 import { InstallBanner } from '@/app/pwa';
 import {
@@ -16,8 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { P, type Permission } from '@/auth/permissions';
-import { Card } from '@/components/ui/Feedback';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatMoney } from '@/lib/format';
 
 interface QuickAction {
   to: string;
@@ -56,6 +56,8 @@ export function DashboardPage() {
 
       <InstallBanner />
 
+      {can(P.SalesCreate, P.SalesViewAll, P.ReportsSales) && <TodayStats />}
+
       {primary?.primary && (
         <Link
           to={primary.to}
@@ -93,13 +95,35 @@ export function DashboardPage() {
         </div>
       )}
 
-      <Card className="p-5">
-        <h2 className="font-bold">مؤشرات اليوم</h2>
-        <p className="mt-1 text-sm leading-6 text-muted">
-          ستظهر هنا مبيعات اليوم وأرباحه وعدد الفواتير والمبالغ المستلمة والحوالات المعلقة، مباشرةً من
-          العمليات المسجلة، بعد تفعيل وحدات المبيعات والمالية.
-        </p>
-      </Card>
     </div>
+  );
+}
+
+/** Today's figures straight from posted invoices and account movements. Staff without report access see their own sales. */
+function TodayStats() {
+  const navigate = useNavigate();
+  const summary = useQuery({ queryKey: ['sales-summary', 'today'], queryFn: () => salesApi.summary(), refetchInterval: 60_000 });
+  if (summary.isError) return null;
+  const s = summary.data;
+  const value = (v: number | null | undefined) => (s ? formatMoney(v ?? 0) : '…');
+
+  return (
+    <section aria-labelledby="today">
+      <h2 id="today" className="mb-2 text-sm font-semibold text-muted">
+        اليوم {s?.ownSalesOnly && '— مبيعاتك أنت'}
+      </h2>
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <Stat label="مبيعات اليوم (صافي)" value={value(s?.netSales)} onClick={() => navigate('/sales')}
+          hint={s && s.returns > 0 ? `بعد مرتجعات ${formatMoney(s.returns)}` : undefined} />
+        <Stat label="عدد الفواتير" value={s ? s.invoiceCount : '…'} onClick={() => navigate('/sales')} />
+        <Stat label="المبالغ المستلمة" value={value(s?.received)}
+          hint={s?.receivedByAccount.slice(0, 2).map((a) => `${a.accountName} ${formatMoney(a.amount)}`).join(' · ') || undefined} />
+        {s?.grossProfit != null ? (
+          <Stat label="ربح اليوم" value={value(s.grossProfit)} tone={s.grossProfit < 0 ? 'danger' : 'success'} hint="قبل المصروفات" />
+        ) : (
+          <Stat label="ديون جديدة اليوم" value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
+        )}
+      </div>
+    </section>
   );
 }
