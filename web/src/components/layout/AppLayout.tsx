@@ -61,7 +61,7 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineBanner />
         <TopBar />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-28 lg:px-8 lg:pb-10 print:p-0">
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-page lg:px-8 lg:pb-10 print:p-0">
           <Suspense fallback={<Spinner />}>
             <Outlet />
           </Suspense>

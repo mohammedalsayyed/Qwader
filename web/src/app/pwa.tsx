@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { Download, RefreshCw, Share, SquarePlus, WifiOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { hasUnsavedWork } from '@/lib/hooks';
 import { Sheet } from '@/components/ui/Sheet';
 
 // ---------- Install prompt ----------
@@ -125,16 +126,38 @@ export function InstallBanner() {
 
 // ---------- Updates & connectivity ----------
 
-/** Shows «تحديث» when a new version has been downloaded; checks for one every 30 minutes. */
+/**
+ * Keeps installed apps current: checks for a new version on start, whenever the app comes back to the
+ * foreground, and every 15 minutes. A new version is applied at once unless a form has unsaved input
+ * (the POS cart survives a reload); otherwise the «تحديث» bar waits for the user.
+ */
 export function UpdatePrompt() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_url, registration) {
-      if (registration) setInterval(() => void registration.update(), 30 * 60_000);
+      if (!registration) return;
+      const check = () => {
+        if (navigator.onLine) void registration.update();
+      };
+      check();
+      setInterval(check, 15 * 60_000);
+      document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && check());
+      window.addEventListener('online', check);
     },
   });
+
+  useEffect(() => {
+    if (!needRefresh) return;
+    const apply = () => {
+      if (!hasUnsavedWork()) void updateServiceWorker(true);
+    };
+    apply();
+    // If a form was open, apply once the user is back on a clean screen.
+    const timer = setInterval(apply, 5_000);
+    return () => clearInterval(timer);
+  }, [needRefresh, updateServiceWorker]);
 
   if (!needRefresh) return null;
   return (

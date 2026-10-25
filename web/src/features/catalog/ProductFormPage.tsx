@@ -184,7 +184,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
   const title = existing ? 'تعديل المنتج' : variantParent ? 'متغير جديد' : 'منتج جديد';
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mx-auto max-w-2xl space-y-4 pb-24 lg:pb-0">
+    <form onSubmit={onSubmit} noValidate className="mx-auto max-w-2xl space-y-4 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
       <button type="button" onClick={() => navigate(-1)} className="flex h-10 items-center gap-1 text-sm text-muted">
         <ArrowRight className="size-4" /> رجوع
       </button>

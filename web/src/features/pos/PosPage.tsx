@@ -74,7 +74,7 @@ export function PosPage() {
   const showResults = term.length > 0;
 
   return (
-    <div className="pb-40 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0">
+    <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0">
       {/* ---------------- search & results ---------------- */}
       <section className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -194,7 +194,7 @@ export function PosPage() {
 
       {/* Phone: sticky total + pay above the tab bar */}
       {cart.lines.length > 0 && (
-        <div className="fixed inset-x-0 bottom-16 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
+        <div className="fixed inset-x-0 bottom-nav z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-xs text-muted">الإجمالي · {formatQuantity(totals.items)} قطعة</p>

@@ -101,7 +101,7 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <div className="pb-safe sticky bottom-20 z-20 lg:bottom-4">
+      <div className="sticky bottom-nav z-20 lg:bottom-4">
         <Button type="submit" block size="lg" loading={save.isPending} disabled={!isDirty}>
           حفظ الإعدادات
         </Button>

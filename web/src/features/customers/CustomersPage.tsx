@@ -74,7 +74,7 @@ export function CustomersPage() {
           <Pagination page={query.data.page} totalPages={query.data.totalPages} totalCount={query.data.totalCount} pageSize={PAGE_SIZE} onChange={setPage} />
         </>
       )}
-      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-22 end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
         <Plus className="size-5" /> عميل جديد
       </Button>
       {creating && <CustomerSheet customer={null} onClose={() => setCreating(false)} />}

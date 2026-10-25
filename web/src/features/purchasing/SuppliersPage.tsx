@@ -73,7 +73,7 @@ export function SuppliersPage() {
         </>
       )}
       {can(P.SuppliersManage) && (
-        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-22 end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
           <Plus className="size-5" /> مورد جديد
         </Button>
       )}

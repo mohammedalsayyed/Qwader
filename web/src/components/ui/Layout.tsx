@@ -106,7 +106,7 @@ export function InfoList({ items }: { items: ({ label: string; value: ReactNode 
 /** Fixed bottom action bar on phones (above the tab bar), inline on desktop. */
 export function StickyActions({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-16 z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur pb-safe lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+    <div className="fixed inset-x-0 bottom-nav z-30 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:static lg:mt-4 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
       <div className="mx-auto flex max-w-6xl gap-2">{children}</div>
     </div>
   );

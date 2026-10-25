@@ -83,7 +83,7 @@ export function SalesPage() {
       )}
 
       {can(P.SalesCreate) && (
-        <Button size="lg" onClick={() => navigate('/pos')} className="fixed bottom-22 end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => navigate('/pos')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
           <Plus className="size-5" /> بيع جديد
         </Button>
       )}

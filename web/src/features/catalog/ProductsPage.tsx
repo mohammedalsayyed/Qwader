@@ -163,7 +163,7 @@ export function ProductsPage() {
       )}
 
       {can(P.ProductsManage) && (
-        <Button size="lg" onClick={() => setAdding(true)} className="fixed bottom-22 end-4 z-30 rounded-full shadow-lg lg:hidden">
+        <Button size="lg" onClick={() => setAdding(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> إضافة منتج
         </Button>
       )}

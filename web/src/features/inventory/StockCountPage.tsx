@@ -83,7 +83,7 @@ function CountSheet({ count }: { count: StockCount }) {
   const counted = count.lines.filter((l) => (entries[l.id] ?? '') !== '').length;
 
   return (
-    <div className="space-y-3 pb-24 lg:pb-0">
+    <div className="space-y-3 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
       <button type="button" onClick={() => navigate('/inventory?tab=counts')} className="flex h-10 items-center gap-1 text-sm text-muted">
         <ArrowRight className="size-4" /> الجرد
       </button>

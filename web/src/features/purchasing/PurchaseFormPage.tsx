@@ -172,7 +172,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 pb-40 lg:pb-0">
+    <div className="mx-auto max-w-3xl space-y-4 pb-[calc(8rem+env(safe-area-inset-bottom))] lg:pb-0">
       <button type="button" onClick={() => navigate(-1)} className="flex h-10 items-center gap-1 text-sm text-muted">
         <ArrowRight className="size-4" /> رجوع
       </button>

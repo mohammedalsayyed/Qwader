@@ -81,3 +81,14 @@
     break-inside: avoid;
   }
 }
+
+/* Fixed bars/buttons sit above the phone tab bar, whose height includes the iPhone home-indicator area. */
+@utility bottom-nav {
+  bottom: calc(4rem + env(safe-area-inset-bottom));
+}
+@utility bottom-fab {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom));
+}
+@utility pb-page {
+  padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+}

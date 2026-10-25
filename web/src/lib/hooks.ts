@@ -19,10 +19,24 @@ export function useIdempotencyKey() {
   return [key, renew] as const;
 }
 
+const dirtyForms = new Set<symbol>();
+
+/** True while any open form has unsaved input (an app update then waits instead of reloading). */
+export const hasUnsavedWork = () => dirtyForms.size > 0;
+
 /** Warns before leaving the page while a form has unsaved input. */
 export function useUnsavedChangesWarning(dirty: boolean) {
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
+  const id = useRef(Symbol('form'));
+  useEffect(() => {
+    const key = id.current;
+    if (dirty) dirtyForms.add(key);
+    else dirtyForms.delete(key);
+    return () => {
+      dirtyForms.delete(key);
+    };
+  }, [dirty]);
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (dirtyRef.current) e.preventDefault();

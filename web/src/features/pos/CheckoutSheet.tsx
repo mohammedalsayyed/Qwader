@@ -13,6 +13,7 @@ import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { parseNumber, round2 } from '@/lib/numbers';
+import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import type { Cart } from './cart';
 
@@ -38,6 +39,7 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   const accounts = lookups.data?.accounts ?? [];
   const cashId = String(accounts.find((a) => a.type === 'Cash')?.id ?? accounts[0]?.id ?? '');
   const canDiscount = can(P.SalesDiscount, P.SalesPriceOverride);
+  useUnsavedChangesWarning(true); // an app update waits until checkout is finished
 
   const [mode, setMode] = useState<CustomerMode>('walkin');
   const [customer, setCustomer] = useState<CustomerListItem | null>(null);
