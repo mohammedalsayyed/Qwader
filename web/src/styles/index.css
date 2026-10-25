@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/700.css';
+
+@theme {
+  --font-sans: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+
+  --color-brand-50: #eef8f7;
+  --color-brand-100: #d5eeeb;
+  --color-brand-200: #aadcd6;
+  --color-brand-500: #1a8a82;
+  --color-brand-600: #12756e;
+  --color-brand-700: #0f5f5a;
+  --color-brand-800: #0d4a46;
+  --color-brand-900: #0a3734;
+
+  --color-surface: #ffffff;
+  --color-canvas: #f4f6f6;
+  --color-line: #e3e8e8;
+  --color-ink: #17201f;
+  --color-muted: #5d6b6a;
+
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-danger: #c62828;
+
+  --radius-card: 1rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    min-height: 100dvh;
+  }
+
+  /* 16px+ inputs stop iOS Safari from zooming on focus. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  /* Numbers, codes and phone numbers read left-to-right but stay aligned with the surrounding Arabic. */
+  .ltr {
+    direction: ltr;
+    unicode-bidi: isolate;
+    text-align: right;
+  }
+}
+
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A4 printing: invoices, statements and vouchers print from their pages with the app chrome hidden. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  body {
+    background: #fff;
+  }
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+}

@@ -1,0 +1,21 @@
+bin/
+obj/
+*.user
+.vs/
+logs/
+TestResults/
+
+web/node_modules/
+web/dist/
+web/test-results/
+
+# Built web app (produced by `npm run build`)
+src/Qwader.Api/wwwroot/
+App_Data/
+
+# Server-only secrets (connection string, JWT key). Never commit.
+appsettings.Production.json
+appsettings.*.local.json
+publish-out/
+web/functions/**/node_modules/
+.wrangler/
