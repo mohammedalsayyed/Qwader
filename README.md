@@ -56,6 +56,36 @@ cd web && npx tsc -b --noEmit
   `ConnectionStrings__Default`، `Jwt__SigningKey`، `Seed__AdminPassword` (لأول تشغيل فقط).
 - يجب تشغيله خلف HTTPS، فكوكي الجلسة يصبح `Secure` تلقائيًا.
 
+## النشر
+
+### الخادم (MonsterASP — `qwader.runasp.net`)
+1. أنشئ الملف `src/Qwader.Api/appsettings.Production.json` (مستثنى من Git)، وفيه: سلسلة الاتصال، و`Jwt:SigningKey`، و`Seed:AdminPassword` (لأول تشغيل فقط).
+2. ابنِ الواجهة ثم انشر:
+
+```powershell
+cd web; npm run build; cd ..
+dotnet publish src/Qwader.Api -c Release -o publish-out
+& 'C:\Program Files\IIS\Microsoft Web Deploy V3\msdeploy.exe' -verb:sync -source:contentPath=D:\Qwader\publish-out `
+  "-dest:contentPath=site101811,computerName=https://site101811.siteasp.net:8172/msdeploy.axd?site=site101811,userName=site101811,password=<كلمة مرور النشر>,authType=Basic" `
+  -allowUntrusted -enableRule:AppOffline -enableRule:DoNotDeleteRule
+```
+
+`DoNotDeleteRule` يمنع حذف الصور المرفوعة في `App_Data` عند كل نشر. قاعدة البيانات تُحدَّث تلقائيًا عند التشغيل.
+
+### الواجهة (Cloudflare Pages)
+Workers & Pages ← Create ← Pages ← Connect to Git ← المستودع `Qwader`، ثم:
+
+| الإعداد | القيمة |
+|---|---|
+| Framework preset | None |
+| Root directory | `web` |
+| Build command | `npm ci && npm run build:pages` |
+| Build output directory | `dist` |
+| Environment variables | `API_ORIGIN = http://qwader.runasp.net` و `NODE_VERSION = 22` |
+
+الطلبات إلى `/api/*` تمر عبر `web/functions/api/[[path]].js` إلى الخادم، فيبقى المتصفح على نطاق واحد آمن (HTTPS).
+بعد تفعيل SSL على MonsterASP، غيّر `API_ORIGIN` إلى `https://qwader.runasp.net`.
+
 ## ترحيلات قاعدة البيانات
 
 ```bash
