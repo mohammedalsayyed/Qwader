@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/Toast';
 import { CategoryPicker, ProductThumb, StockBadge } from '@/components/catalog/CatalogBits';
 import { cn } from '@/lib/cn';
 import { QuickProductSheet } from './QuickProductSheet';
+import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 import { errorMessage } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
@@ -35,6 +36,7 @@ export function ProductsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [adding, setAdding] = useState(params.get('add') === '1');
+  const [scanning, setScanning] = useState(false);
   const toast = useToast();
   const lookups = useLookups();
 
@@ -95,7 +97,7 @@ export function ProductsPage() {
       />
 
       <div className="mb-3 space-y-3">
-        <SearchInput
+        <div className="flex gap-2"><div className="min-w-0 flex-1"><SearchInput
           value={search}
           onChange={(v) => {
             setSearch(v);
@@ -103,7 +105,9 @@ export function ProductsPage() {
           }}
           placeholder="ابحث بالاسم أو الكود أو الباركود"
           autoFocus={params.get('focus') === '1'}
-        />
+        /></div>
+          <ScanButton onClick={() => setScanning(true)} />
+        </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
             <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={FILTERS} />
@@ -187,6 +191,7 @@ export function ProductsPage() {
           )}
         </div>
       </Sheet>
+      {scanning && <BarcodeScannerSheet onDetected={(code) => { setSearch(code); setParam('q', code); }} onClose={() => setScanning(false)} />}
       {importOpen && <ImportSheet onClose={() => setImportOpen(false)} />}
       {adding && <QuickProductSheet onClose={() => { setAdding(false); if (params.get('add')) setParam('add', undefined); }} />}
     </>

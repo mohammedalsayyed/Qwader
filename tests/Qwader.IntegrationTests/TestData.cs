@@ -50,3 +50,14 @@ public static class TestData
         client.PostAsJsonAsync("/api/inventory/adjustments",
             new StockAdjustmentRequest(key ?? Guid.NewGuid(), productId, null, kind, quantity, "اختبار"));
 }
+
+public static class FundingExtensions
+{
+    /// <summary>Adds money to an account through a documented opening-balance correction (outgoing payments need funds).</summary>
+    public static async Task FundAsync(this HttpClient client, int accountId, decimal amount)
+    {
+        var account = await (await client.GetAsync($"/api/financial-accounts/{accountId}")).ReadAsync<Application.Finance.AccountDto>();
+        (await client.PostAsJsonAsync($"/api/financial-accounts/{accountId}/opening-balance",
+            new Application.Finance.SetOpeningBalanceRequest(account.OpeningBalance + amount, "تمويل اختبار"))).EnsureSuccessStatusCode();
+    }
+}

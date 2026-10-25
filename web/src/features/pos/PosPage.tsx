@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Minus, PackageX, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
 import { productsApi } from '@/api/catalog';
@@ -21,10 +21,17 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { cartTotals, lineTotal, tierPrice, toCartProduct, useCart, type CartLine } from './cart';
 import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
+import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
 export function PosPage() {
   const { cart, add, update, remove, setTier, reset } = useCart();
   useLookups(); // load accounts early so checkout opens instantly
+  const { can } = useAuth();
+  const canWholesale = can(P.SalesWholesale);
+  // A cart saved by a manager on this device must not let a seller keep wholesale prices.
+  useEffect(() => {
+    if (!canWholesale && cart.tier === 'Wholesale') setTier('Retail');
+  }, [canWholesale, cart.tier, setTier]);
   const toast = useToast();
   const confirm = useConfirm();
   const [q, setQ] = useState('');
@@ -32,6 +39,7 @@ export function PosPage() {
   const [checkout, setCheckout] = useState(false);
   const [done, setDone] = useState<{ sale: Sale; change: number } | null>(null);
   const [flash, setFlash] = useState<number | null>(null);
+  const [scanning, setScanning] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const term = useDebouncedValue(q.trim(), 200);
   const totals = cartTotals(cart);
@@ -71,6 +79,15 @@ export function PosPage() {
     searchRef.current?.querySelector('input')?.focus();
   };
 
+  /** Camera read: add by exact barcode/code; the scanner stays open for the next item. */
+  const onScanned = async (code: string) => {
+    try {
+      addProduct(toCartProduct(await productsApi.byCode(code)));
+    } catch (e) {
+      toast.error(e instanceof ApiError && e.status === 404 ? `لا يوجد منتج بالباركود ${code} — أضفه من شاشة المنتجات` : errorMessage(e));
+    }
+  };
+
   const showResults = term.length > 0;
 
   return (
@@ -79,18 +96,21 @@ export function PosPage() {
       <section className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h1 className="text-xl font-bold">بيع جديد</h1>
-          <div className="flex rounded-xl bg-black/5 p-1" role="radiogroup" aria-label="نوع السعر">
+          {canWholesale && <div className="flex rounded-xl bg-black/5 p-1" role="radiogroup" aria-label="نوع السعر">
             {(['Retail', 'Wholesale'] as const).map((t) => (
               <button key={t} type="button" role="radio" aria-checked={cart.tier === t} onClick={() => setTier(t)}
                 className={cn('h-9 rounded-lg px-4 text-sm font-semibold', cart.tier === t ? 'bg-surface shadow-sm' : 'text-muted')}>
                 {t === 'Retail' ? 'مفرق' : 'جملة'}
               </button>
             ))}
-          </div>
+          </div>}
         </div>
 
         <div ref={searchRef} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void onEnter(); } }}>
-          <SearchInput value={q} onChange={setQ} autoFocus placeholder="ابحث بالاسم أو الكود، أو امسح الباركود" />
+          <div className="flex gap-2">
+            <div className="min-w-0 flex-1"><SearchInput value={q} onChange={setQ} autoFocus placeholder="ابحث بالاسم أو الكود أو الباركود" /></div>
+            <ScanButton onClick={() => setScanning(true)} />
+          </div>
         </div>
 
         {showResults && (
@@ -215,6 +235,7 @@ export function PosPage() {
         <CheckoutSheet cart={cart} subtotal={totals.subtotal} listTotal={totals.listTotal} onClose={() => setCheckout(false)}
           onDone={(sale, change) => { setCheckout(false); reset(); setDone({ sale, change }); }} />
       )}
+      {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}
       {done && <SaleDoneSheet sale={done.sale} change={done.change} onClose={() => { setDone(null); searchRef.current?.querySelector('input')?.focus(); }} />}
     </div>
   );

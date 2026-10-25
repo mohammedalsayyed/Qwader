@@ -47,6 +47,12 @@ public interface IAppDbContext
     DbSet<SaleReturn> SaleReturns { get; }
     DbSet<SaleReturnLine> SaleReturnLines { get; }
 
+    DbSet<IncomingTransfer> IncomingTransfers { get; }
+    DbSet<AccountTransfer> AccountTransfers { get; }
+    DbSet<ReceiptVoucher> ReceiptVouchers { get; }
+    DbSet<PaymentVoucher> PaymentVouchers { get; }
+    DbSet<Expense> Expenses { get; }
+
     /// <summary>Read-only use (names for history lists); user management goes through UserManager.</summary>
     DbSet<Domain.Identity.AppUser> Users { get; }
 

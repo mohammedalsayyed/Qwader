@@ -21,6 +21,7 @@ public sealed class SaleService(
     IAccountLedger accounts,
     ICustomerLedger customers,
     ICustomerService customerService,
+    Finance.ITransferService transfers,
     ISettingsService settings,
     IDocumentNumberGenerator numbers,
     IIdempotencyService idempotency,
@@ -41,6 +42,9 @@ public sealed class SaleService(
         // A double tap or a retried request after a dropped connection returns the invoice already made.
         if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
             return await GetAsync(int.Parse(done.ResultId!), ct);
+
+        if (request.PriceTier == PriceTier.Wholesale && !currentUser.HasPermission(Permissions.SalesWholesale))
+            throw new ForbiddenException("البيع بسعر الجملة متاح لمدير النظام ومدير المعرض فقط");
 
         var productIds = request.Lines.Select(l => l.ProductId).Distinct().ToList();
         var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
@@ -111,8 +115,9 @@ public sealed class SaleService(
         }
 
         // ---- payments
-        var paid = request.Payments.Sum(p => p.Amount);
-        if (paid > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
+        var paid = request.Payments.Where(p => !p.Pending).Sum(p => p.Amount);
+        var pendingTotal = request.Payments.Where(p => p.Pending).Sum(p => p.Amount);
+        if (paid + pendingTotal > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
         var accountIds = request.Payments.Select(p => p.AccountId).Distinct().ToList();
         if (accountIds.Count > 0 && await db.FinancialAccounts.CountAsync(a => accountIds.Contains(a.Id) && a.IsActive, ct) != accountIds.Count)
             throw new ValidationFailedException("payments", "أحد الحسابات المختارة غير موجود أو معطّل");
@@ -133,7 +138,9 @@ public sealed class SaleService(
 
         var remaining = total - paid;
         if (remaining > 0 && customer.IsWalkIn)
-            throw new BusinessRuleException("المبلغ المدفوع أقل من الإجمالي. للبيع الآجل أو الجزئي اكتب اسم العميل ورقم جواله");
+            throw new BusinessRuleException(pendingTotal > 0
+                ? "الحوالة غير المؤكدة تبقى دينًا حتى التحقق منها: اكتب اسم العميل ورقم جواله"
+                : "المبلغ المدفوع أقل من الإجمالي. للبيع الآجل أو الجزئي اكتب اسم العميل ورقم جواله");
 
         var now = clock.UtcNow;
         var invoice = new SaleInvoice
@@ -154,7 +161,7 @@ public sealed class SaleService(
             Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
         };
         foreach (var line in lines) invoice.Lines.Add(line);
-        foreach (var p in request.Payments)
+        foreach (var p in request.Payments.Where(p => !p.Pending))
             invoice.Payments.Add(new SalePayment { FinancialAccountId = p.AccountId, Amount = p.Amount, Reference = string.IsNullOrWhiteSpace(p.Reference) ? null : p.Reference.Trim() });
         db.SaleInvoices.Add(invoice);
         await db.SaveChangesAsync(ct);
@@ -178,6 +185,10 @@ public sealed class SaleService(
             await customers.PostAsync(customer.Id, CustomerEntryType.Sale, total, 0, source, now, ct);
             if (paid > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, paid, source with { Description = "مدفوع عند البيع" }, now, ct);
         }
+
+        // Unverified transfers are recorded for review; until confirmed they remain part of the customer's debt.
+        foreach (var p in request.Payments.Where(p => p.Pending))
+            await transfers.AddPendingForSaleAsync(invoice.Id, customer.Id, customer.Name, customer.Phone, p.AccountId, p.Amount, p.Reference, ct);
 
         idempotency.Record(request.IdempotencyKey, CreateOperation, "SaleInvoice", invoice.Id.ToString());
         if (overridden.Count > 0)
@@ -247,6 +258,9 @@ public sealed class SaleService(
         var returnedCost = await db.SaleReturns.Where(r => r.SaleInvoiceId == id).SumAsync(r => (decimal?)r.Lines
             .Where(l => l.Condition == ReturnCondition.Sellable).Sum(l => l.Quantity * l.UnitCost), ct) ?? 0;
 
+        var pendingTransfers = await db.IncomingTransfers.AsNoTracking().Where(t => t.SaleInvoiceId == id).OrderBy(t => t.Id)
+            .Select(t => new SalePendingTransferDto(t.Id, t.Number, t.Amount, t.FinancialAccount.Name, t.ReferenceNo, t.Status)).ToListAsync(ct);
+
         var showCost = CanSeeProfit;
         var returnedTotal = returns.Sum(r => r.Total);
         decimal? cost = showCost ? CostMath.RoundMoney(invoice.TotalCost - returnedCost) : null;
@@ -258,7 +272,7 @@ public sealed class SaleService(
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden)).ToList(),
-            s.Payments, returns);
+            s.Payments, returns, pendingTransfers);
     }
 
     // ------------------------------------------------------------------ returns
@@ -368,6 +382,15 @@ public sealed class SaleService(
         {
             await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, 0, invoice.Total, source, now, ct);
             if (invoice.PaidAmount > 0) await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, invoice.PaidAmount, 0, source, now, ct);
+        }
+
+        // Transfers still waiting for verification die with the invoice.
+        foreach (var transfer in await db.IncomingTransfers.Where(t => t.SaleInvoiceId == invoice.Id && t.Status == Domain.Finance.TransferStatus.Pending).ToListAsync(ct))
+        {
+            transfer.Status = Domain.Finance.TransferStatus.Rejected;
+            transfer.RejectReason = "إلغاء الفاتورة " + invoice.Number;
+            transfer.ReviewedAt = now;
+            transfer.ReviewedById = currentUser.UserId;
         }
 
         invoice.Status = SaleStatus.Voided;

@@ -22,6 +22,7 @@ public static class Permissions
 
     public const string SalesCreate = "Sales.Create";
     public const string SalesViewAll = "Sales.ViewAll";
+    public const string SalesWholesale = "Sales.Wholesale";
     public const string SalesDiscount = "Sales.Discount";
     public const string SalesPriceOverride = "Sales.PriceOverride";
     public const string SalesReturn = "Sales.Return";
@@ -62,6 +63,7 @@ public static class Permissions
 
         new(SalesCreate, "البيع وإنشاء الفواتير", "المبيعات"),
         new(SalesViewAll, "عرض فواتير جميع الموظفين", "المبيعات"),
+        new(SalesWholesale, "البيع بسعر الجملة", "المبيعات"),
         new(SalesDiscount, "تنفيذ الخصومات", "المبيعات"),
         new(SalesPriceOverride, "البيع بأقل من الحد الأدنى أو التكلفة", "المبيعات"),
         new(SalesReturn, "تسجيل مرتجعات المبيعات", "المبيعات"),

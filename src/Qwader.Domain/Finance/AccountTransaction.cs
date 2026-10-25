@@ -15,9 +15,12 @@ public enum AccountTransactionCategory
     SupplierRefund = 11,
     Expense = 12,
     SaleRefund = 13,
+    OtherPayment = 14,
     TransferIn = 20,
     TransferOut = 21,
     Reversal = 30,
+    /// <summary>Opening balance or its later correction: excluded from profit and cash-flow totals.</summary>
+    OpeningBalance = 40,
 }
 
 /// <summary>The only record of money moving in or out of a financial account. Never edited or deleted.</summary>

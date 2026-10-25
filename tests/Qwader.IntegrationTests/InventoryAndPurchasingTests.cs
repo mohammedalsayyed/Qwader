@@ -57,6 +57,7 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var b = await admin.CreateProductAsync();
         var supplier = await admin.CreateSupplierAsync();
         var cash = (await admin.LookupsAsync()).Accounts.First(x => x.Name == "الصندوق النقدي");
+        await admin.FundAsync(cash.Id, 100);
         var db = await DbAsync();
         var cashBefore = await db.FinancialAccounts.Where(x => x.Id == cash.Id).Select(x => x.CurrentBalance).FirstAsync();
 
@@ -129,6 +130,7 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var product = await admin.CreateProductAsync();
         var supplier = await admin.CreateSupplierAsync();
         var account = (await admin.LookupsAsync()).Accounts.First(x => x.Name == "بنك فلسطين");
+        await admin.FundAsync(account.Id, 40);
         var db = await DbAsync();
         var before = await db.FinancialAccounts.Where(x => x.Id == account.Id).Select(x => x.CurrentBalance).FirstAsync();
 
@@ -194,6 +196,7 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var product = await admin.CreateProductAsync();
         var supplier = await admin.CreateSupplierAsync(openingBalance: 50);
         var cash = (await admin.LookupsAsync()).Accounts.First(x => x.Name == "الصندوق النقدي");
+        await admin.FundAsync(cash.Id, 30);
         await admin.PurchaseAsync(supplier.Id, [new PurchaseLineInput(product.Id, 10, 10)], paid: 30, accountId: cash.Id);
 
         var statement = await admin.GetFromJsonAsync<StatementDto>($"/api/suppliers/{supplier.Id}/statement", TestJson.Options);

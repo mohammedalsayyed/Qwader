@@ -12,6 +12,7 @@ export const P = {
   SuppliersManage: 'Suppliers.Manage',
   SalesCreate: 'Sales.Create',
   SalesViewAll: 'Sales.ViewAll',
+  SalesWholesale: 'Sales.Wholesale',
   SalesDiscount: 'Sales.Discount',
   SalesPriceOverride: 'Sales.PriceOverride',
   SalesReturn: 'Sales.Return',

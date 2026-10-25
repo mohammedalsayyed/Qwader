@@ -34,6 +34,9 @@ public static class DependencyInjection
         services.AddScoped<ISearchService, SearchService>();
         services.AddScoped<ICustomerService, CustomerService>();
         services.AddScoped<ISaleService, SaleService>();
+        services.AddScoped<Finance.IAccountService, Finance.AccountService>();
+        services.AddScoped<Finance.IVoucherService, Finance.VoucherService>();
+        services.AddScoped<Finance.ITransferService, Finance.TransferService>();
         return services;
     }
 }

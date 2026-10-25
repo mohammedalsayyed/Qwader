@@ -16,6 +16,9 @@ public enum SearchResultKind
     PurchaseInvoice = 4,
     Customer = 5,
     SaleInvoice = 6,
+    IncomingTransfer = 7,
+    ReceiptVoucher = 8,
+    PaymentVoucher = 9,
 }
 
 /// <summary>One hit, already shaped for a compact result row.</summary>
@@ -31,7 +34,7 @@ public sealed record SearchHit(
 
 public sealed record SearchResult(string Query, IReadOnlyList<SearchHit> Hits);
 
-public sealed record NotificationsDto(int LowStock, int OutOfStock, int DraftPurchases);
+public sealed record NotificationsDto(int LowStock, int OutOfStock, int DraftPurchases, int PendingTransfers);
 
 public interface ISearchService
 {
@@ -103,6 +106,25 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
                 .ToListAsync(ct));
         }
 
+        if (currentUser.HasPermission(Permissions.TransfersCreate) || currentUser.HasPermission(Permissions.TransfersReview))
+        {
+            hits.AddRange(await db.IncomingTransfers.AsNoTracking()
+                .Where(t => t.NormalizedSenderName.Contains(normalized) || t.ReferenceNo == raw || t.Number.EndsWith(raw))
+                .OrderByDescending(t => t.Id).Take(3)
+                .Select(t => new SearchHit(SearchResultKind.IncomingTransfer, t.Id, t.SenderName, t.FinancialAccount.Name, t.ReferenceNo, t.Amount, null, null))
+                .ToListAsync(ct));
+        }
+
+        if ((currentUser.HasPermission(Permissions.VouchersCreate) || currentUser.HasPermission(Permissions.ReportsFinancial)) && raw.Length >= 3)
+        {
+            hits.AddRange(await db.ReceiptVouchers.AsNoTracking().Where(v => v.Number.EndsWith(raw) || v.Number == raw)
+                .OrderByDescending(v => v.Id).Take(2)
+                .Select(v => new SearchHit(SearchResultKind.ReceiptVoucher, v.Id, v.Number, v.PayerName, null, v.Amount, null, null)).ToListAsync(ct));
+            hits.AddRange(await db.PaymentVouchers.AsNoTracking().Where(v => v.Number.EndsWith(raw) || v.Number == raw)
+                .OrderByDescending(v => v.Id).Take(2)
+                .Select(v => new SearchHit(SearchResultKind.PaymentVoucher, v.Id, v.Number, v.BeneficiaryName, null, v.Amount, null, null)).ToListAsync(ct));
+        }
+
         if (currentUser.HasPermission(Permissions.PurchasesView) && raw.Length >= 3)
         {
             hits.AddRange(await db.PurchaseInvoices.AsNoTracking()
@@ -127,6 +149,9 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
         }
         if (currentUser.HasPermission(Permissions.PurchasesManage))
             drafts = await db.PurchaseInvoices.CountAsync(p => p.Status == PurchaseStatus.Draft, ct);
-        return new NotificationsDto(low, @out, drafts);
+        var pendingTransfers = currentUser.HasPermission(Permissions.TransfersReview)
+            ? await db.IncomingTransfers.CountAsync(t => t.Status == Domain.Finance.TransferStatus.Pending, ct)
+            : 0;
+        return new NotificationsDto(low, @out, drafts, pendingTransfers);
     }
 }

@@ -302,7 +302,7 @@ public sealed class PurchaseService(
         {
             await suppliers.PostAsync(invoice.SupplierId, SupplierEntryType.Payment, invoice.PaidAmount, 0, source with { Description = "دفعة عند الشراء" }, invoice.Date, ct);
             await accounts.PostAsync(invoice.PaymentAccountId!.Value, MoneyDirection.Out, invoice.PaidAmount, AccountTransactionCategory.SupplierPayment,
-                source with { Description = "دفعة لفاتورة شراء" }, invoice.Date, ct);
+                source with { Description = "دفعة لفاتورة شراء" }, invoice.Date, ct, requireFunds: true);
         }
 
         invoice.Status = PurchaseStatus.Posted;

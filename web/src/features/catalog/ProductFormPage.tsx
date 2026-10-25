@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ImagePicker, SupplierPicker } from '@/components/catalog/CatalogBits';
 import { Controller } from 'react-hook-form';
 import { CategoryPicker } from '@/components/catalog/CatalogBits';
+import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 import type { QuickProductDraft } from './QuickProductSheet';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
@@ -95,6 +96,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
   const draft = (useLocation().state as { draft?: QuickProductDraft } | null)?.draft;
   const [categoryName, setCategoryName] = useState<string | null>(existing?.categoryName ?? variantParent?.categoryName ?? draft?.category?.name ?? null);
   const [imageId, setImageId] = useState<string | null>(existing?.imageFileId ?? null);
+  const [scanning, setScanning] = useState(false);
   const [supplier, setSupplier] = useState<{ id: number; name: string } | null>(
     existing?.defaultSupplierId ? { id: existing.defaultSupplierId, name: existing.defaultSupplierName ?? '' } :
       variantParent?.defaultSupplierId ? { id: variantParent.defaultSupplierId, name: variantParent.defaultSupplierName ?? '' } : null);
@@ -118,7 +120,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
       openingQuantity: draft?.quantity ?? '',
       openingUnitCost: '',
       sku: existing?.sku ?? '',
-      barcode: existing?.barcode ?? '',
+      barcode: existing?.barcode ?? draft?.barcode ?? '',
       unitId: base?.unitId ?? lookups.data?.units.find((u) => u.name === 'قطعة')?.id ?? lookups.data?.units[0]?.id ?? '',
       brandName: base?.brandName ?? '',
       size: existing?.size ?? '',
@@ -277,7 +279,12 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
             {(id, d) => <Input id={id} aria-describedby={d} className="ltr" autoCapitalize="characters" invalid={!!errors.sku} {...register('sku')} />}
           </Field>
           <Field label="الباركود" error={errors.barcode?.message}>
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="numeric" className="ltr" invalid={!!errors.barcode} {...register('barcode')} />}
+            {(id, d) => (
+              <div className="flex gap-2">
+                <Input id={id} aria-describedby={d} inputMode="numeric" className="ltr" invalid={!!errors.barcode} {...register('barcode')} />
+                <ScanButton onClick={() => setScanning(true)} />
+              </div>
+            )}
           </Field>
           <Field label="وحدة القياس" required error={errors.unitId?.message}>
             {(id, d) => (
@@ -306,6 +313,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
           {isNew ? 'حفظ المنتج' : 'حفظ التعديلات'}
         </Button>
       </StickyActions>
+      {scanning && <BarcodeScannerSheet onDetected={(code) => setValue('barcode', code, { shouldDirty: true, shouldValidate: true })} onClose={() => setScanning(false)} />}
     </form>
   );
 }

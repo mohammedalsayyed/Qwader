@@ -10,9 +10,12 @@ public sealed record LedgerSource(string SourceType, int? SourceId, string? Sour
 
 public interface IAccountLedger
 {
-    /// <summary>Moves money in/out of a financial account and records the transaction. Returns the balance after.</summary>
+    /// <summary>
+    /// Moves money in/out of a financial account and records the transaction. Returns the balance after.
+    /// With <paramref name="requireFunds"/>, an outgoing amount larger than the balance is refused.
+    /// </summary>
     Task<decimal> PostAsync(int accountId, MoneyDirection direction, decimal amount, AccountTransactionCategory category,
-        LedgerSource source, DateTime date, CancellationToken ct = default);
+        LedgerSource source, DateTime date, CancellationToken ct = default, bool requireFunds = false);
 }
 
 public interface ISupplierLedger
@@ -25,7 +28,7 @@ public interface ISupplierLedger
 public sealed class AccountLedger(IAppDbContext db, ICurrentUser currentUser) : IAccountLedger
 {
     public async Task<decimal> PostAsync(int accountId, MoneyDirection direction, decimal amount, AccountTransactionCategory category,
-        LedgerSource source, DateTime date, CancellationToken ct = default)
+        LedgerSource source, DateTime date, CancellationToken ct = default, bool requireFunds = false)
     {
         if (db.Database.CurrentTransaction is null)
             throw new InvalidOperationException("Account postings must run inside a database transaction.");
@@ -37,9 +40,15 @@ public sealed class AccountLedger(IAppDbContext db, ICurrentUser currentUser) : 
         var balances = await db.Database.SqlQuery<decimal>($"""
             UPDATE FinancialAccounts SET CurrentBalance = CurrentBalance + {delta}
             OUTPUT inserted.CurrentBalance AS Value
-            WHERE Id = {accountId} AND IsActive = 1;
+            WHERE Id = {accountId} AND IsActive = 1 AND ({(requireFunds ? 1 : 0)} = 0 OR CurrentBalance + {delta} >= 0);
             """).ToListAsync(ct);
-        if (balances.Count == 0) throw new BusinessRuleException("الحساب المالي المختار غير موجود أو معطّل");
+        if (balances.Count == 0)
+        {
+            var account = await db.FinancialAccounts.AsNoTracking().Where(a => a.Id == accountId)
+                .Select(a => new { a.Name, a.IsActive, a.CurrentBalance }).FirstOrDefaultAsync(ct);
+            if (account is null || !account.IsActive) throw new BusinessRuleException("الحساب المالي المختار غير موجود أو معطّل");
+            throw new BusinessRuleException($"رصيد «{account.Name}» ({account.CurrentBalance:0.00} ₪) لا يكفي لهذا المبلغ. إذا كان الرصيد الفعلي أكبر، اضبط الرصيد الافتتاحي من صفحة الحسابات");
+        }
 
         db.AccountTransactions.Add(new AccountTransaction
         {

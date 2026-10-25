@@ -7,7 +7,8 @@ namespace Qwader.Application.Sales;
 
 public sealed record SaleLineInput(int ProductId, decimal Quantity, decimal UnitPrice, decimal LineDiscount = 0);
 
-public sealed record SalePaymentInput(int AccountId, decimal Amount, string? Reference = null);
+/// <summary>Pending = a transfer the customer says they sent but nobody has verified yet: it stays as debt until confirmed.</summary>
+public sealed record SalePaymentInput(int AccountId, decimal Amount, string? Reference = null, bool Pending = false);
 
 public sealed record CreateSaleRequest(
     Guid IdempotencyKey,
@@ -40,6 +41,8 @@ public sealed record SaleLineDto(
 
 public sealed record SalePaymentDto(int Id, int AccountId, string AccountName, decimal Amount, string? Reference);
 
+public sealed record SalePendingTransferDto(int Id, string Number, decimal Amount, string AccountName, string? Reference, Domain.Finance.TransferStatus Status);
+
 public sealed record SaleReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason);
 
 public sealed record SaleDetailDto(
@@ -48,7 +51,8 @@ public sealed record SaleDetailDto(
     decimal GrossTotal, decimal LineDiscountTotal, decimal InvoiceDiscount, decimal Total, decimal PaidAmount, decimal Remaining,
     decimal ReturnedTotal, decimal? TotalCost, decimal? Profit,
     string SalespersonName, string? Notes, DateTime? VoidedAt, string? VoidReason,
-    IReadOnlyList<SaleLineDto> Lines, IReadOnlyList<SalePaymentDto> Payments, IReadOnlyList<SaleReturnSummaryDto> Returns);
+    IReadOnlyList<SaleLineDto> Lines, IReadOnlyList<SalePaymentDto> Payments, IReadOnlyList<SaleReturnSummaryDto> Returns,
+    IReadOnlyList<SalePendingTransferDto> Transfers);
 
 public sealed class SaleListRequest : PagedRequest
 {

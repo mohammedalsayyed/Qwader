@@ -14,6 +14,7 @@ import { Field, Input } from '@/components/ui/Field';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { CategoryPicker } from '@/components/catalog/CatalogBits';
+import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 import { applyServerErrors } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { parseNumber, suggestPrice, zOptionalAmount, zPositive } from '@/lib/numbers';
@@ -24,6 +25,7 @@ const schema = z.object({
   retailPrice: zPositive('اكتب سعر البيع'),
   purchasePrice: zOptionalAmount(),
   quantity: zOptionalAmount(),
+  barcode: z.string().trim().max(50).regex(/^S*$/, 'الباركود يجب ألا يحتوي على مسافات').optional(),
 });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
@@ -35,9 +37,10 @@ export interface QuickProductDraft {
   retailPrice: string;
   purchasePrice: string;
   quantity: string;
+  barcode?: string;
 }
 
-const EMPTY = { name: '', retailPrice: '', purchasePrice: '', quantity: '' };
+const EMPTY = { name: '', retailPrice: '', purchasePrice: '', quantity: '', barcode: '' };
 
 /**
  * The everyday way to add products: five fields, sensible defaults for the rest
@@ -54,6 +57,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
   const [categoryError, setCategoryError] = useState<string>();
   const [addedCount, setAddedCount] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const canSeeCost = can(P.ProductsViewCost);
   const canOpenStock = can(P.InventoryAdjust, P.PurchasesManage);
@@ -73,6 +77,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       const unitId = lookups.data?.units.find((u) => u.name === 'قطعة')?.id ?? lookups.data?.units[0]?.id ?? 0;
       return productsApi.create({
         name: v.name,
+        barcode: v.barcode?.trim() || null,
         categoryId: category!.id,
         unitId,
         retailPrice: v.retailPrice,
@@ -99,7 +104,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       }
     },
     onError: (e) => {
-      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'purchasePrice']);
+      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'purchasePrice', 'barcode']);
       if (msg) toast.error(msg);
     },
   });
@@ -186,12 +191,22 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        <Field label="الباركود (اختياري)" error={errors.barcode?.message}>
+          {(id, d) => (
+            <div className="flex gap-2">
+              <Input id={id} aria-describedby={d} inputMode="numeric" className="ltr" placeholder="امسحه بالكاميرا أو اكتبه" invalid={!!errors.barcode} {...register('barcode')} />
+              <ScanButton onClick={() => setScanning(true)} />
+            </div>
+          )}
+        </Field>
+
         {canOpenStock && (
           <Field label="الكمية الموجودة الآن" error={errors.quantity?.message} hint="اتركها فارغة إذا لم تصل البضاعة بعد">
             {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.quantity} {...register('quantity')} />}
           </Field>
         )}
       </form>
+      {scanning && <BarcodeScannerSheet onDetected={(code) => setValue('barcode', code, { shouldValidate: true })} onClose={() => setScanning(false)} />}
     </Sheet>
   );
 }
