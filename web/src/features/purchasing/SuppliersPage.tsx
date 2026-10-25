@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowRight, Pencil, Phone, Plus, ShoppingBag, Truck } from 'lucide-react';
+import { ArrowRight, Pencil, Phone, Plus, ReceiptText, ShoppingBag, Truck } from 'lucide-react';
 import { purchasesApi, suppliersApi, type Supplier } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -182,6 +182,11 @@ export function SupplierDetailPage() {
         <Stat label="إجمالي المدفوع" value={formatMoney(s.totalPayments)} />
       </div>
 
+      {can(P.VouchersCreate) && s.balance > 0 && (
+        <Link to={`/payments/new?supplierId=${s.id}`} className="block">
+          <Button block variant="secondary"><ReceiptText className="size-4" /> دفعة للمورد (سند صرف)</Button>
+        </Link>
+      )}
       {can(P.PurchasesManage) && (
         <Link to={`/purchases/new?supplierId=${s.id}`} className="block">
           <Button block variant="secondary"><ShoppingBag className="size-4" /> فاتورة شراء جديدة من هذا المورد</Button>

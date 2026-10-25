@@ -119,6 +119,23 @@ export function SaleDetailPage() {
           </div>
         </Card>
 
+        {s.transfers.length > 0 && (
+          <Card className="p-4">
+            <h2 className="mb-2 font-bold">حوالات عند البيع</h2>
+            <ul className="divide-y divide-line">
+              {s.transfers.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-2 py-2">
+                  <div>
+                    <p className="text-sm font-semibold">{t.accountName}{t.reference && <span className="ltr ms-2 inline-block text-muted">{t.reference}</span>}</p>
+                    <Link to="/transfers" className="text-xs text-brand-700 underline">{t.status === 'Pending' ? 'بانتظار التحقق' : t.status === 'Confirmed' ? 'مؤكدة' : 'مرفوضة'} — {t.number}</Link>
+                  </div>
+                  <span className="tabular font-bold">{formatMoney(t.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
         {s.returns.length > 0 && (
           <Card className="p-4">
             <h2 className="mb-2 font-bold">المرتجعات</h2>

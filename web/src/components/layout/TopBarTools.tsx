@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Bell, FileText, FolderTree, PackageX, Receipt, Search, TrendingDown, Truck, UserRound } from 'lucide-react';
+import { ArrowLeftRight, Bell, FileText, FolderTree, PackageX, Receipt, Search, TrendingDown, Truck, UserRound } from 'lucide-react';
 import { searchApi, type SearchHit, type SearchKind } from '@/api/catalog';
 import { useAuth } from '@/auth/AuthProvider';
 import { IconButton } from '@/components/ui/Button';
@@ -17,6 +17,9 @@ const GROUPS: { kind: SearchKind; label: string }[] = [
   { kind: 'Product', label: 'المنتجات' },
   { kind: 'Customer', label: 'العملاء' },
   { kind: 'SaleInvoice', label: 'فواتير المبيعات' },
+  { kind: 'IncomingTransfer', label: 'الحوالات' },
+  { kind: 'ReceiptVoucher', label: 'سندات القبض' },
+  { kind: 'PaymentVoucher', label: 'سندات الصرف' },
   { kind: 'Category', label: 'الأصناف' },
   { kind: 'Supplier', label: 'الموردون' },
   { kind: 'PurchaseInvoice', label: 'فواتير الشراء' },
@@ -36,6 +39,12 @@ function hitLink(hit: SearchHit): string {
       return `/customers/${hit.id}`;
     case 'SaleInvoice':
       return `/sales/${hit.id}`;
+    case 'IncomingTransfer':
+      return '/transfers';
+    case 'ReceiptVoucher':
+      return `/receipts/${hit.id}`;
+    case 'PaymentVoucher':
+      return `/payments/${hit.id}`;
   }
 }
 
@@ -125,7 +134,7 @@ function GlobalSearchSheet({ onClose }: { onClose: () => void }) {
                           </span>
                         )}
                         {kind === 'Category' && <span className="shrink-0 text-xs text-muted">{h.quantity} منتج</span>}
-                        {(kind === 'Supplier' || kind === 'PurchaseInvoice' || kind === 'SaleInvoice' || (kind === 'Customer' && (h.price ?? 0) !== 0)) && h.price != null && (
+                        {(kind === 'Supplier' || kind === 'PurchaseInvoice' || kind === 'SaleInvoice' || kind === 'IncomingTransfer' || kind === 'ReceiptVoucher' || kind === 'PaymentVoucher' || (kind === 'Customer' && (h.price ?? 0) !== 0)) && h.price != null && (
                           <span className="tabular shrink-0 text-sm">{formatMoney(h.price)}</span>
                         )}
                       </button>
@@ -142,7 +151,7 @@ function GlobalSearchSheet({ onClose }: { onClose: () => void }) {
 }
 
 function HitIcon({ kind }: { kind: SearchKind }) {
-  const Icon = kind === 'Category' ? FolderTree : kind === 'Supplier' ? Truck : kind === 'Customer' ? UserRound : kind === 'SaleInvoice' ? Receipt : FileText;
+  const Icon = kind === 'Category' ? FolderTree : kind === 'Supplier' ? Truck : kind === 'Customer' ? UserRound : kind === 'SaleInvoice' ? Receipt : kind === 'IncomingTransfer' ? ArrowLeftRight : FileText;
   return (
     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
       <Icon className="size-5" />
@@ -161,10 +170,11 @@ export function NotificationsButton() {
     refetchInterval: 120_000,
   });
   const n = query.data;
-  const total = n ? n.lowStock + n.outOfStock + n.draftPurchases : 0;
+  const total = n ? n.lowStock + n.outOfStock + n.draftPurchases + n.pendingTransfers : 0;
 
   const items = n
     ? [
+        n.pendingTransfers > 0 && { icon: ArrowLeftRight, tone: 'text-warning', text: `${n.pendingTransfers} حوالة بانتظار التحقق`, to: '/transfers' },
         n.outOfStock > 0 && { icon: PackageX, tone: 'text-danger', text: `${n.outOfStock} منتج نفد من المخزون`, to: '/products?stock=Out' },
         n.lowStock > 0 && { icon: TrendingDown, tone: 'text-warning', text: `${n.lowStock} منتج أوشك على النفاد`, to: '/products?stock=Low' },
         n.draftPurchases > 0 && { icon: FileText, tone: 'text-brand-700', text: `${n.draftPurchases} فاتورة شراء مسودة لم تُعتمد`, to: '/purchases' },

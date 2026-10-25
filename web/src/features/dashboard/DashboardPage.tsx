@@ -34,7 +34,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { to: '/products?add=1', label: 'إضافة منتج', icon: PackagePlus, anyOf: [P.ProductsManage] },
   { to: '/receipts/new', label: 'سند قبض', icon: HandCoins, anyOf: [P.VouchersCreate] },
   { to: '/payments/new', label: 'سند صرف', icon: ReceiptText, anyOf: [P.VouchersCreate] },
-  { to: '/expenses/new', label: 'إضافة مصروف', icon: Wallet, anyOf: [P.ExpensesManage] },
+  { to: '/expenses?new=1', label: 'إضافة مصروف', icon: Wallet, anyOf: [P.ExpensesManage] },
   { to: '/inventory', label: 'عرض المخزون', icon: Warehouse, anyOf: [P.InventoryView] },
   { to: '/reports', label: 'التقارير', icon: BarChart3, anyOf: [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial] },
 ];
@@ -92,6 +92,9 @@ export function DashboardPage() {
             hint="منتج تحت حد التنبيه" onClick={() => navigate('/products?stock=Low')} />
           <Stat label="نفدت من المخزون" value={notifications.data.outOfStock} tone={notifications.data.outOfStock ? 'danger' : 'default'}
             hint="منتج رصيده صفر" onClick={() => navigate('/products?stock=Out')} />
+          {notifications.data.pendingTransfers > 0 && (
+            <Stat label="حوالات بانتظار التحقق" value={notifications.data.pendingTransfers} tone="warning" hint="اضغط للمراجعة" onClick={() => navigate('/transfers')} />
+          )}
         </div>
       )}
 

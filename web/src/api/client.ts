@@ -215,3 +215,17 @@ export async function apiDownload(path: string, query?: Query, fallbackName = 'd
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Loads a protected file (transfer proof, attachment) with the auth header and returns an object URL for <img>/<a>. */
+export async function apiBlobUrl(path: string): Promise<string> {
+  const send = () => fetch(buildUrl(path), { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}, credentials: 'same-origin' });
+  let res: Response;
+  try {
+    res = await send();
+    if (res.status === 401 && accessToken && (await refreshSession())) res = await send();
+  } catch {
+    throw new ApiError(0, NETWORK_MESSAGE);
+  }
+  if (!res.ok) throw await toError(res);
+  return URL.createObjectURL(await res.blob());
+}

@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowRight, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Users } from 'lucide-react';
+import { ArrowRight, HandCoins, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Users } from 'lucide-react';
 import { customersApi, salesApi, SALE_STATUS, type Customer } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -182,9 +182,14 @@ export function CustomerDetailPage() {
         <Stat label="آخر شراء" value={c.lastPurchaseAt ? formatDate(c.lastPurchaseAt) : '—'} />
       </div>
 
-      {can(P.SalesCreate) && (
-        <Link to="/pos" className="block"><Button block variant="secondary"><ShoppingCart className="size-4" /> بيع جديد</Button></Link>
-      )}
+      <div className="grid grid-cols-2 gap-2">
+        {can(P.VouchersCreate) && c.balance > 0 && (
+          <Link to={`/receipts/new?customerId=${c.id}`} className="contents"><Button variant="secondary"><HandCoins className="size-4" /> تحصيل دفعة</Button></Link>
+        )}
+        {can(P.SalesCreate) && (
+          <Link to="/pos" className="contents"><Button variant="outline"><ShoppingCart className="size-4" /> بيع جديد</Button></Link>
+        )}
+      </div>
       {(c.address || c.notes) && <Card className="px-4"><InfoList items={[c.address && { label: 'العنوان', value: c.address }, c.notes && { label: 'ملاحظات', value: c.notes }]} /></Card>}
 
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'invoices', label: 'الفواتير' }, { value: 'statement', label: 'كشف الحساب' }]} />

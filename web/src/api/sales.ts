@@ -62,6 +62,7 @@ export interface Sale {
   lines: SaleLine[];
   payments: { id: number; accountId: number; accountName: string; amount: number; reference: string | null }[];
   returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null }[];
+  transfers: { id: number; number: string; amount: number; accountName: string; reference: string | null; status: 'Pending' | 'Confirmed' | 'Rejected' }[];
 }
 
 export interface CreateSaleInput {

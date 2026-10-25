@@ -11,7 +11,7 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { ComingSoonPage, ForbiddenPage, NotFoundPage } from '@/features/common/Placeholders';
 // Pages load on demand so the first visit on a slow connection only downloads what it shows.
 const page = <T, K extends keyof T>(load: () => Promise<T>, name: K) =>
-  lazy(() => load().then((m) => ({ default: m[name] as ComponentType })));
+  lazy(() => load().then((m) => ({ default: m[name] as ComponentType<any> })));
 const UsersPage = page(() => import('@/features/users/UsersPage'), 'UsersPage');
 const SettingsPage = page(() => import('@/features/settings/SettingsPage'), 'SettingsPage');
 const CategoriesPage = page(() => import('@/features/catalog/CategoriesPage'), 'CategoriesPage');
@@ -30,6 +30,13 @@ const SalesPage = page(() => import('@/features/sales/SalesPage'), 'SalesPage');
 const SaleDetailPage = page(() => import('@/features/sales/SaleDetailPage'), 'SaleDetailPage');
 const CustomersPage = page(() => import('@/features/customers/CustomersPage'), 'CustomersPage');
 const CustomerDetailPage = page(() => import('@/features/customers/CustomersPage'), 'CustomerDetailPage');
+const AccountsPage = page(() => import('@/features/finance/AccountsPage'), 'AccountsPage');
+const AccountDetailPage = page(() => import('@/features/finance/AccountsPage'), 'AccountDetailPage');
+const TransfersPage = page(() => import('@/features/finance/TransfersPage'), 'TransfersPage');
+const VouchersPage = page(() => import('@/features/finance/VouchersPages'), 'VouchersPage');
+const NewVoucherPage = page(() => import('@/features/finance/VouchersPages'), 'NewVoucherPage');
+const VoucherDetailPage = page(() => import('@/features/finance/VouchersPages'), 'VoucherDetailPage');
+const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'ExpensesPage');
 
 
 function SessionGate() {
@@ -87,7 +94,6 @@ const soon = (path: string, title: string, phase: string, anyOf: Permission[]) =
   ),
 });
 
-const PHASE_5 = 'المرحلة الخامسة';
 const PHASE_6 = 'المرحلة السادسة';
 
 export const router = createBrowserRouter([
@@ -142,11 +148,16 @@ export const router = createBrowserRouter([
           guarded('sales/:id', <SaleDetailPage />, [P.SalesCreate, P.SalesViewAll]),
           guarded('customers', <CustomersPage />, [P.CustomersManage, P.SalesCreate]),
           guarded('customers/:id', <CustomerDetailPage />, [P.CustomersManage, P.SalesCreate]),
-          soon('accounts', 'الحسابات المالية', PHASE_5, [P.AccountsView]),
-          soon('transfers', 'الحوالات والتحويلات', PHASE_5, [P.TransfersCreate, P.TransfersReview]),
-          soon('receipts', 'سندات القبض', PHASE_5, [P.VouchersCreate]),
-          soon('payments', 'سندات الصرف', PHASE_5, [P.VouchersCreate]),
-          soon('expenses', 'المصروفات', PHASE_5, [P.ExpensesManage]),
+          guarded('accounts', <AccountsPage />, [P.AccountsView, P.AccountsManage]),
+          guarded('accounts/:id', <AccountDetailPage />, [P.AccountsView, P.AccountsManage]),
+          guarded('transfers', <TransfersPage />, [P.TransfersCreate, P.TransfersReview]),
+          guarded('receipts', <VouchersPage kind="receipt" />, [P.VouchersCreate, P.ReportsFinancial]),
+          guarded('receipts/new', <NewVoucherPage kind="receipt" />, [P.VouchersCreate]),
+          guarded('receipts/:id', <VoucherDetailPage kind="receipt" />, [P.VouchersCreate, P.ReportsFinancial]),
+          guarded('payments', <VouchersPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
+          guarded('payments/new', <NewVoucherPage kind="payment" />, [P.VouchersCreate]),
+          guarded('payments/:id', <VoucherDetailPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
+          guarded('expenses', <ExpensesPage />, [P.ExpensesManage]),
           soon('reports', 'التقارير', PHASE_6, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           { path: '*', element: <NotFoundPage /> },
         ],

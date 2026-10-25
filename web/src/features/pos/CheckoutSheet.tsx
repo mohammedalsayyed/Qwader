@@ -23,6 +23,7 @@ interface PaymentRow {
   accountId: string;
   amount: string;
   reference: string;
+  pending: boolean;
 }
 
 export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
@@ -50,7 +51,9 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   // Until the user picks one, the cash account is the default (also once the account list arrives after opening).
   const [pickedAccount, setFullAccount] = useState('');
   const fullAccount = pickedAccount || cashId;
+  const fullAccountType = accounts.find((a) => String(a.id) === fullAccount)?.type;
   const [fullRef, setFullRef] = useState('');
+  const [fullPending, setFullPending] = useState(false);
   const [tendered, setTendered] = useState('');
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [error, setError] = useState<string>();
@@ -61,14 +64,14 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   const maxDiscount = settings.data?.maxDiscountPercent ?? 0;
 
   const payments = useMemo(() => {
-    if (!split) return [{ accountId: Number(fullAccount), amount: total, reference: fullRef.trim() || null }].filter((p) => p.amount > 0);
+    if (!split) return [{ accountId: Number(fullAccount), amount: total, reference: fullRef.trim() || null, pending: fullPending && fullAccountType !== 'Cash' }].filter((p) => p.amount > 0);
     return rows
-      .map((r) => ({ accountId: Number(r.accountId), amount: parseNumber(r.amount) ?? 0, reference: r.reference.trim() || null }))
+      .map((r) => ({ accountId: Number(r.accountId), amount: parseNumber(r.amount) ?? 0, reference: r.reference.trim() || null, pending: r.pending && accounts.find((a) => String(a.id) === r.accountId)?.type !== 'Cash' }))
       .filter((p) => p.amount > 0);
-  }, [split, fullAccount, fullRef, rows, total]);
-  const paid = round2(payments.reduce((s, p) => s + (Number.isNaN(p.amount) ? 0 : p.amount), 0));
-  const remaining = round2(total - paid);
-  const fullAccountType = accounts.find((a) => String(a.id) === fullAccount)?.type;
+  }, [split, fullAccount, fullRef, fullPending, fullAccountType, accounts, rows, total]);
+  const paid = round2(payments.filter((p) => !p.pending).reduce((s, p) => s + (Number.isNaN(p.amount) ? 0 : p.amount), 0));
+  const pendingPaid = round2(payments.filter((p) => p.pending).reduce((s, p) => s + (Number.isNaN(p.amount) ? 0 : p.amount), 0));
+  const remaining = round2(total - paid - pendingPaid);
   const tenderedN = parseNumber(tendered);
   const change = !split && fullAccountType === 'Cash' && tenderedN !== undefined && !Number.isNaN(tenderedN) ? round2(tenderedN - total) : 0;
   const hasCustomer = mode === 'customer' && (customer !== null || (newName.trim() !== '' && newPhone.trim() !== ''));
@@ -99,7 +102,8 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
     if (Number.isNaN(discountN) || discountN < 0 || discountN > subtotal) return setError('الخصم غير صحيح');
     if (payments.some((p) => Number.isNaN(p.amount))) return setError('أحد المبالغ غير صحيح');
     if (payments.some((p) => !p.accountId)) return setError('اختر الحساب لكل دفعة');
-    if (paid > total) return setError('المدفوع أكبر من الإجمالي؛ سجّل قيمة الفاتورة فقط واحسب الباقي للزبون');
+    if (pendingPaid > 0 && !hasCustomer) return setError('الحوالة بانتظار التحقق تبقى دينًا حتى تأكيدها: اختر العميل أو اكتب اسمه وجواله');
+    if (paid + pendingPaid > total) return setError('المدفوع أكبر من الإجمالي؛ سجّل قيمة الفاتورة فقط واحسب الباقي للزبون');
     if (remaining > 0 && !hasCustomer) return setError('المبلغ غير مكتمل: للبيع الآجل اختر العميل أو اكتب اسمه ورقم جواله');
     if (!split && fullAccountType === 'Cash' && tenderedN !== undefined && !Number.isNaN(tenderedN) && tenderedN < total)
       return setError('المبلغ المستلم أقل من الإجمالي؛ استخدم «دفع جزئي أو بأكثر من حساب»');
@@ -113,7 +117,8 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-medium text-danger">{error}</p>}
           <div className="flex items-center justify-between text-sm">
             <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b></span>
-            {remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
+            {pendingPaid > 0 ? <span className="font-semibold text-amber-700">بانتظار التحقق: {formatMoney(pendingPaid)}</span>
+              : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
           </div>
           <Button block size="lg" loading={submit.isPending} onClick={confirmSale}>
@@ -200,11 +205,14 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
                   {(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" placeholder={String(total)} value={tendered} onChange={(e) => setTendered(e.target.value)} />}
                 </Field>
               ) : (
-                <Field label="رقم مرجع الحوالة / العملية">
-                  {(id) => <Input id={id} className="ltr" value={fullRef} onChange={(e) => setFullRef(e.target.value)} />}
-                </Field>
+                <>
+                  <Field label="رقم مرجع الحوالة / العملية">
+                    {(id) => <Input id={id} className="ltr" value={fullRef} onChange={(e) => setFullRef(e.target.value)} />}
+                  </Field>
+                  <PendingToggle value={fullPending} onChange={setFullPending} />
+                </>
               )}
-              <button type="button" onClick={() => { setSplit(true); setRows([{ key: crypto.randomUUID(), accountId: fullAccount, amount: '', reference: '' }]); }}
+              <button type="button" onClick={() => { setSplit(true); setRows([{ key: crypto.randomUUID(), accountId: fullAccount, amount: '', reference: '', pending: false }]); }}
                 className="h-10 text-sm font-semibold text-brand-700 underline">
                 دفع جزئي (آجل) أو بأكثر من حساب
               </button>
@@ -224,13 +232,16 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
                     </IconButton>
                   </div>
                   {accounts.find((a) => String(a.id) === r.accountId)?.type !== 'Cash' && (
-                    <Input aria-label="رقم المرجع" placeholder="رقم مرجع الحوالة (اختياري)" className="ltr mt-2"
-                      value={r.reference} onChange={(e) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, reference: e.target.value } : x)))} />
+                    <>
+                      <Input aria-label="رقم المرجع" placeholder="رقم مرجع الحوالة (اختياري)" className="ltr mt-2"
+                        value={r.reference} onChange={(e) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, reference: e.target.value } : x)))} />
+                      <div className="mt-2"><PendingToggle value={r.pending} onChange={(v) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, pending: v } : x)))} /></div>
+                    </>
                   )}
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => setRows((rs) => [...rs, { key: crypto.randomUUID(), accountId: cashId, amount: remaining > 0 ? String(remaining) : '', reference: '' }])}>
+                <Button variant="secondary" size="sm" onClick={() => setRows((rs) => [...rs, { key: crypto.randomUUID(), accountId: cashId, amount: remaining > 0 ? String(remaining) : '', reference: '', pending: false }])}>
                   <Plus className="size-4" /> دفعة أخرى
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setSplit(false)}>دفع كامل بحساب واحد</Button>
@@ -244,6 +255,20 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
         </section>
       </div>
     </Sheet>
+  );
+}
+
+/** Transfer seen in the account (counts now) vs. only claimed by the customer (stays debt until verified). */
+function PendingToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="حالة الحوالة">
+      {[false, true].map((p) => (
+        <button key={String(p)} type="button" role="radio" aria-checked={value === p} onClick={() => onChange(p)}
+          className={cn('h-10 rounded-lg border text-xs font-semibold', value === p ? (p ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-brand-700 bg-brand-50 text-brand-800') : 'border-line')}>
+          {p ? 'لم أتحقق — بانتظار التحقق' : 'وصلت الحوالة ✓'}
+        </button>
+      ))}
+    </div>
   );
 }
 
