@@ -73,10 +73,14 @@ function RequirePermission({ anyOf, children }: { anyOf: Permission[]; children:
   return can(...anyOf) ? children : <ForbiddenPage />;
 }
 
-/** Password change page: full-screen while forced, inside the app shell otherwise. */
+/**
+ * The forced, full-screen password change. Once it is done there is nothing to do here: go home.
+ * (Right after saving, the guard can still see the old session for a moment and land here again;
+ * sending users to the in-app change page made a successful change look like a failed one.)
+ */
 function PasswordRoute() {
   const { user } = useAuth();
-  return user?.mustChangePassword ? <ChangePasswordPage /> : <Navigate to="/account/change-password" replace />;
+  return user?.mustChangePassword ? <ChangePasswordPage /> : <Navigate to="/" replace />;
 }
 
 const guarded = (path: string, element: ReactNode, anyOf: Permission[]) => ({
