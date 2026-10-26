@@ -28,6 +28,9 @@ public sealed class SystemResetService(
 
         var everything = request.Mode == SystemResetMode.Everything;
         var deleted = 0;
+        // Whole-table deletes right after a bulk import can run on stale statistics and exceed the default 30 s;
+        // this is a rare, all-or-nothing admin operation, so give it room rather than fail half-way and roll back.
+        db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
         List<string> orphanedFiles;
 
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
