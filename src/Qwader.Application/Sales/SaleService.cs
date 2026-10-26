@@ -249,7 +249,7 @@ public sealed class SaleService(
         if (!CanSeeAll) query = query.Where(s => s.SalespersonId == currentUser.UserId);
         if (request.Status is { } status) query = query.Where(s => s.Status == status);
         if (request.CustomerId is { } customerId) query = query.Where(s => s.CustomerId == customerId);
-        if (request.Unpaid == true) query = query.Where(s => s.PaidAmount < s.Total && s.Status != SaleStatus.Voided);
+        if (request.Unpaid == true) query = query.Where(s => s.PaidAmount + s.CollectedAmount < s.Total && s.Status != SaleStatus.Voided);
         if (request.From is not null || request.To is not null)
         {
             var (start, end) = clock.LocalDaysToUtcRange(request.From ?? new DateOnly(2000, 1, 1), request.To ?? clock.LocalToday);
@@ -267,7 +267,7 @@ public sealed class SaleService(
         var users = db.Users;
         return await query.OrderByDescending(s => s.Id)
             .Select(s => new SaleListItemDto(s.Id, s.Number, s.Date, s.CustomerName, s.CustomerPhone, s.Customer.IsWalkIn,
-                s.Total, s.PaidAmount,
+                s.Total, s.PaidAmount + s.CollectedAmount,
                 db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id).Sum(r => (decimal?)r.Total) ?? 0,
                 s.Status,
                 users.Where(u => u.Id == s.SalespersonId).Select(u => u.FullName).FirstOrDefault() ?? "",
@@ -311,7 +311,7 @@ public sealed class SaleService(
 
         return new SaleDetailDto(invoice.Id, invoice.Number, invoice.Date, invoice.Status, invoice.PriceTier,
             invoice.CustomerId, invoice.CustomerName, invoice.CustomerPhone, s.IsWalkIn,
-            invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount, invoice.Total - invoice.PaidAmount,
+            invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount + invoice.CollectedAmount, Math.Max(0, invoice.Total - invoice.PaidAmount - invoice.CollectedAmount),
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden)).ToList(),

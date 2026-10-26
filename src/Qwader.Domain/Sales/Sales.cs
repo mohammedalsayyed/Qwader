@@ -85,6 +85,8 @@ public class SaleInvoice : AuditableEntity
     public decimal Total { get; set; }
     /// <summary>Paid at the till (confirmed money only).</summary>
     public decimal PaidAmount { get; set; }
+    /// <summary>Collected later against this invoice (a till transfer confirmed after the sale). Paid so far = PaidAmount + CollectedAmount.</summary>
+    public decimal CollectedAmount { get; set; }
     /// <summary>Σ quantity × unit cost at the moment of sale.</summary>
     public decimal TotalCost { get; set; }
 

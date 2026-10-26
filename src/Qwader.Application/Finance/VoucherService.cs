@@ -137,9 +137,18 @@ public sealed class VoucherService(
             source, voucher.Date, ct);
         if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
             await customers.PostAsync(customerId, CustomerEntryType.Payment, 0, voucher.Amount, source, voucher.Date, ct);
+        await AdjustInvoiceCollectedAsync(voucher, voucher.Amount, ct);
 
         audit.Log("Voucher.Receipt", "ReceiptVoucher", voucher.Id.ToString(), null, new { voucher.Number, voucher.Amount, voucher.PayerName, voucher.Purpose });
         return voucher;
+    }
+
+    /// <summary>Money received for a specific invoice (a confirmed till transfer) shows on that invoice as paid.</summary>
+    private async Task AdjustInvoiceCollectedAsync(ReceiptVoucher voucher, decimal delta, CancellationToken ct)
+    {
+        if (voucher.SaleInvoiceId is not { } invoiceId || voucher.Purpose != ReceiptPurpose.DebtCollection) return;
+        await db.SaleInvoices.Where(s => s.Id == invoiceId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + delta), ct);
     }
 
     public async Task<VoucherDto> VoidReceiptAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
@@ -154,6 +163,7 @@ public sealed class VoucherService(
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct);
         if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
             await customers.PostAsync(customerId, CustomerEntryType.Reversal, voucher.Amount, 0, source, now, ct);
+        await AdjustInvoiceCollectedAsync(voucher, -voucher.Amount, ct);
 
         voucher.Status = VoucherStatus.Voided;
         voucher.VoidedAt = now;

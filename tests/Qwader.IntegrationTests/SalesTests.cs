@@ -172,6 +172,13 @@ public sealed class SalesTests(ApiFactory factory)
         sale.PaidAmount.Should().Be(0);
         sale.Transfers.Should().ContainSingle(t => t.Status == Domain.Finance.TransferStatus.Pending);
         (await BalanceAsync(jawwal)).Should().Be(before, "pending transfers are not money yet");
+
+        // Once the transfer is verified the invoice itself is paid, not only the customer's balance.
+        (await admin.PostAsync($"/api/incoming-transfers/{sale.Transfers[0].Id}/confirm", null)).EnsureSuccessStatusCode();
+        var paid = await (await admin.GetAsync($"/api/sales/{sale.Id}")).ReadAsync<SaleDetailDto>();
+        paid.PaidAmount.Should().Be(90);
+        paid.Remaining.Should().Be(0);
+        (await BalanceAsync(jawwal)).Should().Be(before + 90);
     }
 
     private static async Task SetTransfersPendingAsync(HttpClient admin, bool pending)
