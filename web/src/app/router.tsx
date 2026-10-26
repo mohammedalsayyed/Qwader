@@ -8,7 +8,7 @@ import { ErrorState, Spinner } from '@/components/ui/Feedback';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { ChangePasswordPage } from '@/features/auth/ChangePasswordPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
-import { ComingSoonPage, ForbiddenPage, NotFoundPage } from '@/features/common/Placeholders';
+import { ForbiddenPage, NotFoundPage } from '@/features/common/Placeholders';
 // Pages load on demand so the first visit on a slow connection only downloads what it shows.
 const page = <T, K extends keyof T>(load: () => Promise<T>, name: K) =>
   lazy(() => load().then((m) => ({ default: m[name] as ComponentType<any> })));
@@ -37,6 +37,7 @@ const VouchersPage = page(() => import('@/features/finance/VouchersPages'), 'Vou
 const NewVoucherPage = page(() => import('@/features/finance/VouchersPages'), 'NewVoucherPage');
 const VoucherDetailPage = page(() => import('@/features/finance/VouchersPages'), 'VoucherDetailPage');
 const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'ExpensesPage');
+const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
 
 
 function SessionGate() {
@@ -85,16 +86,6 @@ const guarded = (path: string, element: ReactNode, anyOf: Permission[]) => ({
   ),
 });
 
-const soon = (path: string, title: string, phase: string, anyOf: Permission[]) => ({
-  path: `${path}/*`,
-  element: (
-    <RequirePermission anyOf={anyOf}>
-      <ComingSoonPage title={title} phase={phase} />
-    </RequirePermission>
-  ),
-});
-
-const PHASE_6 = 'المرحلة السادسة';
 
 export const router = createBrowserRouter([
   {
@@ -158,7 +149,7 @@ export const router = createBrowserRouter([
           guarded('payments/new', <NewVoucherPage kind="payment" />, [P.VouchersCreate]),
           guarded('payments/:id', <VoucherDetailPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
           guarded('expenses', <ExpensesPage />, [P.ExpensesManage]),
-          soon('reports', 'التقارير', PHASE_6, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
+          guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           { path: '*', element: <NotFoundPage /> },
         ],
       },
