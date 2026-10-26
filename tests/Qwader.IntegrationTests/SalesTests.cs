@@ -213,6 +213,37 @@ public sealed class SalesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Any_seller_may_change_the_price_down_to_the_minimum_and_nobody_below_it()
+    {
+        var admin = await factory.LoginAsync();
+        var settings = await admin.GetFromJsonAsync<SettingsDto>("/api/settings", TestJson.Options);
+        (await admin.PutAsJsonAsync("/api/settings", settings! with { MaxDiscountPercent = 5 })).EnsureSuccessStatusCode();
+        var lookups = await admin.LookupsAsync();
+        var category = await admin.CreateCategoryAsync();
+        // cost 50, retail 100, minimum 70
+        var product = await (await admin.PostAsJsonAsync("/api/products", new Application.Catalog.SaveProductRequest(TestData.Unique("سعر"), null, null,
+            category.Id, null, lookups.Units[0].Id, null, null, null, null, null, null, 50, 90, 100, 70, 1, null, 20, 50)))
+            .ReadAsync<Application.Catalog.ProductDetailDto>();
+        var seller = await SalesUserAsync();
+        var cash = await AccountAsync(seller, "الصندوق النقدي");
+
+        // A new price is not a discount: 75 is 25% under the list price yet allowed, because it is above the minimum.
+        (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 75)], [new(cash, 75)]))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 120)], [new(cash, 120)]))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Below the minimum: refused for the seller and for the administrator alike.
+        var sellerBelow = await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 69)], [new(cash, 69)]));
+        sellerBelow.StatusCode.Should().Be((HttpStatusCode)422);
+        (await sellerBelow.Content.ReadAsStringAsync()).Should().Contain("أقل من أقل سعر بيع");
+        var adminCash = await AccountAsync(admin, "الصندوق النقدي");
+        (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 69)], [new(adminCash, 69)]))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        // An invoice discount that pushes the line under the minimum is refused too.
+        (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 72)], [new(adminCash, 67)], invoiceDiscount: 5)))
+            .StatusCode.Should().Be((HttpStatusCode)422);
+    }
+
+    [Fact]
     public async Task Returns_restock_sellable_goods_refund_money_and_cannot_exceed_what_was_sold()
     {
         var admin = await factory.LoginAsync();

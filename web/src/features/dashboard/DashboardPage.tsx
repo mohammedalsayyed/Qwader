@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { searchApi } from '@/api/catalog';
+import { reportsApi } from '@/api/reports';
 import { salesApi } from '@/api/sales';
 import { Stat } from '@/components/ui/Layout';
 import { InstallBanner } from '@/app/pwa';
@@ -102,30 +103,48 @@ export function DashboardPage() {
   );
 }
 
-/** Today's figures straight from posted invoices and account movements. Staff without report access see their own sales. */
+/**
+ * Today's figures. With profit reports: المبيعات (الإيرادات) → إجمالي الربح (− سعر الشراء) → المصروفات → صافي الربح.
+ * Staff without report access see their own sales only.
+ */
 function TodayStats() {
   const navigate = useNavigate();
+  const { can } = useAuth();
+  const withProfit = can(P.ReportsProfit);
   const summary = useQuery({ queryKey: ['sales-summary', 'today'], queryFn: () => salesApi.summary(), refetchInterval: 60_000 });
+  const period = useQuery({ queryKey: ['report-period', 'today'], queryFn: () => reportsApi.period({}), refetchInterval: 60_000, enabled: withProfit });
   if (summary.isError) return null;
   const s = summary.data;
+  const r = withProfit ? period.data : undefined;
   const value = (v: number | null | undefined) => (s ? formatMoney(v ?? 0) : '…');
+  const money = (v: number | null | undefined) => (r ? formatMoney(v ?? 0) : '…');
+  const tone = (v: number | null | undefined) => (v != null && v < 0 ? 'danger' : 'success');
 
   return (
     <section aria-labelledby="today">
       <h2 id="today" className="mb-2 text-sm font-semibold text-muted">
         اليوم {s?.ownSalesOnly && '— مبيعاتك أنت'}
       </h2>
+      {withProfit && (
+        <div className="mb-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <Stat label="المبيعات (الإيرادات)" value={money(r?.netSales)} onClick={() => navigate('/sales')}
+            hint={r ? `${r.invoiceCount} فاتورة${r.returns > 0 ? ` · بعد مرتجعات ${formatMoney(r.returns)}` : ''}` : undefined} />
+          <Stat label="إجمالي الربح" value={money(r?.grossProfit)} tone={tone(r?.grossProfit)} hint="المبيعات − سعر الشراء" />
+          <Stat label="المصروفات" value={money(r?.totalExpenses ?? r?.expenses)} tone={r && (r.totalExpenses ?? 0) > 0 ? 'warning' : 'default'}
+            hint="رواتب، أعطال، مصاريف تشغيلية" onClick={() => navigate('/expenses')} />
+          <Stat label="صافي الربح" value={money(r?.netOperatingProfit)} tone={tone(r?.netOperatingProfit)} hint="إجمالي الربح − المصروفات"
+            onClick={() => navigate('/reports')} />
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Stat label="مبيعات اليوم (صافي)" value={value(s?.netSales)} onClick={() => navigate('/sales')}
-          hint={s && s.returns > 0 ? `بعد مرتجعات ${formatMoney(s.returns)}` : undefined} />
+        {!withProfit && (
+          <Stat label="المبيعات (الإيرادات)" value={value(s?.netSales)} onClick={() => navigate('/sales')}
+            hint={s && s.returns > 0 ? `بعد مرتجعات ${formatMoney(s.returns)}` : undefined} />
+        )}
         <Stat label="عدد الفواتير" value={s ? s.invoiceCount : '…'} onClick={() => navigate('/sales')} />
         <Stat label="المبالغ المستلمة" value={value(s?.received)}
           hint={s?.receivedByAccount.slice(0, 2).map((a) => `${a.accountName} ${formatMoney(a.amount)}`).join(' · ') || undefined} />
-        {s?.grossProfit != null ? (
-          <Stat label="ربح اليوم" value={value(s.grossProfit)} tone={s.grossProfit < 0 ? 'danger' : 'success'} hint="قبل المصروفات" />
-        ) : (
-          <Stat label="ديون جديدة اليوم" value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
-        )}
+        <Stat label="ديون جديدة اليوم" value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
       </div>
     </section>
   );

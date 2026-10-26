@@ -52,12 +52,12 @@ export function ReportsPage() {
         <div className={cn('space-y-4', period.isPlaceholderData && 'opacity-60')}>
           {/* ---------- headline figures ---------- */}
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            <Stat label="الإيرادات" value={formatMoney(p.netSales)} hint={`صافي المبيعات · ${p.invoiceCount} فاتورة`} />
-            {p.totalExpenses != null ? (
-              <Stat label="المصروفات" value={formatMoney(p.totalExpenses)} hint="ثمن البضاعة المباعة + المصاريف + التالف" />
-            ) : p.expenses != null && <Stat label="المصروفات" value={formatMoney(p.expenses)} hint="المصاريف التشغيلية" />}
-            {p.netOperatingProfit != null && <Stat label="الربح" value={formatMoney(p.netOperatingProfit)} tone={p.netOperatingProfit < 0 ? 'danger' : 'success'}
-              hint={p.netSales ? `الإيرادات − المصروفات · ${Math.round((p.netOperatingProfit / p.netSales) * 1000) / 10}%` : 'الإيرادات − المصروفات'} />}
+            <Stat label="المبيعات (الإيرادات)" value={formatMoney(p.netSales)} hint={`${p.invoiceCount} فاتورة · متوسط ${formatMoney(p.averageInvoice)}`} />
+            {p.grossProfit != null && <Stat label="إجمالي الربح" value={formatMoney(p.grossProfit)} tone={p.grossProfit < 0 ? 'danger' : 'success'}
+              hint={p.netSales ? `المبيعات − سعر الشراء · ${Math.round((p.grossProfit / p.netSales) * 1000) / 10}%` : 'المبيعات − سعر الشراء'} />}
+            {(p.totalExpenses ?? p.expenses) != null && <Stat label="المصروفات" value={formatMoney((p.totalExpenses ?? p.expenses)!)} hint="رواتب، أعطال، مصاريف تشغيلية" />}
+            {p.netOperatingProfit != null && <Stat label="صافي الربح" value={formatMoney(p.netOperatingProfit)} tone={p.netOperatingProfit < 0 ? 'danger' : 'success'}
+              hint="إجمالي الربح − المصروفات" />}
             {p.newDebt != null && <Stat label="ديون جديدة" value={formatMoney(p.newDebt)} tone={p.newDebt > 0 ? 'warning' : 'default'} />}
             {p.pendingTransferAmount != null && p.pendingTransferCount > 0 && (
               <Link to="/transfers" className="contents"><Stat label="حوالات بانتظار التحقق" value={formatMoney(p.pendingTransferAmount)} tone="warning" hint={`${p.pendingTransferCount} حوالة`} /></Link>
@@ -68,8 +68,8 @@ export function ReportsPage() {
           {multiDay && daily.data && daily.data.length > 1 && (
             <Section title="المبيعات يومًا بيوم" exportKey="daily" onExport={exportExcel}>
               <div className="space-y-6 p-4">
-                <BarChart label="الإيرادات اليومية" format={formatMoney}
-                  data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `الإيرادات — ${WEEKDAY.format(new Date(d.day))}`, value: d.netSales }))} />
+                <BarChart label="المبيعات (الإيرادات) اليومية" format={formatMoney}
+                  data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `المبيعات — ${WEEKDAY.format(new Date(d.day))}`, value: d.netSales }))} />
                 {profit && (
                   <BarChart label="إجمالي الربح اليومي" format={formatMoney}
                     data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `إجمالي الربح — ${WEEKDAY.format(new Date(d.day))}`, value: d.grossProfit ?? 0 }))} />
@@ -79,19 +79,20 @@ export function ReportsPage() {
           )}
 
           {/* ---------- P&L ---------- */}
-          <Section title="الأرباح والخسائر" exportKey="summary" onExport={exportExcel}>
+          <Section title="المبيعات والأرباح" exportKey="summary" onExport={exportExcel}>
             <Lines rows={[
               ['إجمالي المبيعات', p.grossSales],
               ['− الخصومات', p.discounts],
               ['− مردودات المبيعات', p.returns],
-              ['= الإيرادات', p.netSales, 'strong'],
+              ['= المبيعات (الإيرادات)', p.netSales, 'strong'],
               ...(p.costOfSales != null ? [
-                ['تكلفة البضاعة المباعة', p.costOfSales] as Row,
-                ['خسائر المخزون (تالف، مفقود، نقص جرد)', p.inventoryLosses!] as Row,
+                ['− تكلفة البضاعة (سعر الشراء)', p.costOfSales] as Row,
+                ['= إجمالي الربح', p.grossProfit!, 'strong'] as Row,
               ] : []),
-              ...(p.expenses != null ? [['المصاريف التشغيلية (إيجار، كهرباء…)', p.expenses] as Row] : []),
+              ...(p.expenses != null ? [['المصاريف التشغيلية (رواتب، أعطال، تشغيل…)', p.expenses] as Row] : []),
+              ...(p.inventoryLosses != null && p.inventoryLosses !== 0 ? [['تالف ومفقود من المخزون', p.inventoryLosses] as Row] : []),
               ...(p.totalExpenses != null ? [['= المصروفات', p.totalExpenses, 'strong'] as Row] : []),
-              ...(p.netOperatingProfit != null ? [['الربح = الإيرادات − المصروفات', p.netOperatingProfit, 'total'] as Row] : []),
+              ...(p.netOperatingProfit != null ? [['صافي الربح = إجمالي الربح − المصروفات', p.netOperatingProfit, 'total'] as Row] : []),
             ]} />
             {p.inventoryGains != null && p.inventoryGains > 0 && (
               <p className="px-4 pb-3 text-xs text-muted">زيادة جرد بقيمة {formatMoney(p.inventoryGains)} (بضاعة وُجدت أو أُدخلت بالجرد) لا تُحسب ربحًا.</p>

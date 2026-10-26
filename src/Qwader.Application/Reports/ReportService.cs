@@ -32,8 +32,8 @@ public sealed record PeriodReportDto(
     decimal? NewDebt, decimal? Collections, int PendingTransferCount, decimal? PendingTransferAmount,
     // position (as of now)
     decimal? Receivables, decimal? Payables, decimal? InventoryValue,
-    // Stock found or counted over: shown, never counted as profit. TotalExpenses = cost of goods sold + losses + operating expenses,
-    // so NetOperatingProfit = NetSales («الإيرادات») − TotalExpenses («المصروفات»).
+    // Stock found or counted over: shown, never counted as profit. TotalExpenses («المصروفات») = operating expenses + stock losses,
+    // so NetOperatingProfit («صافي الربح») = GrossProfit («إجمالي الربح» = NetSales − cost of goods sold) − TotalExpenses.
     decimal? InventoryGains = null, decimal? TotalExpenses = null);
 
 public sealed record DailyRowDto(DateOnly Day, int Invoices, decimal NetSales, decimal? GrossProfit, decimal? Expenses, decimal? Received);
@@ -146,7 +146,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             if (Profit)
             {
                 netProfit = grossProfit - expenses - losses;
-                totalExpenses = cogs + losses + expenses;
+                totalExpenses = expenses + losses;
             }
         }
 

@@ -71,7 +71,7 @@ public sealed class ReportTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Stock_found_or_counted_over_is_not_profit_and_profit_is_revenue_minus_expenses()
+    public async Task Stock_found_or_counted_over_is_not_profit_and_net_profit_is_gross_profit_minus_expenses()
     {
         var admin = await factory.LoginAsync();
         var product = await admin.CreateProductAsync(retail: 20, openingQuantity: 5, openingCost: 10);
@@ -83,7 +83,8 @@ public sealed class ReportTests(ApiFactory factory)
 
         (after!.NetOperatingProfit - before!.NetOperatingProfit).Should().Be(0);
         (after.InventoryGains - before.InventoryGains).Should().Be(1000);
-        after.NetOperatingProfit.Should().Be(after.NetSales - after.TotalExpenses);
+        after.GrossProfit.Should().Be(after.NetSales - after.CostOfSales);
+        after.NetOperatingProfit.Should().Be(after.GrossProfit - after.TotalExpenses);
     }
 
     [Fact]

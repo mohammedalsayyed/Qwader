@@ -84,20 +84,17 @@ public sealed class SaleService(
         for (var i = 0; i < lines.Count; i++) lines[i].NetTotal = lines[i].LineTotal - shares[i];
 
         // ---- price & discount rules
-        var listTotal = request.Lines.Sum(l =>
-        {
-            var p = products[l.ProductId];
-            return CostMath.RoundMoney(l.Quantity * (request.PriceTier == PriceTier.Wholesale ? p.WholesalePrice : p.RetailPrice));
-        });
-        var discountGiven = Math.Max(0, listTotal - total);
+        // Any seller may change a line's price; the floor is the product's minimum sale price, for everyone.
+        // Discounts (per line or on the invoice) are separate: they need the discount permission and stay within the store's limit.
         var canOverride = currentUser.HasPermission(Permissions.SalesPriceOverride);
+        var discountGiven = lineDiscounts + request.InvoiceDiscount;
         if (discountGiven > 0.009m)
         {
             if (!currentUser.HasPermission(Permissions.SalesDiscount) && !canOverride)
-                throw new ForbiddenException("ليست لديك صلاحية البيع بخصم أو بأقل من السعر المحدد");
+                throw new ForbiddenException("ليست لديك صلاحية إعطاء خصم");
             var maxPercent = (await settings.GetAsync(ct)).MaxDiscountPercent;
-            if (!canOverride && listTotal > 0 && discountGiven / listTotal * 100 > maxPercent + 0.001m)
-                throw new BusinessRuleException($"الخصم ({Math.Round(discountGiven / listTotal * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
+            if (!canOverride && grossTotal > 0 && discountGiven / grossTotal * 100 > maxPercent + 0.001m)
+                throw new BusinessRuleException($"الخصم ({Math.Round(discountGiven / grossTotal * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
         }
 
         var overridden = new List<string>();
@@ -105,13 +102,14 @@ public sealed class SaleService(
         {
             var p = products[line.ProductId];
             var netUnit = line.NetTotal / line.Quantity;
-            var floor = Math.Max(p.MinSalePrice, p.AverageCost);
-            if (netUnit + 0.0001m < floor)
+            // A wholesale price set below the minimum is the floor for wholesale sales.
+            var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(p.MinSalePrice, p.WholesalePrice) : p.MinSalePrice;
+            if (netUnit + 0.0001m < minimum)
+                throw new BusinessRuleException($"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)");
+            if (netUnit + 0.0001m < p.AverageCost)
             {
                 if (!canOverride)
-                    throw new BusinessRuleException(netUnit < p.AverageCost
-                        ? $"سعر «{line.ProductName}» بعد الخصم أقل من التكلفة؛ يحتاج صلاحية خاصة"
-                        : $"سعر «{line.ProductName}» بعد الخصم أقل من الحد الأدنى ({p.MinSalePrice:0.##} ₪)");
+                    throw new BusinessRuleException($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
                 line.PriceOverridden = true;
                 overridden.Add(line.ProductName);
             }

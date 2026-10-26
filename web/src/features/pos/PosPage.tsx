@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Minus, PackageX, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
 import { productsApi } from '@/api/catalog';
 import { ApiError } from '@/api/client';
-import type { Sale } from '@/api/sales';
+import type { PriceTier, Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -135,6 +135,7 @@ export function PosPage() {
                           <span className="block text-xs text-muted">
                             <span className="ltr inline-block">{p.sku}</span> · {out ? <span className="text-danger">نفد</span> : <>متوفر {formatQuantity(p.quantity - inCart)}</>}
                             {inCart > 0 && <> · في الفاتورة {formatQuantity(inCart)}</>}
+                            {p.minSalePrice > 0 && <> · <span className="whitespace-nowrap">أقل سعر <span className="tabular font-semibold text-gray-700">{formatMoney(p.minSalePrice)}</span></span></>}
                           </span>
                         </span>
                         <span className="tabular shrink-0 font-bold">{formatMoney(tierPrice(p, cart.tier))}</span>
@@ -228,7 +229,7 @@ export function PosPage() {
       )}
 
       {editing && (
-        <LineSheet line={cart.lines.find((l) => l.productId === editing.productId) ?? editing} tierPrice={tierPrice(editing, cart.tier)}
+        <LineSheet line={cart.lines.find((l) => l.productId === editing.productId) ?? editing} tier={cart.tier} tierPrice={tierPrice(editing, cart.tier)}
           onSave={(patch) => update(editing.productId, patch)} onRemove={() => remove(editing.productId)} onClose={() => setEditing(null)} />
       )}
       {checkout && (
@@ -253,8 +254,9 @@ function Totals({ subtotal, discounts }: { subtotal: number; discounts: number }
 }
 
 /** Quantity, price and discount of one line. Price/discount changes are checked again by the server. */
-function LineSheet({ line, tierPrice: listPrice, onSave, onRemove, onClose }: {
+function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose }: {
   line: CartLine;
+  tier: PriceTier;
   tierPrice: number;
   onSave: (patch: Partial<CartLine>) => void;
   onRemove: () => void;
@@ -271,14 +273,17 @@ function LineSheet({ line, tierPrice: listPrice, onSave, onRemove, onClose }: {
   const p = parseNumber(price);
   const d = parseNumber(discount) ?? 0;
   const netUnit = q && p !== undefined && !Number.isNaN(p) ? (q * p - d) / q : NaN;
-  const floor = Math.max(line.minSalePrice, line.cost ?? 0);
-  const belowFloor = !Number.isNaN(netUnit) && netUnit + 0.0001 < floor;
+  // Anyone may change the price; nobody may go under the minimum sale price (for wholesale, a lower wholesale price is the floor).
+  const minimum = tier === 'Wholesale' ? Math.min(line.minSalePrice, line.wholesalePrice) : line.minSalePrice;
+  const belowMinimum = !Number.isNaN(netUnit) && netUnit + 0.0001 < minimum;
+  const belowCost = !belowMinimum && line.cost != null && !Number.isNaN(netUnit) && netUnit + 0.0001 < line.cost;
 
   const save = () => {
     if (q === undefined || Number.isNaN(q) || q <= 0) return setError('أدخل كمية صحيحة');
     if (q > line.available) return setError(`المتوفر ${formatQuantity(line.available)} فقط`);
     if (p === undefined || Number.isNaN(p) || p < 0) return setError('أدخل سعرًا صحيحًا');
     if (Number.isNaN(d) || d < 0 || d > q * p) return setError('الخصم غير صحيح');
+    if (belowMinimum) return setError(`لا يمكن البيع بأقل من أقل سعر بيع (${formatMoney(minimum)})`);
     onSave({ quantity: q, unitPrice: p, customPrice: p !== listPrice, lineDiscount: round2(d) });
     onClose();
   };
@@ -299,8 +304,9 @@ function LineSheet({ line, tierPrice: listPrice, onSave, onRemove, onClose }: {
           <Field label={`الكمية (${line.unitName})`} hint={`المتوفر ${formatQuantity(line.available)}`}>
             {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={qty} onChange={(e) => setQty(e.target.value)} />}
           </Field>
-          <Field label="سعر الوحدة" hint={`السعر المحدد ${formatMoney(listPrice)}`}>
-            {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={price} disabled={!canDiscount && !can(P.SalesPriceOverride)} onChange={(e) => setPrice(e.target.value)} />}
+          <Field label="سعر الوحدة" hint={`السعر المحدد ${formatMoney(listPrice)}${minimum > 0 ? ` · أقل سعر ${formatMoney(minimum)}` : ''}`}>
+            {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={price} invalid={belowMinimum}
+              onChange={(e) => { setPrice(e.target.value); setError(undefined); }} />}
           </Field>
         </div>
         {canDiscount && (
@@ -308,10 +314,12 @@ function LineSheet({ line, tierPrice: listPrice, onSave, onRemove, onClose }: {
             {(id) => <Input id={id} inputMode="decimal" className="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />}
           </Field>
         )}
-        {belowFloor && (
+        {belowMinimum && (
+          <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">السعر أقل من أقل سعر بيع ({formatMoney(minimum)}) — لا يمكن الحفظ.</p>
+        )}
+        {belowCost && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-            السعر بعد الخصم أقل من {line.cost != null && netUnit < (line.cost ?? 0) ? 'التكلفة' : `الحد الأدنى (${formatMoney(line.minSalePrice)})`}.
-            {can(P.SalesPriceOverride) ? ' لديك صلاحية البيع بهذا السعر.' : ' لن يُقبل إلا بصلاحية خاصة.'}
+            السعر أقل من التكلفة.{can(P.SalesPriceOverride) ? ' لديك صلاحية البيع بهذا السعر.' : ' لن يُقبل إلا بصلاحية خاصة.'}
           </p>
         )}
       </div>

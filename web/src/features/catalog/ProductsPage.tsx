@@ -148,7 +148,10 @@ export function ProductsPage() {
                       <span className="ltr inline-block">{p.sku}</span> · {p.categoryName}
                     </p>
                     <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="tabular text-[15px] font-bold text-brand-800">{formatMoney(p.retailPrice)}</span>
+                      <span className="tabular text-[15px] font-bold text-brand-800">
+                        {formatMoney(p.retailPrice)}
+                        {p.minSalePrice > 0 && <span className="ms-1.5 text-xs font-normal text-muted">أقل سعر {formatMoney(p.minSalePrice)}</span>}
+                      </span>
                       <StockBadge status={p.stockStatus} quantity={p.quantity} unit={p.unitName} />
                     </div>
                   </div>
