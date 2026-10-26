@@ -47,6 +47,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,woff2,svg,png}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/swagger/],
+        // Phone notifications (push + tap to open) live in their own small file.
+        importScripts: ['push-sw.js'],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {

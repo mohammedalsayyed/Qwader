@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { refreshSession, session, type CurrentUser } from '@/api/client';
 import { authApi } from '@/api/endpoints';
 import type { Permission } from './permissions';
+import { forgetDeviceOnLogout } from '@/lib/push';
 
 type Status = 'loading' | 'authenticated' | 'anonymous' | 'offline';
 
@@ -65,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
+      await forgetDeviceOnLogout();
       await authApi.logout();
     } finally {
       session.set(null);

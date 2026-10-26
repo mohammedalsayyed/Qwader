@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Qwader.Domain.Administration;
+using Qwader.Domain.Notifications;
 
 namespace Qwader.Infrastructure.Persistence.Configurations;
 
@@ -11,6 +12,19 @@ public sealed class SettingConfiguration : IEntityTypeConfiguration<Setting>
         b.HasKey(s => s.Key);
         b.Property(s => s.Key).HasMaxLength(100).IsUnicode(false);
         b.Property(s => s.Value).HasMaxLength(2000).IsRequired();
+    }
+}
+
+public sealed class PushSubscriptionConfiguration : IEntityTypeConfiguration<PushSubscription>
+{
+    public void Configure(EntityTypeBuilder<PushSubscription> b)
+    {
+        b.Property(s => s.Endpoint).HasMaxLength(800).IsUnicode(false).IsRequired();
+        b.HasIndex(s => s.Endpoint).IsUnique();
+        b.Property(s => s.P256dh).HasMaxLength(200).IsUnicode(false).IsRequired();
+        b.Property(s => s.Auth).HasMaxLength(100).IsUnicode(false).IsRequired();
+        b.Property(s => s.Device).HasMaxLength(200);
+        b.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

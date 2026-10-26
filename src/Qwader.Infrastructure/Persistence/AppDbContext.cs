@@ -10,6 +10,7 @@ using Qwader.Domain.Files;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Identity;
 using Qwader.Domain.Inventory;
+using Qwader.Domain.Notifications;
 using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 
@@ -62,6 +63,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<ReceiptVoucher> ReceiptVouchers => Set<ReceiptVoucher>();
     public DbSet<PaymentVoucher> PaymentVouchers => Set<PaymentVoucher>();
     public DbSet<Expense> Expenses => Set<Expense>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

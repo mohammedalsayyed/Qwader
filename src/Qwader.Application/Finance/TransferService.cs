@@ -2,9 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Customers;
+using Qwader.Application.Notifications;
 using Qwader.Domain.Administration;
 using Qwader.Domain.Files;
 using Qwader.Domain.Finance;
+using Qwader.Domain.Identity;
+using Qwader.Domain.Notifications;
 
 namespace Qwader.Application.Finance;
 
@@ -31,7 +34,8 @@ public sealed class TransferService(
     IIdempotencyService idempotency,
     ICurrentUser currentUser,
     IClock clock,
-    IAuditService audit) : ITransferService
+    IAuditService audit,
+    IPushNotifier push) : ITransferService
 {
     private const string CreateOperation = "Transfer.Create";
 
@@ -93,6 +97,8 @@ public sealed class TransferService(
         audit.Log("Transfer.Create", "IncomingTransfer", transfer.Id.ToString(), null, new { transfer.Number, transfer.Amount, transfer.SenderName, transfer.ReferenceNo });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        push.Notify(PushTopics.Transfers, new PushMessage("حوالة جديدة بانتظار التحقق",
+            $"{transfer.SenderName} — {PushMessage.Money(transfer.Amount)}", "/transfers"), Permissions.TransfersReview);
         return await GetAsync(transfer.Id, ct);
     }
 

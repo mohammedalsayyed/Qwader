@@ -1,7 +1,7 @@
 import { Suspense, useState } from 'react';
 import { Spinner } from '@/components/ui/Feedback';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
-import { Download, KeyRound, LogOut, Menu, UserCircle2 } from 'lucide-react';
+import { BellRing, Download, KeyRound, LogOut, Menu, UserCircle2 } from 'lucide-react';
 import { IosInstallSheet, OfflineBanner, useInstall } from '@/app/pwa';
 import { Credit } from './Credit';
 import { useAuth } from '@/auth/AuthProvider';
@@ -186,6 +186,16 @@ function TopBar() {
           }}
         >
           <KeyRound className="size-5 text-muted" /> تغيير كلمة المرور
+        </button>
+        <button
+          type="button"
+          className="flex h-12 w-full items-center gap-3 rounded-xl px-3 text-start hover:bg-canvas"
+          onClick={() => {
+            setMenuOpen(false);
+            navigate('/account/notifications');
+          }}
+        >
+          <BellRing className="size-5 text-muted" /> الإشعارات على هذا الجهاز
         </button>
         {install.available && (
           <button

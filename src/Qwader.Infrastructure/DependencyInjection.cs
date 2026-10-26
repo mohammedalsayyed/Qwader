@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Auth;
+using Qwader.Application.Notifications;
 using Qwader.Application.Settings;
 using Qwader.Application.Users;
 using Qwader.Domain.Identity;
@@ -53,6 +54,12 @@ public static class DependencyInjection
         services.AddScoped<IIdempotencyService, IdempotencyService>();
         services.AddScoped<IFileStorage, LocalFileStorage>();
         services.AddScoped<ISystemResetService, SystemResetService>();
+        services.AddSingleton<PushQueue>();
+        services.AddSingleton<VapidKeys>();
+        services.AddSingleton<IPushNotifier, PushNotifier>();
+        services.AddSingleton<IPushSender, WebPushSender>();
+        services.AddScoped<IPushSubscriptionService, PushSubscriptionService>();
+        services.AddHostedService<PushDispatcher>();
         services.AddSingleton<IExcelService, ExcelService>();
 
         services.AddScoped<IAuthService, AuthService>();

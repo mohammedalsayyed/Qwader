@@ -2,7 +2,10 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Qwader.Application.Auth;
+using Qwader.Infrastructure.Services;
 
 namespace Qwader.IntegrationTests;
 
@@ -48,6 +51,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         _ = Services; // building the host migrates and seeds the fresh database
     }
 
+    /// <summary>Notifications the API would have sent to phones.</summary>
+    public FakePushSender Push { get; } = new();
+
+    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder) =>
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IPushSender>();
+            services.AddSingleton<IPushSender>(Push);
+        });
+
     Task IAsyncLifetime.DisposeAsync() => Task.CompletedTask;
 
     public HttpClient CreateCookieClient() =>
@@ -79,3 +92,30 @@ public static class TestJson
 }
 
 public sealed record ProblemBody(string Title, int Status, Dictionary<string, string[]>? Errors);
+
+public sealed class FakePushSender : IPushSender
+{
+    private readonly List<(string Endpoint, string Payload)> sent = [];
+
+    public Task<PushResult> SendAsync(Qwader.Domain.Notifications.PushSubscription subscription, string payload, CancellationToken ct)
+    {
+        lock (sent) sent.Add((subscription.Endpoint, payload));
+        return Task.FromResult(subscription.Endpoint.Contains("gone") ? PushResult.Gone : PushResult.Sent);
+    }
+
+    /// <summary>Waits briefly for the background sender to deliver to <paramref name="endpoint"/> a message containing <paramref name="text"/>.</summary>
+    public async Task<bool> WaitForAsync(string endpoint, string text, int timeoutMs = 5000)
+    {
+        for (var waited = 0; waited < timeoutMs; waited += 50)
+        {
+            lock (sent) if (sent.Any(s => s.Endpoint == endpoint && s.Payload.Contains(text))) return true;
+            await Task.Delay(50);
+        }
+        return false;
+    }
+
+    public bool Received(string endpoint, string text)
+    {
+        lock (sent) return sent.Any(s => s.Endpoint == endpoint && s.Payload.Contains(text));
+    }
+}

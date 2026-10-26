@@ -26,6 +26,7 @@ const PurchasesPage = page(() => import('@/features/purchasing/PurchasesPage'), 
 const PurchaseFormPage = page(() => import('@/features/purchasing/PurchaseFormPage'), 'PurchaseFormPage');
 const PurchaseDetailPage = page(() => import('@/features/purchasing/PurchaseDetailPage'), 'PurchaseDetailPage');
 const PosPage = page(() => import('@/features/pos/PosPage'), 'PosPage');
+const NotificationsPage = page(() => import('@/features/auth/NotificationsPage'), 'NotificationsPage');
 const SalesPage = page(() => import('@/features/sales/SalesPage'), 'SalesPage');
 const SaleDetailPage = page(() => import('@/features/sales/SaleDetailPage'), 'SaleDetailPage');
 const CustomersPage = page(() => import('@/features/customers/CustomersPage'), 'CustomersPage');
@@ -106,6 +107,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <DashboardPage /> },
           { path: 'account/change-password', element: <ChangePasswordPage /> },
+          { path: 'account/notifications', element: <NotificationsPage /> },
           {
             path: 'users',
             element: (

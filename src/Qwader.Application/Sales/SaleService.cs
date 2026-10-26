@@ -3,6 +3,7 @@ using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Customers;
 using Qwader.Application.Ledgers;
+using Qwader.Application.Notifications;
 using Qwader.Application.Purchasing;
 using Qwader.Application.Settings;
 using Qwader.Domain.Administration;
@@ -10,6 +11,7 @@ using Qwader.Domain.Catalog;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Identity;
 using Qwader.Domain.Inventory;
+using Qwader.Domain.Notifications;
 using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 
@@ -27,7 +29,8 @@ public sealed class SaleService(
     IIdempotencyService idempotency,
     ICurrentUser currentUser,
     IClock clock,
-    IAuditService audit) : ISaleService
+    IAuditService audit,
+    IPushNotifier push) : ISaleService
 {
     private const string CreateOperation = "Sale.Create";
     private const string ReturnOperation = "Sale.Return";
@@ -206,7 +209,36 @@ public sealed class SaleService(
             audit.Log("Sale.PriceOverride", "SaleInvoice", invoice.Id.ToString(), null, new { invoice.Number, Products = overridden });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        await NotifySaleAsync(invoice, payments.Where(p => p.Pending).Select(p => p.Input.Amount), ct);
         return await GetAsync(invoice.Id, ct);
+    }
+
+    /// <summary>Phone notifications once the sale is saved: the sale itself, transfers to verify, and stock that ran low or out.</summary>
+    private async Task NotifySaleAsync(SaleInvoice invoice, IEnumerable<decimal> pendingTransfers, CancellationToken ct)
+    {
+        var seller = await db.Users.Where(u => u.Id == invoice.SalespersonId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
+        push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد {PushMessage.Money(invoice.Total)}",
+            $"{invoice.CustomerName} — فاتورة {invoice.Number}{(seller is null ? "" : $" — {seller}")}", $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
+
+        foreach (var amount in pendingTransfers)
+            push.Notify(PushTopics.Transfers, new PushMessage("حوالة بانتظار التحقق",
+                $"{invoice.CustomerName} — {PushMessage.Money(amount)} (فاتورة {invoice.Number})", "/transfers"), Permissions.TransfersReview);
+
+        // Only the sale that crosses the line raises an alert, not every later sale of a product that is already low.
+        var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
+        var ids = sold.Keys.ToList();
+        var stock = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
+            .Select(p => new { p.Id, p.Name, p.ReorderLevel, Quantity = p.StockBalances.Sum(b => b.Quantity) }).ToListAsync(ct);
+        foreach (var p in stock)
+        {
+            var before = p.Quantity + sold[p.Id];
+            if (p.Quantity <= 0 && before > 0)
+                push.Notify(PushTopics.Stock, new PushMessage("نفد من المخزون", p.Name, $"/products/{p.Id}", $"stock-{p.Id}"), Permissions.InventoryView);
+            else if (p.Quantity <= p.ReorderLevel && before > p.ReorderLevel)
+                push.Notify(PushTopics.Stock, new PushMessage("قارب على النفاد", $"{p.Name} — باقي {p.Quantity:0.##}", $"/products/{p.Id}", $"stock-{p.Id}"),
+                    Permissions.InventoryView);
+        }
     }
 
     // ------------------------------------------------------------------ read
@@ -411,6 +443,8 @@ public sealed class SaleService(
         audit.Log("Sale.Void", "SaleInvoice", id.ToString(), null, new { invoice.Number, invoice.Total }, reason);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        push.Notify(PushTopics.Sales, new PushMessage($"إلغاء الفاتورة {invoice.Number}", $"{PushMessage.Money(invoice.Total)} — {reason}", $"/sales/{id}"),
+            Permissions.SalesViewAll);
         return await GetAsync(id, ct);
     }
 
