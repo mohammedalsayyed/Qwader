@@ -20,6 +20,10 @@ export interface PeriodReport {
   inventoryLosses: number | null;
   expenses: number | null;
   netOperatingProfit: number | null;
+  /** Stock found / counted over, at cost: shown apart, not profit. */
+  inventoryGains: number | null;
+  /** Cost of goods sold + inventory losses + operating expenses (profit = netSales − totalExpenses). */
+  totalExpenses: number | null;
   expensesByCategory: NamedAmount[] | null;
   cashIn: number | null;
   cashOut: number | null;

@@ -31,7 +31,10 @@ public sealed record PeriodReportDto(
     IReadOnlyList<AccountBalanceDto>? Accounts,
     decimal? NewDebt, decimal? Collections, int PendingTransferCount, decimal? PendingTransferAmount,
     // position (as of now)
-    decimal? Receivables, decimal? Payables, decimal? InventoryValue);
+    decimal? Receivables, decimal? Payables, decimal? InventoryValue,
+    // Stock found or counted over: shown, never counted as profit. TotalExpenses = cost of goods sold + losses + operating expenses,
+    // so NetOperatingProfit = NetSales («الإيرادات») − TotalExpenses («المصروفات»).
+    decimal? InventoryGains = null, decimal? TotalExpenses = null);
 
 public sealed record DailyRowDto(DateOnly Day, int Invoices, decimal NetSales, decimal? GrossProfit, decimal? Expenses, decimal? Received);
 
@@ -64,8 +67,13 @@ public interface IReportService
 
 public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IClock clock) : IReportService
 {
-    private static readonly StockMovementType[] LossTypes =
-        [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease, StockMovementType.Found, StockMovementType.CountIncrease];
+    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease];
+
+    /// <summary>
+    /// Surpluses are usually stock that was never entered (or entered through a count instead of a purchase);
+    /// counting them as profit would inflate it by the value of the goods, so they are reported apart.
+    /// </summary>
+    private static readonly StockMovementType[] GainTypes = [StockMovementType.Found, StockMovementType.CountIncrease];
 
     /// <summary>Movements that move money between the store's own pockets or set its starting point: not cash flow.</summary>
     private static readonly AccountTransactionCategory[] NotCashFlow =
@@ -114,17 +122,20 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var netSales = gross - discounts - returns;
         var count = s?.Count ?? 0;
 
-        decimal? cogs = null, damaged = null, grossProfit = null, losses = null, expenses = null, netProfit = null;
+        decimal? cogs = null, damaged = null, grossProfit = null, losses = null, expenses = null, netProfit = null, gains = null, totalExpenses = null;
         IReadOnlyList<NamedAmount>? expensesByCategory = null;
         if (Profit)
         {
             cogs = CostMath.RoundMoney((s?.Cost ?? 0) - (r?.SellableCost ?? 0));
             damaged = CostMath.RoundMoney(r?.DamagedCost ?? 0);
             grossProfit = netSales - cogs;
-            // Shrinkage: damaged, lost and count shortages cost money; found stock and count surpluses give it back.
+            // Shrinkage: damaged, lost and count shortages cost money.
             losses = CostMath.RoundMoney(await db.StockMovements.AsNoTracking()
                 .Where(m => m.OccurredAt >= start && m.OccurredAt < end && LossTypes.Contains(m.Type))
                 .SumAsync(m => (decimal?)(-m.Quantity * m.UnitCost), ct) ?? 0);
+            gains = CostMath.RoundMoney(await db.StockMovements.AsNoTracking()
+                .Where(m => m.OccurredAt >= start && m.OccurredAt < end && GainTypes.Contains(m.Type))
+                .SumAsync(m => (decimal?)(m.Quantity * m.UnitCost), ct) ?? 0);
         }
         if (Profit || Financial)
         {
@@ -132,7 +143,11 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
                 .GroupBy(e => e.Category.Name).Select(g => new NamedAmount(g.Key, g.Sum(e => e.Amount))).ToListAsync(ct);
             expensesByCategory = expenseRows.OrderByDescending(e => e.Amount).ToList();
             expenses = expenseRows.Sum(e => e.Amount);
-            if (Profit) netProfit = grossProfit - expenses - losses;
+            if (Profit)
+            {
+                netProfit = grossProfit - expenses - losses;
+                totalExpenses = cogs + losses + expenses;
+            }
         }
 
         decimal? cashIn = null, cashOut = null, newDebt = null, collections = null, pendingAmount = null, receivables = null, payables = null;
@@ -188,7 +203,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         return new PeriodReportDto(from, to, count, gross, discounts, returns, netSales, count == 0 ? 0 : CostMath.RoundMoney((s?.Net ?? 0) / count),
             cogs, damaged, grossProfit, losses, expenses, netProfit, expensesByCategory,
             cashIn, cashOut, cashIn - cashOut, inByCategory, outByCategory, accounts,
-            newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue);
+            newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue, gains, totalExpenses);
     }
 
     // ------------------------------------------------------------------ daily series

@@ -71,6 +71,29 @@ public sealed class ReportTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Stock_found_or_counted_over_is_not_profit_and_profit_is_revenue_minus_expenses()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 20, openingQuantity: 5, openingCost: 10);
+        var before = await admin.GetFromJsonAsync<PeriodReportDto>("/api/reports/period", TestJson.Options);
+
+        // 100 units appear in a count (e.g. stock that was never entered): worth 1,000 at cost, but not earned.
+        (await admin.AdjustAsync(product.Id, AdjustmentKind.Found, 100)).EnsureSuccessStatusCode();
+        var after = await admin.GetFromJsonAsync<PeriodReportDto>("/api/reports/period", TestJson.Options);
+
+        (after!.NetOperatingProfit - before!.NetOperatingProfit).Should().Be(0);
+        (after.InventoryGains - before.InventoryGains).Should().Be(1000);
+        after.NetOperatingProfit.Should().Be(after.NetSales - after.TotalExpenses);
+    }
+
+    [Fact]
+    public async Task App_version_is_public_for_the_sign_in_page()
+    {
+        var info = await factory.CreateClient().GetFromJsonAsync<System.Text.Json.JsonElement>("/api/app-info");
+        info.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task Daily_series_covers_every_day_of_the_range()
     {
         var admin = await factory.LoginAsync();

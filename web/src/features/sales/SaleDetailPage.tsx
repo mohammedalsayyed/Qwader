@@ -17,6 +17,7 @@ import { errorMessage } from '@/lib/forms';
 import { formatDateTime, formatMoney, formatQuantity } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
+import { amountInWords } from '@/lib/tafqeet';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 
 export function SaleDetailPage() {
@@ -211,6 +212,7 @@ function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: { storeName:
         <p className="flex justify-between"><span>المدفوع</span><span className="tabular">{formatMoney(s.paidAmount)}</span></p>
         {s.remaining > 0 && <p className="flex justify-between font-bold"><span>المتبقي</span><span className="tabular">{formatMoney(s.remaining)}</span></p>}
       </div>
+      <p className="mt-3 rounded border border-black p-2">{amountInWords(s.total)}</p>
       {store?.invoiceFooter && <p className="mt-8 text-center">{store.invoiceFooter}</p>}
       <p className="mt-2 text-center text-[11px] text-gray-500">الموظف: {s.salespersonName}</p>
     </article>

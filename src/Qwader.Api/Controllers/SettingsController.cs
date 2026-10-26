@@ -45,6 +45,16 @@ public sealed class LookupsController(ILookupService lookups) : ControllerBase
     public Task<LookupsDto> Get(CancellationToken ct) => lookups.GetAsync(ct);
 }
 
+/// <summary>Public: the sign-in page shows the version under the copyright line.</summary>
+[ApiController]
+[Route("api/app-info")]
+[AllowAnonymous]
+public sealed class AppInfoController(IConfiguration config) : ControllerBase
+{
+    [HttpGet]
+    public object Get() => new { version = config["App:Version"] ?? "1.0.0" };
+}
+
 [ApiController]
 [Route("api/health")]
 [AllowAnonymous]
