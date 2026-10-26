@@ -137,18 +137,63 @@ public sealed class VoucherService(
             source, voucher.Date, ct);
         if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
             await customers.PostAsync(customerId, CustomerEntryType.Payment, 0, voucher.Amount, source, voucher.Date, ct);
-        await AdjustInvoiceCollectedAsync(voucher, voucher.Amount, ct);
+        await AllocateAsync(voucher, ct);
 
         audit.Log("Voucher.Receipt", "ReceiptVoucher", voucher.Id.ToString(), null, new { voucher.Number, voucher.Amount, voucher.PayerName, voucher.Purpose });
         return voucher;
     }
 
-    /// <summary>Money received for a specific invoice (a confirmed till transfer) shows on that invoice as paid.</summary>
-    private async Task AdjustInvoiceCollectedAsync(ReceiptVoucher voucher, decimal delta, CancellationToken ct)
+    /// <summary>
+    /// A collection pays the customer's debts so that each invoice shows what is still owed on it:
+    /// first the invoice it was for (a confirmed till transfer), then the opening balance, then the oldest open invoices.
+    /// Whatever is left is the customer's credit («له»). Runs after the customer ledger update, whose row lock
+    /// serializes collections for the same customer.
+    /// </summary>
+    private async Task AllocateAsync(ReceiptVoucher voucher, CancellationToken ct)
     {
-        if (voucher.SaleInvoiceId is not { } invoiceId || voucher.Purpose != ReceiptPurpose.DebtCollection) return;
-        await db.SaleInvoices.Where(s => s.Id == invoiceId)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + delta), ct);
+        if (voucher.CustomerId is not { } customerId || voucher.Purpose != ReceiptPurpose.DebtCollection) return;
+
+        var open = await db.SaleInvoices.Where(s => s.CustomerId == customerId && s.Status != SaleStatus.Voided)
+            .Select(s => new
+            {
+                s.Id, s.Date,
+                Open = s.Total - s.PaidAmount - s.CollectedAmount
+                    - (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0),
+            })
+            .Where(x => x.Open > 0.004m).OrderBy(x => x.Date).ThenBy(x => x.Id).ToListAsync(ct);
+        var openingDebt = await db.CustomerLedgerEntries.Where(e => e.CustomerId == customerId && e.Type == CustomerEntryType.Opening)
+            .SumAsync(e => (decimal?)(e.Debit - e.Credit), ct) ?? 0;
+        var openingPaid = await db.ReceiptAllocations.Where(a => a.CustomerId == customerId && a.SaleInvoiceId == null)
+            .SumAsync(a => (decimal?)a.Amount, ct) ?? 0;
+
+        var left = voucher.Amount;
+        var allocations = new List<ReceiptAllocation>();
+        void Take(int? invoiceId, decimal owed)
+        {
+            var amount = Math.Min(left, owed);
+            if (amount <= 0.004m) return;
+            allocations.Add(new ReceiptAllocation { ReceiptVoucherId = voucher.Id, CustomerId = customerId, SaleInvoiceId = invoiceId, Amount = amount });
+            left -= amount;
+        }
+
+        if (open.FirstOrDefault(i => i.Id == voucher.SaleInvoiceId) is { } preferred) Take(preferred.Id, preferred.Open);
+        Take(null, openingDebt - openingPaid);
+        foreach (var invoice in open.Where(i => i.Id != voucher.SaleInvoiceId)) Take(invoice.Id, invoice.Open);
+
+        db.ReceiptAllocations.AddRange(allocations);
+        foreach (var a in allocations.Where(a => a.SaleInvoiceId is not null))
+            await db.SaleInvoices.Where(s => s.Id == a.SaleInvoiceId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + a.Amount), ct);
+    }
+
+    /// <summary>A voided collection gives back what it paid: the invoices are owed again.</summary>
+    private async Task ReleaseAsync(ReceiptVoucher voucher, CancellationToken ct)
+    {
+        var allocations = await db.ReceiptAllocations.Where(a => a.ReceiptVoucherId == voucher.Id).ToListAsync(ct);
+        foreach (var a in allocations.Where(a => a.SaleInvoiceId is not null))
+            await db.SaleInvoices.Where(s => s.Id == a.SaleInvoiceId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount - a.Amount), ct);
+        db.ReceiptAllocations.RemoveRange(allocations);
     }
 
     public async Task<VoucherDto> VoidReceiptAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
@@ -163,7 +208,7 @@ public sealed class VoucherService(
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct);
         if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
             await customers.PostAsync(customerId, CustomerEntryType.Reversal, voucher.Amount, 0, source, now, ct);
-        await AdjustInvoiceCollectedAsync(voucher, -voucher.Amount, ct);
+        await ReleaseAsync(voucher, ct);
 
         voucher.Status = VoucherStatus.Voided;
         voucher.VoidedAt = now;

@@ -63,7 +63,7 @@ public sealed class IncomingTransfersController(ITransferService transfers) : Co
 
     [HttpPost("{id:int}/confirm")]
     [HasPermission(Permissions.TransfersReview)]
-    public Task<IncomingTransferDto> Confirm(int id, CancellationToken ct) => transfers.ConfirmAsync(id, ct);
+    public Task<IncomingTransferDto> Confirm(int id, [FromQuery] bool acceptCredit, CancellationToken ct) => transfers.ConfirmAsync(id, acceptCredit, ct);
 
     [HttpPost("{id:int}/reject")]
     [HasPermission(Permissions.TransfersReview)]

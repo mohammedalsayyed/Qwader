@@ -43,6 +43,18 @@ public sealed class AccountTransferConfiguration : IEntityTypeConfiguration<Acco
     }
 }
 
+public sealed class ReceiptAllocationConfiguration : IEntityTypeConfiguration<ReceiptAllocation>
+{
+    public void Configure(EntityTypeBuilder<ReceiptAllocation> b)
+    {
+        b.Property(a => a.Amount).HasPrecision(18, 2);
+        b.HasOne<ReceiptVoucher>().WithMany().HasForeignKey(a => a.ReceiptVoucherId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Qwader.Domain.Sales.Customer>().WithMany().HasForeignKey(a => a.CustomerId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Qwader.Domain.Sales.SaleInvoice>().WithMany().HasForeignKey(a => a.SaleInvoiceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(a => new { a.CustomerId, a.SaleInvoiceId });
+    }
+}
+
 public sealed class ReceiptVoucherConfiguration : IEntityTypeConfiguration<ReceiptVoucher>
 {
     public void Configure(EntityTypeBuilder<ReceiptVoucher> b)

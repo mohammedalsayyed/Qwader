@@ -15,6 +15,12 @@ public sealed class ForbiddenException(string message = "ليست لديك صل�
 /// <summary>Request conflicts with current state (duplicate code, stale version, …).</summary>
 public sealed class ConflictException(string message) : AppException(message, 409);
 
+/// <summary>
+/// Allowed, but probably a mistake: the client should ask the user and repeat the request with an explicit «yes»
+/// (e.g. a transfer larger than the customer's debt). 428 keeps it apart from real conflicts.
+/// </summary>
+public sealed class ConfirmationRequiredException(string message) : AppException(message, 428);
+
 /// <summary>A business rule rejected the operation (insufficient stock, price below minimum, …).</summary>
 public sealed class BusinessRuleException(string message) : AppException(message, 422);
 

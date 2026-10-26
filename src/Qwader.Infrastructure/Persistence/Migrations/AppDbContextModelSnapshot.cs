@@ -986,6 +986,38 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Finance.ReceiptAllocation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReceiptVoucherId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SaleInvoiceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptVoucherId");
+
+                    b.HasIndex("SaleInvoiceId");
+
+                    b.HasIndex("CustomerId", "SaleInvoiceId");
+
+                    b.ToTable("ReceiptAllocations");
+                });
+
             modelBuilder.Entity("Qwader.Domain.Finance.ReceiptVoucher", b =>
                 {
                     b.Property<int>("Id")
@@ -2538,6 +2570,26 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Navigation("FinancialAccount");
 
                     b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Qwader.Domain.Finance.ReceiptAllocation", b =>
+                {
+                    b.HasOne("Qwader.Domain.Sales.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Finance.ReceiptVoucher", null)
+                        .WithMany()
+                        .HasForeignKey("ReceiptVoucherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Sales.SaleInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("SaleInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Qwader.Domain.Finance.ReceiptVoucher", b =>

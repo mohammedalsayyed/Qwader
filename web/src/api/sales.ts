@@ -18,6 +18,8 @@ export interface SaleListItem {
   status: SaleStatus;
   salespersonName: string;
   itemCount: number;
+  /** Still owed: after later collections and returns credited to the customer. */
+  remaining: number;
 }
 
 export interface SaleLine {

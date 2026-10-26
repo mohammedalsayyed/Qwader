@@ -180,7 +180,8 @@ export const transfersApi = {
     idempotencyKey: string; senderName: string; senderPhone?: string | null; amount: number; channel?: string | null; financialAccountId: number;
     referenceNo?: string | null; transferDate?: string | null; proofFileId?: string | null; customerId?: number | null; notes?: string | null;
   }) => api<IncomingTransfer>('/incoming-transfers', { method: 'POST', body: input }),
-  confirm: (id: number) => api<IncomingTransfer>(`/incoming-transfers/${id}/confirm`, { method: 'POST' }),
+  confirm: (id: number, acceptCredit = false) =>
+    api<IncomingTransfer>(`/incoming-transfers/${id}/confirm`, { method: 'POST', query: acceptCredit ? { acceptCredit: true } : undefined }),
   reject: (id: number, reason: string) => api<IncomingTransfer>(`/incoming-transfers/${id}/reject`, { method: 'POST', body: { reason } }),
 };
 

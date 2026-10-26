@@ -141,3 +141,17 @@ public class Expense : AuditableEntity
     public FinancialAccount FinancialAccount { get; set; } = null!;
     public PaymentVoucher PaymentVoucher { get; set; } = null!;
 }
+
+/// <summary>
+/// Which debt a collection paid. Money a customer pays later goes to the invoice it was for (a confirmed till transfer),
+/// then to the opening balance, then to the oldest unpaid invoices; anything left is the customer's credit.
+/// </summary>
+public class ReceiptAllocation
+{
+    public long Id { get; set; }
+    public int ReceiptVoucherId { get; set; }
+    public int CustomerId { get; set; }
+    /// <summary>Null: the customer's opening balance (debt from before the system).</summary>
+    public int? SaleInvoiceId { get; set; }
+    public decimal Amount { get; set; }
+}

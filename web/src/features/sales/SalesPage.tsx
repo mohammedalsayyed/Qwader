@@ -55,7 +55,7 @@ export function SalesPage() {
         <>
           <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
             {query.data.items.map((s) => {
-              const due = s.total - s.paidAmount;
+              const due = s.remaining;
               return (
                 <li key={s.id}>
                   <Link to={`/sales/${s.id}`} className="block rounded-card border border-line bg-surface p-4 hover:border-brand-200">

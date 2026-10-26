@@ -37,6 +37,7 @@ public sealed class SystemResetService(
         {
             // Documents first (children before parents); a transfer and its receipt voucher point at each other, so unlink them first.
             await db.IncomingTransfers.ExecuteUpdateAsync(s => s.SetProperty(t => t.ReceiptVoucherId, (int?)null), ct);
+            deleted += await db.ReceiptAllocations.ExecuteDeleteAsync(ct);
             deleted += await db.Expenses.ExecuteDeleteAsync(ct);
             deleted += await db.PaymentVouchers.ExecuteDeleteAsync(ct);
             deleted += await db.ReceiptVouchers.ExecuteDeleteAsync(ct);

@@ -247,7 +247,8 @@ public sealed class SaleService(
         if (!CanSeeAll) query = query.Where(s => s.SalespersonId == currentUser.UserId);
         if (request.Status is { } status) query = query.Where(s => s.Status == status);
         if (request.CustomerId is { } customerId) query = query.Where(s => s.CustomerId == customerId);
-        if (request.Unpaid == true) query = query.Where(s => s.PaidAmount + s.CollectedAmount < s.Total && s.Status != SaleStatus.Voided);
+        if (request.Unpaid == true)
+            query = query.Where(s => s.Status != SaleStatus.Voided && s.PaidAmount + s.CollectedAmount + (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0) < s.Total - 0.004m);
         if (request.From is not null || request.To is not null)
         {
             var (start, end) = clock.LocalDaysToUtcRange(request.From ?? new DateOnly(2000, 1, 1), request.To ?? clock.LocalToday);
@@ -269,7 +270,8 @@ public sealed class SaleService(
                 db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id).Sum(r => (decimal?)r.Total) ?? 0,
                 s.Status,
                 users.Where(u => u.Id == s.SalespersonId).Select(u => u.FullName).FirstOrDefault() ?? "",
-                s.Lines.Count))
+                s.Lines.Count,
+                s.Status == SaleStatus.Voided ? 0 : s.Total - s.PaidAmount - s.CollectedAmount - (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0)))
             .ToPagedAsync(request, ct);
     }
 
@@ -304,12 +306,15 @@ public sealed class SaleService(
 
         var showCost = CanSeeProfit;
         var returnedTotal = returns.Sum(r => r.Total);
+        // Owed on this invoice: total − paid at the till − collected later − goods returned against the customer's balance.
+        var remaining = invoice.Status == SaleStatus.Voided ? 0
+            : Math.Max(0, invoice.Total - invoice.PaidAmount - invoice.CollectedAmount - returns.Where(r => r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => r.Total));
         decimal? cost = showCost ? CostMath.RoundMoney(invoice.TotalCost - returnedCost) : null;
         decimal? profit = showCost && invoice.Status != SaleStatus.Voided ? CostMath.RoundMoney(invoice.Total - returnedTotal - cost!.Value) : null;
 
         return new SaleDetailDto(invoice.Id, invoice.Number, invoice.Date, invoice.Status, invoice.PriceTier,
             invoice.CustomerId, invoice.CustomerName, invoice.CustomerPhone, s.IsWalkIn,
-            invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount + invoice.CollectedAmount, Math.Max(0, invoice.Total - invoice.PaidAmount - invoice.CollectedAmount),
+            invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount + invoice.CollectedAmount, remaining,
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden)).ToList(),
@@ -435,6 +440,9 @@ public sealed class SaleService(
         }
 
         invoice.Status = SaleStatus.Voided;
+        // Money collected later against this invoice stays with the customer as credit: it no longer pays anything.
+        await db.ReceiptAllocations.Where(a => a.SaleInvoiceId == id).ExecuteDeleteAsync(ct);
+        invoice.CollectedAmount = 0;
         invoice.VoidedAt = now;
         invoice.VoidedById = currentUser.UserId;
         invoice.VoidReason = reason;

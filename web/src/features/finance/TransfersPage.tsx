@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeftRight, CheckCircle2, Paperclip, Plus, XCircle } from 'lucide-react';
 import { transfersApi, type IncomingTransfer, type TransferStatus } from '@/api/finance';
+import { ApiError } from '@/api/client';
 import { customersApi, type CustomerListItem } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -173,7 +174,18 @@ function TransferSheet({ transfer: t, onClose }: { transfer: IncomingTransfer; o
     toast.success(msg);
     onClose();
   };
-  const approve = useMutation({ mutationFn: () => transfersApi.confirm(t.id), onSuccess: (r) => done(`تم تأكيد الحوالة وإصدار سند القبض ${r.receiptVoucherNumber}`), onError: (e) => toast.error(errorMessage(e)) });
+  const approve = useMutation({
+    mutationFn: (acceptCredit: boolean) => transfersApi.confirm(t.id, acceptCredit),
+    onSuccess: (r) => done(`تم تأكيد الحوالة وإصدار سند القبض ${r.receiptVoucherNumber}`),
+    onError: async (e) => {
+      // 428: allowed but suspicious (more than the customer owes, maybe a duplicate) — the reviewer decides.
+      if (e instanceof ApiError && e.status === 428) {
+        if (await confirm({ title: 'الحوالة أكبر من دين العميل', message: e.message, confirmLabel: 'تأكيد على أي حال', danger: true })) approve.mutate(true);
+        return;
+      }
+      toast.error(errorMessage(e));
+    },
+  });
   const reject = useMutation({ mutationFn: () => transfersApi.reject(t.id, reason.trim()), onSuccess: () => done('تم رفض الحوالة'), onError: (e) => toast.error(errorMessage(e)) });
   const reviewer = can(P.TransfersReview) && t.status === 'Pending';
 
@@ -191,7 +203,7 @@ function TransferSheet({ transfer: t, onClose }: { transfer: IncomingTransfer; o
         <div className="flex gap-2">
           <Button block size="lg" loading={approve.isPending} onClick={async () => {
             if (await confirm({ title: 'تأكيد الحوالة', message: `تأكدت أن ${formatMoney(t.amount)} وصلت فعلًا إلى «${t.accountName}»؟ سيُضاف المبلغ للرصيد${t.customerName ? ` ويُخصم من دين ${t.customerName}` : ''}.`, confirmLabel: 'نعم، وصلت' }))
-              approve.mutate();
+              approve.mutate(false);
           }}><CheckCircle2 className="size-5" /> وصلت — تأكيد</Button>
           <Button size="lg" variant="outline" onClick={() => setRejecting(true)}><XCircle className="size-5 text-danger" /> رفض</Button>
         </div>

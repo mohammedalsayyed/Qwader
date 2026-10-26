@@ -222,7 +222,7 @@ function CustomerInvoices({ customerId }: { customerId: number }) {
             <Link to={`/sales/${s.id}`} className="flex items-center justify-between gap-3 p-3">
               <div>
                 <p className="ltr font-semibold">{s.number}</p>
-                <p className="text-xs text-muted">{formatDateTime(s.date)}{s.total > s.paidAmount && s.status !== 'Voided' && <span className="text-danger"> · آجل {formatMoney(s.total - s.paidAmount)}</span>}</p>
+                <p className="text-xs text-muted">{formatDateTime(s.date)}{s.remaining > 0.004 && <span className="text-danger"> · آجل {formatMoney(s.remaining)}</span>}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="tabular font-bold">{formatMoney(s.total)}</span>

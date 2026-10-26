@@ -33,7 +33,9 @@ public sealed record SaleReturnRequest(
 
 public sealed record SaleListItemDto(
     int Id, string Number, DateTime Date, string CustomerName, string? CustomerPhone, bool IsWalkIn,
-    decimal Total, decimal PaidAmount, decimal ReturnedTotal, SaleStatus Status, string SalespersonName, int ItemCount);
+    decimal Total, decimal PaidAmount, decimal ReturnedTotal, SaleStatus Status, string SalespersonName, int ItemCount,
+    /// <summary>Still owed on the invoice (after later collections and returns credited to the customer).</summary>
+    decimal Remaining = 0);
 
 public sealed record SaleLineDto(
     int Id, int ProductId, string Sku, string ProductName, string UnitName, decimal Quantity, decimal UnitPrice, decimal LineDiscount,

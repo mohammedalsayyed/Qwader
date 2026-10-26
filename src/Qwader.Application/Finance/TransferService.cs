@@ -16,7 +16,8 @@ public interface ITransferService
     Task<PagedResult<IncomingTransferDto>> ListAsync(TransferListRequest request, CancellationToken ct = default);
     Task<IncomingTransferDto> GetAsync(int id, CancellationToken ct = default);
     Task<IncomingTransferDto> CreateAsync(CreateIncomingTransferRequest request, CancellationToken ct = default);
-    Task<IncomingTransferDto> ConfirmAsync(int id, CancellationToken ct = default);
+    /// <param name="acceptCredit">The reviewer already agreed that the customer ends up with credit («له»).</param>
+    Task<IncomingTransferDto> ConfirmAsync(int id, bool acceptCredit = false, CancellationToken ct = default);
     Task<IncomingTransferDto> RejectAsync(int id, RejectTransferRequest request, CancellationToken ct = default);
 
     /// <summary>
@@ -129,12 +130,30 @@ public sealed class TransferService(
         return transfer;
     }
 
-    public async Task<IncomingTransferDto> ConfirmAsync(int id, CancellationToken ct = default)
+    public async Task<IncomingTransferDto> ConfirmAsync(int id, bool acceptCredit = false, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var transfer = await LockAsync(id, ct);
         if (transfer.Status != TransferStatus.Pending)
             throw new BusinessRuleException(transfer.Status == TransferStatus.Confirmed ? "الحوالة مؤكدة من قبل" : "الحوالة مرفوضة ولا يمكن تأكيدها");
+
+        // More than the customer owes is usually the same transfer entered twice: ask before turning it into credit.
+        if (!acceptCredit && transfer.CustomerId is { } customerId)
+        {
+            var customer = await db.Customers.AsNoTracking().Where(c => c.Id == customerId).Select(c => new { c.Name, c.Balance }).FirstAsync(ct);
+            if (transfer.Amount > customer.Balance + 0.009m)
+            {
+                var since = transfer.TransferDate.AddDays(-7);
+                var twin = await db.IncomingTransfers.AsNoTracking()
+                    .Where(t => t.Id != transfer.Id && t.CustomerId == customerId && t.Status == TransferStatus.Confirmed
+                        && t.Amount == transfer.Amount && t.TransferDate >= since)
+                    .Select(t => t.Number).FirstOrDefaultAsync(ct);
+                var owed = Math.Max(0, customer.Balance);
+                throw new ConfirmationRequiredException(
+                    $"الحوالة ({transfer.Amount:0.##} ₪) أكبر من دين «{customer.Name}» ({owed:0.##} ₪)، فسيصبح له {transfer.Amount - owed:0.##} ₪ رصيدًا."
+                    + (twin is null ? "" : $" انتبه: يوجد حوالة مؤكدة بنفس المبلغ لنفس العميل ({twin}) — قد تكون مكررة."));
+            }
+        }
 
         // Confirmation is the moment the money counts: a receipt voucher moves it into the account (and off the customer's debt).
         var voucher = await vouchers.PostReceiptAsync(new Domain.Finance.ReceiptVoucher
