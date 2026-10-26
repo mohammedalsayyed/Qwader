@@ -89,7 +89,7 @@ function UsersTab() {
         <EmptyState icon={<UserRound className="size-10" />} title="لا يوجد مستخدمون مطابقون" />
       ) : (
         <>
-          <ul className="grid gap-2 md:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {query.data.items.map((u) => (
               <li key={u.id}>
                 <button type="button" onClick={() => setEditing(u)} className="w-full text-start">

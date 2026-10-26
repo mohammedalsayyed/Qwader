@@ -120,7 +120,7 @@ export function ProductDetailPage() {
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'info', label: 'التفاصيل' }, { value: 'movements', label: 'سجل الحركات' }]} />
 
       {tab === 'info' ? (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card className="px-4">
             <InfoList items={[
               { label: 'الصنف', value: p.categoryName },

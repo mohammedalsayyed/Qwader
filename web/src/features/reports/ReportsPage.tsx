@@ -196,7 +196,7 @@ export function ReportsPage() {
 
       {/* ---------- positions (as of now) ---------- */}
       {financial && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Section title={`ذمم العملاء${p?.receivables ? ` — ${formatMoney(p.receivables)}` : ''}`} exportKey="receivables" onExport={exportExcel}>
             <QueryList query={receivables} empty="لا توجد ديون على العملاء" limit={10}>
               {(rows) => rows.filter((b) => b.balance > 0).map((b) => (

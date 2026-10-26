@@ -19,7 +19,7 @@ export function RolesTab() {
 
   return (
     <>
-      <ul className="grid gap-2 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
         {roles.data.map((r) => (
           <li key={r.id}>
             <button type="button" className="w-full text-start" onClick={() => setEditing(r)}>

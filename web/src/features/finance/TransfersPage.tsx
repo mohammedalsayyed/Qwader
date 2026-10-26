@@ -53,7 +53,7 @@ export function TransfersPage() {
       {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> :
         query.data.items.length === 0 ? <EmptyState icon={<ArrowLeftRight className="size-10" />} title={tab === 'Pending' ? 'لا توجد حوالات بانتظار التحقق' : 'لا توجد حوالات'} /> : (
           <>
-            <ul className={cn('grid gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
+            <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
               {query.data.items.map((t) => (
                 <li key={t.id}>
                   <button type="button" onClick={() => setOpen(t)} className="block w-full rounded-card border border-line bg-surface p-4 text-start hover:border-brand-200">

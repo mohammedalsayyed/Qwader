@@ -54,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<IIdempotencyService, IdempotencyService>();
         services.AddScoped<IFileStorage, LocalFileStorage>();
         services.AddScoped<ISystemResetService, SystemResetService>();
+        services.AddScoped<ISystemBackupService, SystemBackupService>();
         services.AddSingleton<PushQueue>();
         services.AddSingleton<VapidKeys>();
         services.AddSingleton<IPushNotifier, PushNotifier>();

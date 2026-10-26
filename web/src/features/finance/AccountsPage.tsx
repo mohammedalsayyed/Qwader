@@ -51,7 +51,7 @@ export function AccountsPage() {
           <Button variant="outline" onClick={() => setEditing('new')}><Plus className="size-4" /> حساب جديد</Button>
         </div>
       )}
-      <ul className="grid gap-2 md:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
         {query.data.map((a) => {
           const Icon = TYPE_ICON[a.type];
           return (

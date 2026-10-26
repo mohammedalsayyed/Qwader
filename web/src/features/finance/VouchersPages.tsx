@@ -60,7 +60,7 @@ export function VouchersPage({ kind }: { kind: Kind }) {
         query.data.items.length === 0 ? <EmptyState icon={<meta.icon className="size-10" />} title="لا توجد سندات في هذه الفترة" /> : (
           <>
             <p className="mb-2 text-sm text-muted">مجموع هذه الصفحة: <b className="tabular">{formatMoney(total)}</b></p>
-            <ul className={cn('grid gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
+            <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
               {query.data.items.map((v) => (
                 <li key={v.id}>
                   <Link to={`${meta.path}/${v.id}`} className="block rounded-card border border-line bg-surface p-4 hover:border-brand-200">

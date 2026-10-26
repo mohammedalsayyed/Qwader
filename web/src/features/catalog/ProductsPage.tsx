@@ -137,7 +137,7 @@ export function ProductsPage() {
         />
       ) : (
         <>
-          <ul className={cn('grid gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
+          <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
             {query.data.items.map((p) => (
               <li key={p.id}>
                 <Link to={`/products/${p.id}`} className="flex items-center gap-3 rounded-card border border-line bg-surface p-3 transition hover:border-brand-200 active:bg-brand-50">
@@ -150,7 +150,7 @@ export function ProductsPage() {
                     <div className="mt-1.5 flex items-center justify-between gap-2">
                       <span className="tabular text-[15px] font-bold text-brand-800">
                         {formatMoney(p.retailPrice)}
-                        {p.minSalePrice > 0 && <span className="ms-1.5 text-xs font-normal text-muted">أقل سعر {formatMoney(p.minSalePrice)}</span>}
+                        {p.minSalePrice > 0 && <span className="ms-1.5 whitespace-nowrap text-xs font-normal text-muted">أقل سعر {formatMoney(p.minSalePrice)}</span>}
                       </span>
                       <StockBadge status={p.stockStatus} quantity={p.quantity} unit={p.unitName} />
                     </div>

@@ -53,7 +53,7 @@ export function SuppliersPage() {
         <EmptyState icon={<Truck className="size-10" />} title={term ? 'لا يوجد موردون مطابقون' : 'لا يوجد موردون بعد'} />
       ) : (
         <>
-          <ul className="grid gap-2 md:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {query.data.items.map((s) => (
               <li key={s.id}>
                 <Link to={`/suppliers/${s.id}`} className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 hover:border-brand-200">

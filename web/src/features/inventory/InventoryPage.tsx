@@ -83,7 +83,7 @@ function Overview() {
           <EmptyState icon={<PackageCheck className="size-10" />} title="كل المنتجات فوق حد التنبيه" />
         ) : (
           <>
-            <ul className="grid gap-2 md:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {reorder.data.items.map((p) => (
                 <li key={p.id}>
                   <Link to={`/products/${p.id}`} className="flex items-center gap-3 rounded-card border border-line bg-surface p-3">

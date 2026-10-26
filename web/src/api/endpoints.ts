@@ -1,4 +1,4 @@
-import { api, type AuthResponse, type CurrentUser, type PagedResult } from './client';
+import { api, apiDownload, type AuthResponse, type CurrentUser, type PagedResult } from './client';
 
 // ---- Auth ----
 export const authApi = {
@@ -111,6 +111,7 @@ export interface Lookups {
 export const settingsApi = {
   get: () => api<Settings>('/settings'),
   update: (input: Settings) => api<Settings>('/settings', { method: 'PUT', body: input }),
+  backup: () => apiDownload('/settings/backup', undefined, 'qwader-backup.zip'),
   reset: (input: { mode: SystemResetMode; password: string }) =>
     api<{ mode: SystemResetMode; deletedRows: number }>('/settings/reset', { method: 'POST', body: input }),
 };

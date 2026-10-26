@@ -53,7 +53,7 @@ export function SalesPage() {
         <EmptyState icon={<Receipt className="size-10" />} title="لا توجد فواتير في هذه الفترة" />
       ) : (
         <>
-          <ul className={cn('grid gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
+          <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
             {query.data.items.map((s) => {
               const due = s.total - s.paidAmount;
               return (

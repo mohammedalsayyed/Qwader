@@ -53,7 +53,7 @@ export function CustomersPage() {
           description={term ? undefined : 'يُضاف العميل تلقائيًا عند البيع باسمه ورقم جواله، أو من زر «عميل جديد».'} />
       ) : (
         <>
-          <ul className={cn('grid gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
+          <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
             {query.data.items.filter((c) => !c.isWalkIn).map((c) => (
               <li key={c.id}>
                 <Link to={`/customers/${c.id}`} className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 hover:border-brand-200">

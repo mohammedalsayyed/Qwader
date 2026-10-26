@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Minus, PackageX, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
+import { Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
 import { productsApi } from '@/api/catalog';
 import { ApiError } from '@/api/client';
 import type { PriceTier, Sale } from '@/api/sales';
@@ -175,14 +175,21 @@ export function PosPage() {
           <ul className="space-y-2">
             {cart.lines.map((l) => (
               <li key={l.productId} className="rounded-card border border-line bg-surface p-3">
-                <button type="button" onClick={() => setEditing(l)} className="block w-full text-start">
-                  <span className="block font-semibold leading-snug">{l.name}</span>
-                  <span className="tabular block text-sm text-muted">
-                    {formatMoney(l.unitPrice)}
-                    {l.unitPrice !== tierPrice(l, cart.tier) && <span className="ms-1 text-warning">(معدَّل)</span>}
-                    {l.lineDiscount > 0 && <span className="ms-1 text-warning">خصم {formatMoney(l.lineDiscount)}</span>}
-                  </span>
-                </button>
+                <button type="button" onClick={() => setEditing(l)} className="block w-full text-start font-semibold leading-snug">{l.name}</button>
+                {/* The price is a visible button: sellers may change it (never under the minimum sale price). */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <button type="button" onClick={() => setEditing(l)} aria-label={`تعديل سعر ${l.name}`}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 text-sm text-brand-800 hover:bg-brand-100 active:bg-brand-100">
+                    <Pencil className="size-4" aria-hidden />
+                    <span className="tabular font-bold">{formatMoney(l.unitPrice)}</span>
+                    <span className="text-xs">تعديل السعر</span>
+                  </button>
+                  {l.unitPrice !== tierPrice(l, cart.tier) && <span className="text-xs font-semibold text-warning">معدَّل</span>}
+                  {l.lineDiscount > 0 && <span className="text-xs text-warning">خصم {formatMoney(l.lineDiscount)}</span>}
+                  {minimumPrice(l, cart.tier) > 0 && (
+                    <span className="whitespace-nowrap text-xs text-muted">أقل سعر <span className="tabular">{formatMoney(minimumPrice(l, cart.tier))}</span></span>
+                  )}
+                </div>
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
                     <IconButton label="إنقاص الكمية" className="border border-line"
@@ -253,6 +260,10 @@ function Totals({ subtotal, discounts }: { subtotal: number; discounts: number }
   );
 }
 
+/** The lowest price a line may be sold at; for wholesale, a wholesale price set below the minimum is the floor. */
+const minimumPrice = (l: Pick<CartLine, 'minSalePrice' | 'wholesalePrice'>, tier: PriceTier) =>
+  tier === 'Wholesale' ? Math.min(l.minSalePrice, l.wholesalePrice) : l.minSalePrice;
+
 /** Quantity, price and discount of one line. Price/discount changes are checked again by the server. */
 function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose }: {
   line: CartLine;
@@ -274,7 +285,7 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
   const d = parseNumber(discount) ?? 0;
   const netUnit = q && p !== undefined && !Number.isNaN(p) ? (q * p - d) / q : NaN;
   // Anyone may change the price; nobody may go under the minimum sale price (for wholesale, a lower wholesale price is the floor).
-  const minimum = tier === 'Wholesale' ? Math.min(line.minSalePrice, line.wholesalePrice) : line.minSalePrice;
+  const minimum = minimumPrice(line, tier);
   const belowMinimum = !Number.isNaN(netUnit) && netUnit + 0.0001 < minimum;
   const belowCost = !belowMinimum && line.cost != null && !Number.isNaN(netUnit) && netUnit + 0.0001 < line.cost;
 

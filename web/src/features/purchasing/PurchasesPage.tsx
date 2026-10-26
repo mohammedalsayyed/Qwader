@@ -54,7 +54,7 @@ export function PurchasesPage() {
         <EmptyState icon={<Boxes className="size-10" />} title="لا توجد فواتير شراء" />
       ) : (
         <>
-          <ul className="grid gap-2 md:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
             {query.data.items.map((p) => (
               <li key={p.id}>
                 <Link to={`/purchases/${p.id}`} className="block rounded-card border border-line bg-surface p-4 hover:border-brand-200">

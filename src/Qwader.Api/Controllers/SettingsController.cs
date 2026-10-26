@@ -26,6 +26,26 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HasPermission(Permissions.SettingsManage)]
     public Task<SystemResetResult> Reset(SystemResetRequest request, [FromServices] ISystemResetService reset, CancellationToken ct) =>
         reset.ResetAsync(request, ct);
+
+    /// <summary>A ZIP of the whole store (Admin only; the service checks the role). Built in a temp file, deleted once sent.</summary>
+    [HttpGet("backup")]
+    [HasPermission(Permissions.SettingsManage)]
+    public async Task<IActionResult> Backup([FromServices] ISystemBackupService backup, CancellationToken ct)
+    {
+        var file = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite, FileShare.None, 81920,
+            FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+        try
+        {
+            await backup.WriteAsync(file, ct);
+        }
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
+        file.Position = 0;
+        return File(file, "application/zip", backup.FileName());
+    }
 }
 
 [ApiController]

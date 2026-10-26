@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { toAsciiDigits } from '@/lib/arabic';
 import { cn } from '@/lib/cn';
+import { BackupCard } from './BackupCard';
 import { SystemResetCard } from './SystemResetCard';
 
 const num = (min: number, max: number, message: string) =>
@@ -132,6 +133,7 @@ export function SettingsPage() {
         </div>
       </form>
 
+      <BackupCard />
       <SystemResetCard />
     </div>
   );
