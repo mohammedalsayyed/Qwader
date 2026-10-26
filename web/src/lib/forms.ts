@@ -21,8 +21,14 @@ export function applyServerErrors<T extends FieldValues>(error: unknown, setErro
   return error.message;
 }
 
+/**
+ * One line to show for a failed request. A validation failure's title is only «correct the marked fields»,
+ * which says nothing where no field is marked (toasts, sheets with their own state), so the first field message wins.
+ */
 export function errorMessage(error: unknown): string {
-  return error instanceof ApiError ? error.message : 'حدث خطأ غير متوقع';
+  if (!(error instanceof ApiError)) return 'حدث خطأ غير متوقع';
+  const first = error.fieldErrors ? Object.values(error.fieldErrors)[0]?.[0] : undefined;
+  return first ?? error.message;
 }
 
 /** Optional text input → null when blank. */

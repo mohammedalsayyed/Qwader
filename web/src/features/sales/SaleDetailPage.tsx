@@ -48,6 +48,7 @@ export function SaleDetailPage() {
   if (query.isError) return <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
   const s = query.data;
   const returnable = s.status !== 'Voided' && s.lines.some((l) => l.quantity > l.returnedQuantity);
+  const collected = s.paidAmount - s.payments.reduce((sum, p) => sum + p.amount, 0);
 
   const share = async () => {
     const text = [settings.data?.storeName, `فاتورة رقم ${s.number}`, `الإجمالي: ${formatMoney(s.total)}`,
@@ -113,7 +114,9 @@ export function SaleDetailPage() {
               s.invoiceDiscount > 0 && { label: 'خصم الفاتورة', value: formatMoney(s.invoiceDiscount) },
               { label: 'الإجمالي', value: <b className="tabular text-lg">{formatMoney(s.total)}</b> },
               ...s.payments.map((p) => ({ label: `مدفوع — ${p.accountName}`, value: <span className="tabular">{formatMoney(p.amount)}{p.reference && <span className="ltr ms-1 text-xs text-muted">({p.reference})</span>}</span> })),
-              s.remaining > 0 && { label: 'آجل عند البيع', value: <span className="tabular text-danger">{formatMoney(s.remaining)}</span> },
+              // Money that came in after the sale (a till transfer confirmed later) — paidAmount already includes it.
+              collected > 0.004 && { label: 'مُحصّل بعد البيع (حوالة مؤكدة)', value: <span className="tabular">{formatMoney(collected)}</span> },
+              s.remaining > 0 && { label: 'المتبقي على العميل', value: <span className="tabular text-danger">{formatMoney(s.remaining)}</span> },
               s.returnedTotal > 0 && { label: 'قيمة المرتجعات', value: <span className="tabular text-warning">{formatMoney(s.returnedTotal)}</span> },
               s.profit != null && { label: 'الربح من الفاتورة', value: <span className={cn('tabular', s.profit < 0 ? 'text-danger' : 'text-success')}>{formatMoney(s.profit)}</span> },
             ]} />
