@@ -38,6 +38,7 @@ const NewVoucherPage = page(() => import('@/features/finance/VouchersPages'), 'N
 const VoucherDetailPage = page(() => import('@/features/finance/VouchersPages'), 'VoucherDetailPage');
 const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'ExpensesPage');
 const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
+const AuditLogPage = page(() => import('@/features/settings/AuditLogPage'), 'AuditLogPage');
 
 
 function SessionGate() {
@@ -149,6 +150,7 @@ export const router = createBrowserRouter([
           guarded('payments/new', <NewVoucherPage kind="payment" />, [P.VouchersCreate]),
           guarded('payments/:id', <VoucherDetailPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
           guarded('expenses', <ExpensesPage />, [P.ExpensesManage]),
+          guarded('audit', <AuditLogPage />, [P.AuditView]),
           guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           { path: '*', element: <NotFoundPage /> },
         ],

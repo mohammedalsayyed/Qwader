@@ -90,6 +90,7 @@ export interface Settings {
   defaultMarginPercent: number;
   maxDiscountPercent: number;
   defaultReorderLevel: number;
+  saleTransfersPending: boolean;
 }
 
 export interface LookupItem {

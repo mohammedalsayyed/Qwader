@@ -23,6 +23,15 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
 }
 
 [ApiController]
+[Route("api/audit-log")]
+[HasPermission(Permissions.AuditView)]
+public sealed class AuditLogController(IAuditLogService audit) : ControllerBase
+{
+    [HttpGet]
+    public Task<Qwader.Application.Common.PagedResult<AuditLogDto>> List([FromQuery] AuditLogRequest request, CancellationToken ct) => audit.ListAsync(request, ct);
+}
+
+[ApiController]
 [Route("api/lookups")]
 public sealed class LookupsController(ILookupService lookups) : ControllerBase
 {

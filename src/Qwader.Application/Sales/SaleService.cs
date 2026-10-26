@@ -115,12 +115,22 @@ public sealed class SaleService(
         }
 
         // ---- payments
-        var paid = request.Payments.Where(p => !p.Pending).Sum(p => p.Amount);
-        var pendingTotal = request.Payments.Where(p => p.Pending).Sum(p => p.Amount);
-        if (paid + pendingTotal > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
         var accountIds = request.Payments.Select(p => p.AccountId).Distinct().ToList();
-        if (accountIds.Count > 0 && await db.FinancialAccounts.CountAsync(a => accountIds.Contains(a.Id) && a.IsActive, ct) != accountIds.Count)
+        var accountTypes = await db.FinancialAccounts.AsNoTracking().Where(a => accountIds.Contains(a.Id) && a.IsActive)
+            .ToDictionaryAsync(a => a.Id, a => a.Type, ct);
+        if (accountTypes.Count != accountIds.Count)
             throw new ValidationFailedException("payments", "أحد الحسابات المختارة غير موجود أو معطّل");
+
+        // Every non-cash payment is a transfer. The store setting decides whether it waits for verification
+        // (stays as debt until confirmed) or counts at once; the till does not choose.
+        var transfersPending = (await settings.GetAsync(ct)).SaleTransfersPending;
+        var payments = request.Payments
+            .Select(p => (Input: p, IsTransfer: accountTypes[p.AccountId] != FinancialAccountType.Cash))
+            .Select(p => (p.Input, p.IsTransfer, Pending: p.IsTransfer && transfersPending))
+            .ToList();
+        var paid = payments.Where(p => !p.Pending).Sum(p => p.Input.Amount);
+        var pendingTotal = payments.Where(p => p.Pending).Sum(p => p.Input.Amount);
+        if (paid + pendingTotal > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -161,7 +171,7 @@ public sealed class SaleService(
             Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
         };
         foreach (var line in lines) invoice.Lines.Add(line);
-        foreach (var p in request.Payments.Where(p => !p.Pending))
+        foreach (var (p, _, _) in payments.Where(p => !p.Pending))
             invoice.Payments.Add(new SalePayment { FinancialAccountId = p.AccountId, Amount = p.Amount, Reference = string.IsNullOrWhiteSpace(p.Reference) ? null : p.Reference.Trim() });
         db.SaleInvoices.Add(invoice);
         await db.SaveChangesAsync(ct);
@@ -187,8 +197,9 @@ public sealed class SaleService(
         }
 
         // Unverified transfers are recorded for review; until confirmed they remain part of the customer's debt.
-        foreach (var p in request.Payments.Where(p => p.Pending))
-            await transfers.AddPendingForSaleAsync(invoice.Id, customer.Id, customer.Name, customer.Phone, p.AccountId, p.Amount, p.Reference, ct);
+        foreach (var (p, _, pending) in payments.Where(p => p.IsTransfer))
+            await transfers.AddForSaleAsync(invoice.Id, customer.IsWalkIn ? null : customer.Id, invoice.CustomerName, invoice.CustomerPhone,
+                p.AccountId, p.Amount, p.Reference, confirmed: !pending, ct);
 
         idempotency.Record(request.IdempotencyKey, CreateOperation, "SaleInvoice", invoice.Id.ToString());
         if (overridden.Count > 0)

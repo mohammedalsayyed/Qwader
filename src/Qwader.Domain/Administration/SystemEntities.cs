@@ -17,6 +17,8 @@ public static class SettingKeys
     public const string DefaultMarginPercent = "Pricing.DefaultMarginPercent";
     public const string MaxDiscountPercent = "Sales.MaxDiscountPercent";
     public const string LowStockDefault = "Inventory.DefaultReorderLevel";
+    /// <summary>"true": transfers taken at the till wait for verification (stay as debt); "false": they count as paid at once.</summary>
+    public const string SaleTransfersPending = "Sales.TransfersPending";
 }
 
 public enum DocumentType

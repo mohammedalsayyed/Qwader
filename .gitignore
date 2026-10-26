@@ -19,3 +19,4 @@ appsettings.*.local.json
 publish-out/
 web/functions/**/node_modules/
 .wrangler/
+*.tsbuildinfo

@@ -13,7 +13,8 @@ public sealed record SettingsDto(
     string? InvoiceFooter,
     decimal DefaultMarginPercent,
     decimal MaxDiscountPercent,
-    decimal DefaultReorderLevel);
+    decimal DefaultReorderLevel,
+    bool SaleTransfersPending = true);
 
 public interface ISettingsService
 {
@@ -46,6 +47,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         [SettingKeys.DefaultMarginPercent] = "25",
         [SettingKeys.MaxDiscountPercent] = "10",
         [SettingKeys.LowStockDefault] = "5",
+        [SettingKeys.SaleTransfersPending] = "true",
     };
 
     public async Task<SettingsDto> GetAsync(CancellationToken ct = default)
@@ -66,6 +68,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
             [SettingKeys.DefaultMarginPercent] = request.DefaultMarginPercent.ToString(CultureInfo.InvariantCulture),
             [SettingKeys.MaxDiscountPercent] = request.MaxDiscountPercent.ToString(CultureInfo.InvariantCulture),
             [SettingKeys.LowStockDefault] = request.DefaultReorderLevel.ToString(CultureInfo.InvariantCulture),
+            [SettingKeys.SaleTransfersPending] = request.SaleTransfersPending ? "true" : "false",
         };
 
         var existing = await db.Settings.ToDictionaryAsync(s => s.Key, ct);
@@ -101,7 +104,8 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         NullIfEmpty(v[SettingKeys.InvoiceFooter]),
         decimal.Parse(v[SettingKeys.DefaultMarginPercent], CultureInfo.InvariantCulture),
         decimal.Parse(v[SettingKeys.MaxDiscountPercent], CultureInfo.InvariantCulture),
-        decimal.Parse(v[SettingKeys.LowStockDefault], CultureInfo.InvariantCulture));
+        decimal.Parse(v[SettingKeys.LowStockDefault], CultureInfo.InvariantCulture),
+        v[SettingKeys.SaleTransfersPending] != "false");
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

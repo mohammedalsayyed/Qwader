@@ -10,6 +10,7 @@ import {
   Package,
   Receipt,
   ReceiptText,
+  ScrollText,
   Settings,
   ShieldCheck,
   ShoppingCart,
@@ -58,6 +59,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },
   { to: '/settings', label: 'الإعدادات', icon: Settings, anyOf: [P.SettingsManage], group: 'admin' },
+  { to: '/audit', label: 'سجل التدقيق', icon: ScrollText, anyOf: [P.AuditView], group: 'admin' },
 ];
 
 /** The four fixed tabs of the phone bottom bar (the fifth is «المزيد»). */

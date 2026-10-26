@@ -16,9 +16,12 @@ public interface ITransferService
     Task<IncomingTransferDto> ConfirmAsync(int id, CancellationToken ct = default);
     Task<IncomingTransferDto> RejectAsync(int id, RejectTransferRequest request, CancellationToken ct = default);
 
-    /// <summary>Records a pending transfer taken at the till (inside the sale's transaction).</summary>
-    Task<IncomingTransfer> AddPendingForSaleAsync(int saleInvoiceId, int customerId, string senderName, string? phone, int accountId,
-        decimal amount, string? reference, CancellationToken ct = default);
+    /// <summary>
+    /// Records a transfer taken at the till (inside the sale's transaction). A pending one waits for review and stays as debt;
+    /// a confirmed one is only a record — the money already went in as a sale payment.
+    /// </summary>
+    Task<IncomingTransfer> AddForSaleAsync(int saleInvoiceId, int? customerId, string senderName, string? phone, int accountId,
+        decimal amount, string? reference, bool confirmed, CancellationToken ct = default);
 }
 
 public sealed class TransferService(
@@ -93,8 +96,8 @@ public sealed class TransferService(
         return await GetAsync(transfer.Id, ct);
     }
 
-    public async Task<IncomingTransfer> AddPendingForSaleAsync(int saleInvoiceId, int customerId, string senderName, string? phone, int accountId,
-        decimal amount, string? reference, CancellationToken ct = default)
+    public async Task<IncomingTransfer> AddForSaleAsync(int saleInvoiceId, int? customerId, string senderName, string? phone, int accountId,
+        decimal amount, string? reference, bool confirmed, CancellationToken ct = default)
     {
         reference = Clean(reference);
         await EnsureReferenceUnusedAsync(accountId, reference, null, ct);
@@ -110,7 +113,10 @@ public sealed class TransferService(
             TransferDate = clock.UtcNow,
             CustomerId = customerId,
             SaleInvoiceId = saleInvoiceId,
-            Notes = "دفعة عند البيع بانتظار التحقق",
+            Notes = confirmed ? "حوالة عند البيع — اعتُبرت مؤكدة حسب الإعدادات" : "دفعة عند البيع بانتظار التحقق",
+            Status = confirmed ? TransferStatus.Confirmed : TransferStatus.Pending,
+            ReviewedById = confirmed ? currentUser.UserId : null,
+            ReviewedAt = confirmed ? clock.UtcNow : null,
         };
         db.IncomingTransfers.Add(transfer);
         await db.SaveChangesAsync(ct);

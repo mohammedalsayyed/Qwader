@@ -139,13 +139,45 @@ public sealed class SalesTests(ApiFactory factory)
         var jawwal = await AccountAsync(admin, "جوال بي");
         var (cashBefore, jawwalBefore) = (await BalanceAsync(cash), await BalanceAsync(jawwal));
 
-        var sale = await (await admin.PostAsJsonAsync("/api/sales",
-            Sale([new(product.Id, 1, 90)], [new(cash, 30), new(jawwal, 60, "TRX-77")]))).ReadAsync<SaleDetailDto>();
+        // Store set to «transfers at the till count as confirmed».
+        await SetTransfersPendingAsync(admin, false);
+        try
+        {
+            var sale = await (await admin.PostAsJsonAsync("/api/sales",
+                Sale([new(product.Id, 1, 90)], [new(cash, 30), new(jawwal, 60, TestData.Unique("TRX"))]))).ReadAsync<SaleDetailDto>();
 
-        sale.Payments.Should().HaveCount(2);
-        sale.Remaining.Should().Be(0);
-        (await BalanceAsync(cash)).Should().Be(cashBefore + 30);
-        (await BalanceAsync(jawwal)).Should().Be(jawwalBefore + 60);
+            sale.Payments.Should().HaveCount(2);
+            sale.Remaining.Should().Be(0);
+            sale.Transfers.Should().ContainSingle(t => t.Status == Domain.Finance.TransferStatus.Confirmed && t.Amount == 60, "the transfer is still recorded");
+            (await BalanceAsync(cash)).Should().Be(cashBefore + 30);
+            (await BalanceAsync(jawwal)).Should().Be(jawwalBefore + 60);
+        }
+        finally
+        {
+            await SetTransfersPendingAsync(admin, true);
+        }
+    }
+
+    [Fact]
+    public async Task By_default_a_till_transfer_waits_for_verification_and_needs_a_named_customer()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 90, openingQuantity: 3, openingCost: 50);
+        var jawwal = await AccountAsync(admin, "جوال بي");
+        var before = await BalanceAsync(jawwal);
+
+        (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 90)], [new(jawwal, 90)]))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 90)], [new(jawwal, 90, TestData.Unique("TRX"))], "زبون حوالة", Phone()))).ReadAsync<SaleDetailDto>();
+        sale.PaidAmount.Should().Be(0);
+        sale.Transfers.Should().ContainSingle(t => t.Status == Domain.Finance.TransferStatus.Pending);
+        (await BalanceAsync(jawwal)).Should().Be(before, "pending transfers are not money yet");
+    }
+
+    private static async Task SetTransfersPendingAsync(HttpClient admin, bool pending)
+    {
+        var settings = await admin.GetFromJsonAsync<SettingsDto>("/api/settings", TestJson.Options);
+        (await admin.PutAsJsonAsync("/api/settings", settings! with { SaleTransfersPending = pending })).EnsureSuccessStatusCode();
     }
 
     [Fact]

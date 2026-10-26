@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,6 +10,7 @@ import { Card, ErrorState, PageHeader, Spinner } from '@/components/ui/Feedback'
 import { useToast } from '@/components/ui/Toast';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { toAsciiDigits } from '@/lib/arabic';
+import { cn } from '@/lib/cn';
 
 const num = (min: number, max: number, message: string) =>
   z.preprocess((v) => (typeof v === 'string' ? Number(toAsciiDigits(v.trim()) || NaN) : v), z.number({ invalid_type_error: 'أدخل رقمًا صحيحًا' }).min(min, message).max(max, message));
@@ -22,6 +23,7 @@ const schema = z.object({
   defaultMarginPercent: num(0, 1000, 'نسبة الربح يجب أن تكون بين 0 و1000'),
   maxDiscountPercent: num(0, 100, 'نسبة الخصم يجب أن تكون بين 0 و100'),
   defaultReorderLevel: num(0, 1_000_000, 'حد التنبيه لا يمكن أن يكون سالبًا'),
+  saleTransfersPending: z.boolean(),
 });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
@@ -38,6 +40,7 @@ export function SettingsPage() {
     handleSubmit,
     reset,
     setError,
+    control,
     formState: { errors, isDirty },
   } = useForm<FormInput, unknown, FormValues>({ resolver: zodResolver(schema) });
 
@@ -99,6 +102,25 @@ export function SettingsPage() {
             {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultReorderLevel} {...register('defaultReorderLevel')} />}
           </Field>
         </div>
+      </Card>
+
+      <Card className="space-y-2 p-5">
+        <h2 className="font-bold">الحوالات عند البيع</h2>
+        <p className="text-sm text-muted">عندما يدفع الزبون في نقطة البيع بحوالة (جوال بي، بنك…) تُسجَّل الحوالة تلقائيًا من بيانات الفاتورة.</p>
+        <Controller control={control} name="saleTransfersPending"
+          render={({ field }) => (
+            <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="حالة الحوالة عند البيع">
+              {[true, false].map((v) => (
+                <button key={String(v)} type="button" role="radio" aria-checked={field.value === v} onClick={() => field.onChange(v)}
+                  className={cn('rounded-xl border p-3 text-start', field.value === v ? 'border-brand-700 bg-brand-50' : 'border-line')}>
+                  <span className="block font-semibold">{v ? 'بانتظار التحقق' : 'مؤكدة مباشرة'}</span>
+                  <span className="block text-xs leading-5 text-muted">
+                    {v ? 'تبقى دينًا على العميل حتى يؤكدها المحاسب بعد رؤيتها في الحساب (الأكثر أمانًا).' : 'تُحسب مدفوعة فورًا عند البيع، وتظهر في قائمة الحوالات كمؤكدة.'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )} />
       </Card>
 
       <div className="sticky bottom-nav z-20 lg:bottom-4">

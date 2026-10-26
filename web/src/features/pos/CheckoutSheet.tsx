@@ -23,7 +23,6 @@ interface PaymentRow {
   accountId: string;
   amount: string;
   reference: string;
-  pending: boolean;
 }
 
 export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
@@ -53,7 +52,6 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   const fullAccount = pickedAccount || cashId;
   const fullAccountType = accounts.find((a) => String(a.id) === fullAccount)?.type;
   const [fullRef, setFullRef] = useState('');
-  const [fullPending, setFullPending] = useState(false);
   const [tendered, setTendered] = useState('');
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [error, setError] = useState<string>();
@@ -62,13 +60,16 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   const total = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
   const discountPercent = listTotal > 0 ? round2(((listTotal - total) / listTotal) * 100) : 0;
   const maxDiscount = settings.data?.maxDiscountPercent ?? 0;
+  // Store setting: a transfer taken at the till either waits for verification (stays debt) or counts at once.
+  const transfersPending = settings.data?.saleTransfersPending ?? true;
+  const isTransfer = (accountId: string) => accounts.find((a) => String(a.id) === accountId)?.type !== 'Cash';
 
   const payments = useMemo(() => {
-    if (!split) return [{ accountId: Number(fullAccount), amount: total, reference: fullRef.trim() || null, pending: fullPending && fullAccountType !== 'Cash' }].filter((p) => p.amount > 0);
+    if (!split) return [{ accountId: Number(fullAccount), amount: total, reference: fullRef.trim() || null, pending: transfersPending && fullAccountType !== 'Cash' }].filter((p) => p.amount > 0);
     return rows
-      .map((r) => ({ accountId: Number(r.accountId), amount: parseNumber(r.amount) ?? 0, reference: r.reference.trim() || null, pending: r.pending && accounts.find((a) => String(a.id) === r.accountId)?.type !== 'Cash' }))
+      .map((r) => ({ accountId: Number(r.accountId), amount: parseNumber(r.amount) ?? 0, reference: r.reference.trim() || null, pending: transfersPending && isTransfer(r.accountId) }))
       .filter((p) => p.amount > 0);
-  }, [split, fullAccount, fullRef, fullPending, fullAccountType, accounts, rows, total]);
+  }, [split, fullAccount, fullRef, transfersPending, fullAccountType, accounts, rows, total]);
   const paid = round2(payments.filter((p) => !p.pending).reduce((s, p) => s + (Number.isNaN(p.amount) ? 0 : p.amount), 0));
   const pendingPaid = round2(payments.filter((p) => p.pending).reduce((s, p) => s + (Number.isNaN(p.amount) ? 0 : p.amount), 0));
   const remaining = round2(total - paid - pendingPaid);
@@ -209,10 +210,10 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
                   <Field label="رقم مرجع الحوالة / العملية">
                     {(id) => <Input id={id} className="ltr" value={fullRef} onChange={(e) => setFullRef(e.target.value)} />}
                   </Field>
-                  <PendingToggle value={fullPending} onChange={setFullPending} />
+                  <TransferNote pending={transfersPending} />
                 </>
               )}
-              <button type="button" onClick={() => { setSplit(true); setRows([{ key: crypto.randomUUID(), accountId: fullAccount, amount: '', reference: '', pending: false }]); }}
+              <button type="button" onClick={() => { setSplit(true); setRows([{ key: crypto.randomUUID(), accountId: fullAccount, amount: '', reference: '' }]); }}
                 className="h-10 text-sm font-semibold text-brand-700 underline">
                 دفع جزئي (آجل) أو بأكثر من حساب
               </button>
@@ -235,13 +236,13 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
                     <>
                       <Input aria-label="رقم المرجع" placeholder="رقم مرجع الحوالة (اختياري)" className="ltr mt-2"
                         value={r.reference} onChange={(e) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, reference: e.target.value } : x)))} />
-                      <div className="mt-2"><PendingToggle value={r.pending} onChange={(v) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, pending: v } : x)))} /></div>
+                      <div className="mt-2"><TransferNote pending={transfersPending} /></div>
                     </>
                   )}
                 </div>
               ))}
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => setRows((rs) => [...rs, { key: crypto.randomUUID(), accountId: cashId, amount: remaining > 0 ? String(remaining) : '', reference: '', pending: false }])}>
+                <Button variant="secondary" size="sm" onClick={() => setRows((rs) => [...rs, { key: crypto.randomUUID(), accountId: cashId, amount: remaining > 0 ? String(remaining) : '', reference: '' }])}>
                   <Plus className="size-4" /> دفعة أخرى
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setSplit(false)}>دفع كامل بحساب واحد</Button>
@@ -258,17 +259,14 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
   );
 }
 
-/** Transfer seen in the account (counts now) vs. only claimed by the customer (stays debt until verified). */
-function PendingToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="حالة الحوالة">
-      {[false, true].map((p) => (
-        <button key={String(p)} type="button" role="radio" aria-checked={value === p} onClick={() => onChange(p)}
-          className={cn('h-10 rounded-lg border text-xs font-semibold', value === p ? (p ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-brand-700 bg-brand-50 text-brand-800') : 'border-line')}>
-          {p ? 'لم أتحقق — بانتظار التحقق' : 'وصلت الحوالة ✓'}
-        </button>
-      ))}
-    </div>
+/** Every non-cash payment is recorded as a transfer; the store setting decides whether it waits for verification. */
+function TransferNote({ pending }: { pending: boolean }) {
+  return pending ? (
+    <p className="rounded-lg bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
+      تُسجَّل حوالة <b>بانتظار التحقق</b> وتبقى دينًا على العميل حتى تأكيدها من شاشة الحوالات — لذلك اكتب اسم العميل وجواله.
+    </p>
+  ) : (
+    <p className="rounded-lg bg-brand-50 p-2.5 text-xs leading-5 text-brand-800">تُسجَّل الحوالة <b>مؤكدة</b> وتُحسب مدفوعة فورًا.</p>
   );
 }
 
