@@ -3,6 +3,7 @@ import { Spinner } from '@/components/ui/Feedback';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Download, KeyRound, LogOut, Menu, UserCircle2 } from 'lucide-react';
 import { IosInstallSheet, OfflineBanner, useInstall } from '@/app/pwa';
+import { Credit } from './Credit';
 import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
@@ -40,7 +41,7 @@ export function AppLayout() {
       {/* Desktop: fixed sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-line bg-surface lg:flex print:hidden">
         <Link to="/" className="flex h-16 items-center gap-3 border-b border-line px-5">
-          <span className="flex size-9 items-center justify-center rounded-xl bg-brand-700 text-lg font-bold text-white">ق</span>
+          <img src="/icons/icon-192.png" alt="" className="size-9 rounded-xl" />
           <span className="leading-tight">
             <span className="block font-bold">{STORE_NAME}</span>
             <span className="block text-xs text-muted">للأدوات والأجهزة المنزلية</span>
@@ -56,6 +57,7 @@ export function AppLayout() {
             </div>
           ))}
         </nav>
+        <Credit className="border-t border-line px-3 py-3 text-muted" />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -117,6 +119,7 @@ export function AppLayout() {
             </div>
           </section>
         ))}
+        <Credit className="mt-2 border-t border-line pt-4 text-muted" />
       </Sheet>
     </div>
   );
@@ -150,7 +153,7 @@ function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center pt-[env(safe-area-inset-top)] justify-between gap-2 border-b border-line bg-surface/95 px-4 backdrop-blur lg:px-8 print:hidden">
       <Link to="/" className="flex min-w-0 items-center gap-2 lg:hidden">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-brand-700 text-lg font-bold text-white">ق</span>
+        <img src="/icons/icon-192.png" alt="" className="size-9 rounded-xl" />
         <span className="font-bold">{STORE_NAME}</span>
       </Link>
 

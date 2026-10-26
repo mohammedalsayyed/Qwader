@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { Field, Input } from '@/components/ui/Field';
 import { errorMessage } from '@/lib/forms';
+import { Credit } from '@/components/layout/Credit';
 
 const schema = z.object({
   userName: z.string().trim().min(1, 'اسم المستخدم مطلوب'),
@@ -42,7 +43,7 @@ export function LoginPage() {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-brand-800 to-brand-900 px-4 py-10">
       <div className="mb-6 text-center text-white">
-        <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-2xl bg-white/15 text-3xl font-bold">ق</div>
+        <img src="/icons/icon-192.png" alt="" className="mx-auto mb-3 size-16 rounded-2xl shadow-lg ring-1 ring-white/20" />
         <h1 className="text-2xl font-bold">معرض قويدر</h1>
         <p className="mt-1 text-brand-100">للأدوات والأجهزة المنزلية</p>
       </div>
@@ -90,6 +91,8 @@ export function LoginPage() {
           دخول
         </Button>
       </form>
+
+      <Credit className="mt-8 text-brand-100" />
     </div>
   );
 }
