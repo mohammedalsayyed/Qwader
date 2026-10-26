@@ -109,6 +109,9 @@ public interface IFileStorage
     /// <summary>Validates (type by content, size) and stores the file; the metadata row is queued on the current unit of work.</summary>
     Task<StoredFile> SaveAsync(FileUpload upload, FilePurpose purpose, CancellationToken ct = default);
     Task<(StoredFile File, Stream Content)?> OpenAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>Removes the bytes of a file whose metadata row is already gone; a missing file is ignored.</summary>
+    void DeleteContent(string storagePath);
 }
 
 public sealed record ExcelColumn(string Header, int Width = 16);

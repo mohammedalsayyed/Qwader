@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Auth;
+using Qwader.Application.Settings;
 using Qwader.Application.Users;
 using Qwader.Domain.Identity;
 using Qwader.Infrastructure.Identity;
@@ -51,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IIdempotencyService, IdempotencyService>();
         services.AddScoped<IFileStorage, LocalFileStorage>();
+        services.AddScoped<ISystemResetService, SystemResetService>();
         services.AddSingleton<IExcelService, ExcelService>();
 
         services.AddScoped<IAuthService, AuthService>();

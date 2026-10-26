@@ -111,7 +111,11 @@ export interface Lookups {
 export const settingsApi = {
   get: () => api<Settings>('/settings'),
   update: (input: Settings) => api<Settings>('/settings', { method: 'PUT', body: input }),
+  reset: (input: { mode: SystemResetMode; password: string }) =>
+    api<{ mode: SystemResetMode; deletedRows: number }>('/settings/reset', { method: 'POST', body: input }),
 };
+
+export type SystemResetMode = 'TransactionsOnly' | 'Everything';
 
 export const lookupsApi = {
   get: () => api<Lookups>('/lookups'),

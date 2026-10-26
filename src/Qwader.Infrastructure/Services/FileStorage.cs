@@ -67,6 +67,12 @@ public sealed class LocalFileStorage(AppDbContext db, ICurrentUser currentUser, 
         return (file, new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read));
     }
 
+    public void DeleteContent(string storagePath)
+    {
+        var fullPath = Path.GetFullPath(Path.Combine(Root, storagePath));
+        if (fullPath.StartsWith(Root, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath)) File.Delete(fullPath);
+    }
+
     private static (string? ContentType, string Extension) Sniff(ReadOnlySpan<byte> head)
     {
         if (head.Length >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) return ("image/jpeg", ".jpg");

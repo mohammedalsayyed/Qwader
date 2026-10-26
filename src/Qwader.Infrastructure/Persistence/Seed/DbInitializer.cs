@@ -105,7 +105,8 @@ public static class DbInitializer
         logger.LogInformation("Created initial administrator '{UserName}'", userName);
     }
 
-    private static async Task SeedReferenceDataAsync(AppDbContext db, CancellationToken ct)
+    /// <summary>Creates whatever reference data is missing; also used after a full system reset.</summary>
+    internal static async Task SeedReferenceDataAsync(AppDbContext db, CancellationToken ct)
     {
         if (!await db.Units.AnyAsync(ct))
             db.Units.AddRange(new[] { "قطعة", "علبة", "كرتونة", "طقم", "دزينة", "متر", "كيلو", "لتر" }

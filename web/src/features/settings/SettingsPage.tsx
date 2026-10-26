@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { toAsciiDigits } from '@/lib/arabic';
 import { cn } from '@/lib/cn';
+import { SystemResetCard } from './SystemResetCard';
 
 const num = (min: number, max: number, message: string) =>
   z.preprocess((v) => (typeof v === 'string' ? Number(toAsciiDigits(v.trim()) || NaN) : v), z.number({ invalid_type_error: 'أدخل رقمًا صحيحًا' }).min(min, message).max(max, message));
@@ -69,65 +70,69 @@ export function SettingsPage() {
   );
 
   return (
-    <form onSubmit={onSubmit} noValidate className="mx-auto max-w-2xl space-y-4">
-      <PageHeader title="الإعدادات" />
+    <div className="mx-auto max-w-2xl space-y-4">
+      <form onSubmit={onSubmit} noValidate className="space-y-4">
+        <PageHeader title="الإعدادات" />
 
-      <Card className="space-y-4 p-5">
-        <h2 className="font-bold">بيانات المعرض</h2>
-        <p className="-mt-3 text-sm text-muted">تظهر في رأس الفواتير والسندات المطبوعة.</p>
-        <Field label="اسم المعرض" required error={errors.storeName?.message}>
-          {(id, d) => <Input id={id} aria-describedby={d} invalid={!!errors.storeName} {...register('storeName')} />}
-        </Field>
-        <Field label="العنوان" error={errors.storeAddress?.message}>
-          {(id, d) => <Input id={id} aria-describedby={d} {...register('storeAddress')} />}
-        </Field>
-        <Field label="رقم الهاتف" error={errors.storePhone?.message}>
-          {(id, d) => <Input id={id} aria-describedby={d} type="tel" inputMode="tel" className="ltr" {...register('storePhone')} />}
-        </Field>
-        <Field label="نص أسفل الفاتورة" error={errors.invoiceFooter?.message}>
-          {(id, d) => <TextArea id={id} aria-describedby={d} rows={2} {...register('invoiceFooter')} />}
-        </Field>
-      </Card>
+        <Card className="space-y-4 p-5">
+          <h2 className="font-bold">بيانات المعرض</h2>
+          <p className="-mt-3 text-sm text-muted">تظهر في رأس الفواتير والسندات المطبوعة.</p>
+          <Field label="اسم المعرض" required error={errors.storeName?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} invalid={!!errors.storeName} {...register('storeName')} />}
+          </Field>
+          <Field label="العنوان" error={errors.storeAddress?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} {...register('storeAddress')} />}
+          </Field>
+          <Field label="رقم الهاتف" error={errors.storePhone?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} type="tel" inputMode="tel" className="ltr" {...register('storePhone')} />}
+          </Field>
+          <Field label="نص أسفل الفاتورة" error={errors.invoiceFooter?.message}>
+            {(id, d) => <TextArea id={id} aria-describedby={d} rows={2} {...register('invoiceFooter')} />}
+          </Field>
+        </Card>
 
-      <Card className="space-y-4 p-5">
-        <h2 className="font-bold">البيع والتسعير</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="نسبة الربح المقترحة %" error={errors.defaultMarginPercent?.message} hint="لاقتراح سعر البيع من التكلفة">
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultMarginPercent} {...register('defaultMarginPercent')} />}
-          </Field>
-          <Field label="أقصى خصم مسموح %" error={errors.maxDiscountPercent?.message}>
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.maxDiscountPercent} {...register('maxDiscountPercent')} />}
-          </Field>
-          <Field label="حد التنبيه الافتراضي للمخزون" error={errors.defaultReorderLevel?.message}>
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultReorderLevel} {...register('defaultReorderLevel')} />}
-          </Field>
+        <Card className="space-y-4 p-5">
+          <h2 className="font-bold">البيع والتسعير</h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="نسبة الربح المقترحة %" error={errors.defaultMarginPercent?.message} hint="لاقتراح سعر البيع من التكلفة">
+              {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultMarginPercent} {...register('defaultMarginPercent')} />}
+            </Field>
+            <Field label="أقصى خصم مسموح %" error={errors.maxDiscountPercent?.message}>
+              {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.maxDiscountPercent} {...register('maxDiscountPercent')} />}
+            </Field>
+            <Field label="حد التنبيه الافتراضي للمخزون" error={errors.defaultReorderLevel?.message}>
+              {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultReorderLevel} {...register('defaultReorderLevel')} />}
+            </Field>
+          </div>
+        </Card>
+
+        <Card className="space-y-2 p-5">
+          <h2 className="font-bold">الحوالات عند البيع</h2>
+          <p className="text-sm text-muted">عندما يدفع الزبون في نقطة البيع بحوالة (جوال بي، بنك…) تُسجَّل الحوالة تلقائيًا من بيانات الفاتورة.</p>
+          <Controller control={control} name="saleTransfersPending"
+            render={({ field }) => (
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="حالة الحوالة عند البيع">
+                {[true, false].map((v) => (
+                  <button key={String(v)} type="button" role="radio" aria-checked={field.value === v} onClick={() => field.onChange(v)}
+                    className={cn('rounded-xl border p-3 text-start', field.value === v ? 'border-brand-700 bg-brand-50' : 'border-line')}>
+                    <span className="block font-semibold">{v ? 'بانتظار التحقق' : 'مؤكدة مباشرة'}</span>
+                    <span className="block text-xs leading-5 text-muted">
+                      {v ? 'تبقى دينًا على العميل حتى يؤكدها المحاسب بعد رؤيتها في الحساب (الأكثر أمانًا).' : 'تُحسب مدفوعة فورًا عند البيع، وتظهر في قائمة الحوالات كمؤكدة.'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )} />
+        </Card>
+
+        <div className="sticky bottom-nav z-20 lg:bottom-4">
+          <Button type="submit" block size="lg" loading={save.isPending} disabled={!isDirty}>
+            حفظ الإعدادات
+          </Button>
         </div>
-      </Card>
+      </form>
 
-      <Card className="space-y-2 p-5">
-        <h2 className="font-bold">الحوالات عند البيع</h2>
-        <p className="text-sm text-muted">عندما يدفع الزبون في نقطة البيع بحوالة (جوال بي، بنك…) تُسجَّل الحوالة تلقائيًا من بيانات الفاتورة.</p>
-        <Controller control={control} name="saleTransfersPending"
-          render={({ field }) => (
-            <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="حالة الحوالة عند البيع">
-              {[true, false].map((v) => (
-                <button key={String(v)} type="button" role="radio" aria-checked={field.value === v} onClick={() => field.onChange(v)}
-                  className={cn('rounded-xl border p-3 text-start', field.value === v ? 'border-brand-700 bg-brand-50' : 'border-line')}>
-                  <span className="block font-semibold">{v ? 'بانتظار التحقق' : 'مؤكدة مباشرة'}</span>
-                  <span className="block text-xs leading-5 text-muted">
-                    {v ? 'تبقى دينًا على العميل حتى يؤكدها المحاسب بعد رؤيتها في الحساب (الأكثر أمانًا).' : 'تُحسب مدفوعة فورًا عند البيع، وتظهر في قائمة الحوالات كمؤكدة.'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )} />
-      </Card>
-
-      <div className="sticky bottom-nav z-20 lg:bottom-4">
-        <Button type="submit" block size="lg" loading={save.isPending} disabled={!isDirty}>
-          حفظ الإعدادات
-        </Button>
-      </div>
-    </form>
+      <SystemResetCard />
+    </div>
   );
 }

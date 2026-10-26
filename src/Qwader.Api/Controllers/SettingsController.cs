@@ -20,6 +20,12 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HttpPut]
     [HasPermission(Permissions.SettingsManage)]
     public Task<SettingsDto> Update(SettingsDto request, CancellationToken ct) => settings.UpdateAsync(request, ct);
+
+    /// <summary>Wipes data for a fresh start (the service also requires the Admin role and the caller's password).</summary>
+    [HttpPost("reset")]
+    [HasPermission(Permissions.SettingsManage)]
+    public Task<SystemResetResult> Reset(SystemResetRequest request, [FromServices] ISystemResetService reset, CancellationToken ct) =>
+        reset.ResetAsync(request, ct);
 }
 
 [ApiController]
