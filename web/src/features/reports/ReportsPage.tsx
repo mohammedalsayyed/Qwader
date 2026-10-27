@@ -89,18 +89,24 @@ export function ReportsPage() {
                 ['− تكلفة البضاعة (سعر الشراء)', p.costOfSales] as Row,
                 ['= إجمالي الربح', p.grossProfit!, 'strong'] as Row,
               ] : []),
-              ...(p.expenses != null ? [['المصاريف التشغيلية (رواتب، أعطال، تشغيل…)', p.expenses] as Row] : []),
-              ...(p.inventoryLosses != null && p.inventoryLosses !== 0 ? [['تالف ومفقود من المخزون', p.inventoryLosses] as Row] : []),
-              ...(p.totalExpenses != null ? [['= المصروفات', p.totalExpenses, 'strong'] as Row] : []),
-              ...(p.netOperatingProfit != null ? [['صافي الربح = إجمالي الربح − المصروفات', p.netOperatingProfit, 'total'] as Row] : []),
+              ...((p.totalExpenses ?? p.expenses) != null ? [['− المصروفات (رواتب، أعطال، مصاريف تشغيلية)', (p.totalExpenses ?? p.expenses)!] as Row] : []),
+              ...(p.netOperatingProfit != null ? [['= صافي الربح', p.netOperatingProfit, 'total'] as Row] : []),
             ]} />
-            {p.inventoryGains != null && p.inventoryGains > 0 && (
-              <p className="px-4 pb-3 text-xs text-muted">زيادة جرد بقيمة {formatMoney(p.inventoryGains)} (بضاعة وُجدت أو أُدخلت بالجرد) لا تُحسب ربحًا.</p>
-            )}
             {p.damagedReturnsCost != null && p.damagedReturnsCost > 0 && (
               <p className="px-4 pb-3 text-xs text-muted">تكلفة البضاعة تشمل {formatMoney(p.damagedReturnsCost)} لمرتجعات تالفة لم تعد للمخزون.</p>
             )}
           </Section>
+
+          {/* Stock damaged, lost or found changes the capital held in goods — not the profit and not the expenses. */}
+          {p.inventoryValue != null && (
+            <Section title="رأس المال في البضاعة" hint="التالف والمفقود يُنقص قيمة البضاعة (رأس المال) ولا يُحسب من المصروفات أو الربح">
+              <Lines rows={[
+                ['قيمة المخزون الآن (بسعر التكلفة)', p.inventoryValue, 'strong'],
+                ...(p.inventoryLosses != null ? [['− نقص بالتالف والمفقود خلال الفترة', p.inventoryLosses] as Row] : []),
+                ...(p.inventoryGains != null && p.inventoryGains > 0 ? [['+ زيادة بالجرد خلال الفترة', p.inventoryGains] as Row] : []),
+              ]} />
+            </Section>
+          )}
 
           {p.expensesByCategory && p.expensesByCategory.length > 0 && (
             <Section title="المصروفات حسب النوع">

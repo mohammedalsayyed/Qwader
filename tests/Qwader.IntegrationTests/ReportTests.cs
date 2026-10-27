@@ -59,7 +59,8 @@ public sealed class ReportTests(ApiFactory factory)
         (after.GrossProfit - before.GrossProfit).Should().Be(16);
         (after.InventoryLosses - before.InventoryLosses).Should().Be(10);
         (after.Expenses - before.Expenses).Should().Be(5);
-        (after.NetOperatingProfit - before.NetOperatingProfit).Should().Be(1, "16 gross profit − 10 shrinkage − 5 expenses");
+        (after.NetOperatingProfit - before.NetOperatingProfit).Should().Be(11, "16 gross profit − 5 expenses; the 10 of shrinkage lowers the capital in stock, not the profit");
+        (after.TotalExpenses - before.TotalExpenses).Should().Be(5, "expenses are operating costs only");
         // Cash: +54 sale, −18 refund, −5 expense, −20 supplier payment = +11 (opening funding excluded).
         (after.NetCashFlow - before.NetCashFlow).Should().Be(11);
 
