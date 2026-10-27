@@ -182,7 +182,7 @@ function TopBar() {
           className="flex h-12 w-full items-center gap-3 rounded-xl px-3 text-start hover:bg-canvas"
           onClick={() => {
             setMenuOpen(false);
-            navigate('/account/password');
+            navigate('/account/change-password');
           }}
         >
           <KeyRound className="size-5 text-muted" /> تغيير كلمة المرور

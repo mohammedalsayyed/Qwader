@@ -202,7 +202,9 @@ async function run() {
   await tc('AUTH-05', async (track) => {
     const p = track(await newPage({ user: D.viewer, pass: PW }));
     await atDashboard(p);
-    await p.goto(B + '/account/change-password');
+    // Through the account menu, as a user does (a direct URL once hid a broken menu link).
+    await p.getByRole('button', { name: 'الحساب الشخصي' }).click();
+    await p.getByRole('button', { name: 'تغيير كلمة المرور' }).click();
     await p.getByLabel('كلمة المرور الحالية').fill('not-my-password');
     await p.getByLabel(/^كلمة المرور الجديدة/).fill('Another123');
     await p.getByLabel('تأكيد كلمة المرور الجديدة').fill('Another123');
