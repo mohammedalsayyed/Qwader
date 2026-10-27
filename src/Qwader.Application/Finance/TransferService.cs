@@ -98,8 +98,15 @@ public sealed class TransferService(
         audit.Log("Transfer.Create", "IncomingTransfer", transfer.Id.ToString(), null, new { transfer.Number, transfer.Amount, transfer.SenderName, transfer.ReferenceNo });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        push.Notify(PushTopics.Transfers, new PushMessage("حوالة جديدة بانتظار التحقق",
-            $"{transfer.SenderName} — {PushMessage.Money(transfer.Amount)}", "/transfers"), Permissions.TransfersReview);
+        var accountName = await db.FinancialAccounts.Where(a => a.Id == transfer.FinancialAccountId).Select(a => a.Name).FirstAsync(ct);
+        var recordedBy = await db.Users.Where(u => u.Id == currentUser.UserId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
+        push.Notify(PushTopics.Transfers, new PushMessage($"حوالة {PushMessage.Money(transfer.Amount)} إلى {accountName}",
+            string.Join('\n', new[]
+            {
+                $"من: {transfer.SenderName}{(transfer.ReferenceNo is null ? "" : $" · مرجع {transfer.ReferenceNo}")}",
+                "بانتظار التحقق",
+                $"سجّلها: {recordedBy ?? "—"}",
+            }), "/transfers"), Permissions.TransfersReview);
         return await GetAsync(transfer.Id, ct);
     }
 

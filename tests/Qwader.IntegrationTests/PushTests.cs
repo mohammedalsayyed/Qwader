@@ -39,14 +39,17 @@ public sealed class PushTests(ApiFactory factory)
         // 3 in stock, alert level 2: selling all 3 empties the shelf.
         var product = await admin.CreateProductAsync(retail: 100, reorderLevel: 2);
         await admin.PurchaseAsync((await admin.CreateSupplierAsync()).Id, [new PurchaseLineInput(product.Id, 3, 60)]);
-        var wallet = (await admin.LookupsAsync()).Accounts.First(a => a.Type != FinancialAccountType.Cash).Id;
+        var wallet = (await admin.LookupsAsync()).Accounts.First(a => a.Type != FinancialAccountType.Cash);
         await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, TestData.Unique("زبون"), "0598887766", 0,
-            [new(product.Id, 3, 100)], [new(wallet, 300)], null))).ReadAsync<SaleDetailDto>();
+            [new(product.Id, 3, 100)], [new(wallet.Id, 300)], null))).ReadAsync<SaleDetailDto>();
 
         (await factory.Push.WaitForAsync(adminPhone, "بيع جديد")).Should().BeTrue();
-        (await factory.Push.WaitForAsync(adminPhone, "حوالة بانتظار التحقق")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(adminPhone, $"الدفع: {wallet.Name} 300 ₪ (بانتظار التحقق)")).Should().BeTrue("the sale says how it was paid");
+        // The transfer says where the money went and who took it.
+        (await factory.Push.WaitForAsync(adminPhone, $"حوالة 300 ₪ إلى {wallet.Name}")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(adminPhone, "سجّلها: ")).Should().BeTrue();
         (await factory.Push.WaitForAsync(adminPhone, "نفد من المخزون")).Should().BeTrue();
-        (await factory.Push.WaitForAsync(adminLaptop, "حوالة بانتظار التحقق")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(adminLaptop, "بانتظار التحقق")).Should().BeTrue();
         (await factory.Push.WaitForAsync(sellerPhone, "نفد من المخزون")).Should().BeTrue("sales staff may view stock");
 
         factory.Push.Received(adminLaptop, "بيع جديد").Should().BeFalse("this device did not choose sales");

@@ -208,20 +208,40 @@ public sealed class SaleService(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
-        await NotifySaleAsync(invoice, payments.Where(p => p.Pending).Select(p => p.Input.Amount), ct);
+        await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), ct);
         return await GetAsync(invoice.Id, ct);
     }
 
-    /// <summary>Phone notifications once the sale is saved: the sale itself, transfers to verify, and stock that ran low or out.</summary>
-    private async Task NotifySaleAsync(SaleInvoice invoice, IEnumerable<decimal> pendingTransfers, CancellationToken ct)
+    /// <summary>
+    /// Phone notifications once the sale is saved: the sale (who, how it was paid, which invoice, who sold it), every transfer
+    /// taken at the till (to which account), and stock that ran low or out. One fact per line so a glance is enough.
+    /// </summary>
+    private async Task NotifySaleAsync(SaleInvoice invoice,
+        IReadOnlyList<(int AccountId, decimal Amount, string? Reference, bool IsTransfer, bool Pending)> payments, CancellationToken ct)
     {
         var seller = await db.Users.Where(u => u.Id == invoice.SalespersonId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
-        push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد {PushMessage.Money(invoice.Total)}",
-            $"{invoice.CustomerName} — فاتورة {invoice.Number}{(seller is null ? "" : $" — {seller}")}", $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
+        var accountIds = payments.Select(p => p.AccountId).Distinct().ToList();
+        var accountNames = await db.FinancialAccounts.AsNoTracking().Where(a => accountIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
 
-        foreach (var amount in pendingTransfers)
-            push.Notify(PushTopics.Transfers, new PushMessage("حوالة بانتظار التحقق",
-                $"{invoice.CustomerName} — {PushMessage.Money(amount)} (فاتورة {invoice.Number})", "/transfers"), Permissions.TransfersReview);
+        var paid = payments.Select(p => $"{accountNames[p.AccountId]} {PushMessage.Money(p.Amount)}{(p.Pending ? " (بانتظار التحقق)" : "")}").ToList();
+        var onCredit = invoice.Total - payments.Sum(p => p.Amount);
+        if (onCredit > 0.004m) paid.Add($"آجل {PushMessage.Money(onCredit)}");
+        push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد — {PushMessage.Money(invoice.Total)}",
+            string.Join('\n', new[]
+            {
+                $"العميل: {invoice.CustomerName}",
+                $"الدفع: {string.Join(" · ", paid)}",
+                $"فاتورة {invoice.Number}{(seller is null ? "" : $" · الموظف: {seller}")}",
+            }), $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
+
+        foreach (var t in payments.Where(p => p.IsTransfer))
+            push.Notify(PushTopics.Transfers, new PushMessage($"حوالة {PushMessage.Money(t.Amount)} إلى {accountNames[t.AccountId]}",
+                string.Join('\n', new[]
+                {
+                    $"من: {invoice.CustomerName}{(t.Reference is null ? "" : $" · مرجع {t.Reference}")}",
+                    $"فاتورة {invoice.Number} — {(t.Pending ? "بانتظار التحقق" : "سُجّلت مؤكدة")}",
+                    $"سجّلها: {seller ?? "—"}",
+                }), "/transfers"), Permissions.TransfersReview);
 
         // Only the sale that crosses the line raises an alert, not every later sale of a product that is already low.
         var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
