@@ -44,7 +44,7 @@ export function LoginPage() {
     <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-canvas px-4 py-10">
       {/* The logo carries the store's name and line of business. */}
       <h1 className="mb-6">
-        <img src="/brand/logo.png" alt="معرض قويدر للأدوات والأجهزة المنزلية" className="mx-auto h-auto w-52 sm:w-60" width={640} height={604} />
+        <img src="/brand/logo.png" alt="معرض قويدر للأدوات والأجهزة المنزلية" className="mx-auto h-auto w-52 sm:w-60" width={640} height={616} />
       </h1>
 
       <form onSubmit={onSubmit} noValidate className="w-full max-w-sm space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-xl shadow-brand-900/10">
