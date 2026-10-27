@@ -213,7 +213,7 @@ export function PosPage() {
         {cart.lines.length > 0 && (
           <div className="mt-3 hidden rounded-card border border-line bg-surface p-4 lg:block">
             <Totals subtotal={totals.subtotal} discounts={totals.lineDiscounts} />
-            <Button block size="lg" className="mt-3" onClick={() => setCheckout(true)}>
+            <Button block size="lg" variant="accent" className="mt-3" onClick={() => setCheckout(true)}>
               <ShoppingCart className="size-5" /> الدفع
             </Button>
           </div>
@@ -228,7 +228,7 @@ export function PosPage() {
               <p className="text-xs text-muted">الإجمالي · {formatQuantity(totals.items)} قطعة</p>
               <p className="tabular text-2xl font-bold">{formatMoney(totals.subtotal)}</p>
             </div>
-            <Button size="lg" className="px-8" onClick={() => setCheckout(true)}>
+            <Button size="lg" variant="accent" className="px-8" onClick={() => setCheckout(true)}>
               الدفع
             </Button>
           </div>

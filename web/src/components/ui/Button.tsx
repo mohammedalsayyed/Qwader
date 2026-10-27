@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
+type Variant = 'primary' | 'accent' | 'secondary' | 'danger' | 'ghost' | 'outline';
 type Size = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -14,6 +14,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<Variant, string> = {
   primary: 'bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900 shadow-sm',
+  /** The logo's orange: the main action on a screen (new sale, pay, confirm the invoice). */
+  accent: 'bg-accent-600 text-white hover:bg-accent-700 active:bg-accent-700 shadow-sm',
   secondary: 'bg-brand-50 text-brand-800 hover:bg-brand-100',
   outline: 'border border-line bg-surface text-ink hover:bg-canvas',
   danger: 'bg-danger text-white hover:brightness-95',

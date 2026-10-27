@@ -41,14 +41,13 @@ export function LoginPage() {
   });
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-brand-800 to-brand-900 px-4 py-10">
-      <div className="mb-6 text-center text-white">
-        <img src="/icons/icon-192.png" alt="" className="mx-auto mb-3 size-16 rounded-2xl shadow-lg ring-1 ring-white/20" />
-        <h1 className="text-2xl font-bold">معرض قويدر</h1>
-        <p className="mt-1 text-brand-100">للأدوات والأجهزة المنزلية</p>
-      </div>
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-canvas px-4 py-10">
+      {/* The logo carries the store's name and line of business. */}
+      <h1 className="mb-6">
+        <img src="/brand/logo.png" alt="معرض قويدر للأدوات والأجهزة المنزلية" className="mx-auto h-auto w-52 sm:w-60" width={640} height={604} />
+      </h1>
 
-      <form onSubmit={onSubmit} noValidate className="w-full max-w-sm space-y-4 rounded-3xl bg-surface p-6 shadow-xl">
+      <form onSubmit={onSubmit} noValidate className="w-full max-w-sm space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-xl shadow-brand-900/10">
         <h2 className="text-lg font-bold">تسجيل الدخول</h2>
 
         {serverError && (
@@ -92,7 +91,7 @@ export function LoginPage() {
         </Button>
       </form>
 
-      <Credit className="mt-8 text-brand-100" />
+      <Credit className="mt-8 text-muted" />
     </div>
   );
 }

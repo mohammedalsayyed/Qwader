@@ -13,7 +13,7 @@ export default defineConfig({
       // The app asks before activating a new version so a sale in progress is never reloaded.
       registerType: 'prompt',
       injectRegister: null,
-      includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
+      includeAssets: ['favicon.png', 'icons/apple-touch-icon.png', 'brand/logo.png', 'brand/mark.png'],
       manifest: {
         id: '/',
         name: 'معرض قويدر للأدوات والأجهزة المنزلية',
@@ -25,8 +25,8 @@ export default defineConfig({
         scope: '/',
         display: 'standalone',
         orientation: 'any',
-        theme_color: '#0f5f5a',
-        background_color: '#f4f6f6',
+        theme_color: '#073060',
+        background_color: '#f3f5f9',
         categories: ['business', 'finance', 'productivity'],
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

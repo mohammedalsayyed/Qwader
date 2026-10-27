@@ -122,7 +122,7 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
               : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
           </div>
-          <Button block size="lg" loading={submit.isPending} onClick={confirmSale}>
+          <Button block size="lg" variant="accent" loading={submit.isPending} onClick={confirmSale}>
             <CheckCircle2 className="size-5" /> اعتماد الفاتورة
           </Button>
         </div>

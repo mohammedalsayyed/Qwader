@@ -62,7 +62,7 @@ export function DashboardPage() {
       {primary?.primary && (
         <Link
           to={primary.to}
-          className="flex h-18 items-center justify-center gap-3 rounded-2xl bg-brand-700 text-lg font-bold text-white shadow-md active:bg-brand-900"
+          className="flex h-18 items-center justify-center gap-3 rounded-2xl bg-accent-600 text-lg font-bold text-white shadow-md hover:bg-accent-700 active:bg-accent-700"
         >
           <primary.icon className="size-7" aria-hidden />
           {primary.label}

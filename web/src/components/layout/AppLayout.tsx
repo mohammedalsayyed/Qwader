@@ -41,7 +41,7 @@ export function AppLayout() {
       {/* Desktop: fixed sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-line bg-surface lg:flex print:hidden">
         <Link to="/" className="flex h-16 items-center gap-3 border-b border-line px-5">
-          <img src="/icons/icon-192.png" alt="" className="size-9 rounded-xl" />
+          <img src="/brand/mark.png" alt="" className="h-9 w-auto" width={400} height={197} />
           <span className="leading-tight">
             <span className="block font-bold">{STORE_NAME}</span>
             <span className="block text-xs text-muted">للأدوات والأجهزة المنزلية</span>
@@ -153,7 +153,7 @@ function TopBar() {
   return (
     <header className="sticky top-0 z-30 flex h-[calc(4rem+env(safe-area-inset-top))] items-center pt-[env(safe-area-inset-top)] justify-between gap-2 border-b border-line bg-surface/95 px-4 backdrop-blur lg:px-8 print:hidden">
       <Link to="/" className="flex min-w-0 items-center gap-2 lg:hidden">
-        <img src="/icons/icon-192.png" alt="" className="size-9 rounded-xl" />
+        <img src="/brand/mark.png" alt="" className="h-9 w-auto" width={400} height={197} />
         <span className="font-bold">{STORE_NAME}</span>
       </Link>
 

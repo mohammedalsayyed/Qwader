@@ -7,20 +7,28 @@
 @theme {
   --font-sans: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
 
-  --color-brand-50: #eef8f7;
-  --color-brand-100: #d5eeeb;
-  --color-brand-200: #aadcd6;
-  --color-brand-500: #1a8a82;
-  --color-brand-600: #12756e;
-  --color-brand-700: #0f5f5a;
-  --color-brand-800: #0d4a46;
-  --color-brand-900: #0a3734;
+  /* From the store logo: navy #073060 (brand-800) and orange #f4750d (accent-500). */
+  --color-brand-50: #eef3fa;
+  --color-brand-100: #d7e3f3;
+  --color-brand-200: #adc5e6;
+  --color-brand-500: #2160b4;
+  --color-brand-600: #154c97;
+  --color-brand-700: #0c3e7c;
+  --color-brand-800: #073060;
+  --color-brand-900: #05234a;
+
+  --color-accent-50: #fff4ea;
+  --color-accent-100: #ffe3c8;
+  --color-accent-500: #f4750d;
+  /* Text on orange must stay readable: buttons use this darker shade. */
+  --color-accent-600: #d9600a;
+  --color-accent-700: #b54f08;
 
   --color-surface: #ffffff;
-  --color-canvas: #f4f6f6;
-  --color-line: #e3e8e8;
-  --color-ink: #17201f;
-  --color-muted: #5d6b6a;
+  --color-canvas: #f3f5f9;
+  --color-line: #e1e6ee;
+  --color-ink: #121b2d;
+  --color-muted: #5a6680;
 
   --color-success: #15803d;
   --color-warning: #b45309;
