@@ -184,7 +184,9 @@ export function PosPage() {
                     <span className="tabular font-bold">{formatMoney(l.unitPrice)}</span>
                     <span className="text-xs">تعديل السعر</span>
                   </button>
-                  {l.unitPrice !== tierPrice(l, cart.tier) && <span className="text-xs font-semibold text-warning">معدَّل</span>}
+                  {l.unitPrice < tierPrice(l, cart.tier) ? (
+                    <span className="text-xs font-semibold text-warning">خصم {formatMoney(round2(l.quantity * (tierPrice(l, cart.tier) - l.unitPrice)))}</span>
+                  ) : l.unitPrice > tierPrice(l, cart.tier) && <span className="text-xs font-semibold text-warning">معدَّل</span>}
                   {l.lineDiscount > 0 && <span className="text-xs text-warning">خصم {formatMoney(l.lineDiscount)}</span>}
                   {minimumPrice(l, cart.tier) > 0 && (
                     <span className="whitespace-nowrap text-xs text-muted">أقل سعر <span className="tabular">{formatMoney(minimumPrice(l, cart.tier))}</span></span>
@@ -212,7 +214,7 @@ export function PosPage() {
         {/* Desktop: totals + pay inline */}
         {cart.lines.length > 0 && (
           <div className="mt-3 hidden rounded-card border border-line bg-surface p-4 lg:block">
-            <Totals subtotal={totals.subtotal} discounts={totals.lineDiscounts} />
+            <Totals subtotal={totals.subtotal} discounts={round2(totals.lineDiscounts + totals.priceReductions)} />
             <Button block size="lg" variant="accent" className="mt-3" onClick={() => setCheckout(true)}>
               <ShoppingCart className="size-5" /> الدفع
             </Button>
@@ -253,7 +255,7 @@ function Totals({ subtotal, discounts }: { subtotal: number; discounts: number }
   return (
     <div className="space-y-1">
       {discounts > 0 && (
-        <p className="flex justify-between text-sm text-muted"><span>خصومات البنود</span><span className="tabular">{formatMoney(discounts)}</span></p>
+        <p className="flex justify-between text-sm text-muted"><span>الخصومات</span><span className="tabular">{formatMoney(discounts)}</span></p>
       )}
       <p className="flex items-end justify-between"><span className="font-semibold">الإجمالي</span><span className="tabular text-2xl font-bold">{formatMoney(subtotal)}</span></p>
     </div>

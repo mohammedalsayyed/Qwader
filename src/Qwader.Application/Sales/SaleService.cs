@@ -58,19 +58,28 @@ public sealed class SaleService(
             throw new BusinessRuleException($"المنتج «{archived.Name}» مؤرشف ولا يمكن بيعه");
 
         // ---- amounts (always recomputed here; client totals are never trusted)
+        // A price lowered at the till is recorded as a discount: the line keeps the product's price and the difference
+        // becomes part of its line discount, so invoices and reports show it as «خصم». Only the floor (minimum sale price)
+        // limits it; the store's discount limit applies to the discounts the seller types (line + invoice).
+        decimal typedLineDiscounts = 0;
         var lines = request.Lines.Select(l =>
         {
             var p = products[l.ProductId];
-            var gross = CostMath.RoundMoney(l.Quantity * l.UnitPrice);
-            if (l.LineDiscount > gross) throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
+            if (l.LineDiscount > CostMath.RoundMoney(l.Quantity * l.UnitPrice))
+                throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
+            var listPrice = request.PriceTier == PriceTier.Wholesale ? p.WholesalePrice : p.RetailPrice;
+            var lowered = l.UnitPrice < listPrice ? CostMath.RoundMoney(l.Quantity * (listPrice - l.UnitPrice)) : 0;
+            var unitPrice = lowered > 0 ? listPrice : l.UnitPrice;
+            var gross = CostMath.RoundMoney(l.Quantity * unitPrice);
+            typedLineDiscounts += l.LineDiscount;
             return new SaleInvoiceLine
             {
                 ProductId = l.ProductId,
                 ProductName = Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
                 Quantity = l.Quantity,
-                UnitPrice = l.UnitPrice,
-                LineDiscount = l.LineDiscount,
-                LineTotal = gross - l.LineDiscount,
+                UnitPrice = unitPrice,
+                LineDiscount = l.LineDiscount + lowered,
+                LineTotal = gross - l.LineDiscount - lowered,
             };
         }).ToList();
 
@@ -87,14 +96,16 @@ public sealed class SaleService(
         // Any seller may change a line's price; the floor is the product's minimum sale price, for everyone.
         // Discounts (per line or on the invoice) are separate: they need the discount permission and stay within the store's limit.
         var canOverride = currentUser.HasPermission(Permissions.SalesPriceOverride);
-        var discountGiven = lineDiscounts + request.InvoiceDiscount;
+        // Typed discounts only, measured against the lines at the prices the seller charged.
+        var discountGiven = typedLineDiscounts + request.InvoiceDiscount;
+        var chargedGross = grossTotal - (lineDiscounts - typedLineDiscounts);
         if (discountGiven > 0.009m)
         {
             if (!currentUser.HasPermission(Permissions.SalesDiscount) && !canOverride)
                 throw new ForbiddenException("ليست لديك صلاحية إعطاء خصم");
             var maxPercent = (await settings.GetAsync(ct)).MaxDiscountPercent;
-            if (!canOverride && grossTotal > 0 && discountGiven / grossTotal * 100 > maxPercent + 0.001m)
-                throw new BusinessRuleException($"الخصم ({Math.Round(discountGiven / grossTotal * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
+            if (!canOverride && chargedGross > 0 && discountGiven / chargedGross * 100 > maxPercent + 0.001m)
+                throw new BusinessRuleException($"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
         }
 
         var overridden = new List<string>();

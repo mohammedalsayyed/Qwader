@@ -227,8 +227,13 @@ public sealed class SalesTests(ApiFactory factory)
         var seller = await SalesUserAsync();
         var cash = await AccountAsync(seller, "الصندوق النقدي");
 
-        // A new price is not a discount: 75 is 25% under the list price yet allowed, because it is above the minimum.
-        (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 75)], [new(cash, 75)]))).StatusCode.Should().Be(HttpStatusCode.OK);
+        // 75 is 25% under the list price, past the 5% limit, yet allowed: only the minimum (70) limits a lowered price.
+        // It is recorded as a discount: the line keeps the price 100 with a 25 discount.
+        var lowered = await (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 75)], [new(cash, 75)]))).ReadAsync<SaleDetailDto>();
+        lowered.Total.Should().Be(75);
+        lowered.GrossTotal.Should().Be(100);
+        lowered.LineDiscountTotal.Should().Be(25);
+        lowered.Lines[0].UnitPrice.Should().Be(100);
         (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 120)], [new(cash, 120)]))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Below the minimum: refused for the seller and for the administrator alike.

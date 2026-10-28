@@ -53,8 +53,10 @@ export function cartTotals(cart: Cart) {
   const gross = round2(cart.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0));
   const lineDiscounts = round2(cart.lines.reduce((s, l) => s + l.lineDiscount, 0));
   const listTotal = round2(cart.lines.reduce((s, l) => s + l.quantity * tierPrice(l, cart.tier), 0));
+  // A price lowered below the product's price is saved as a discount on the line (the server does the same).
+  const priceReductions = round2(cart.lines.reduce((s, l) => s + l.quantity * Math.max(0, tierPrice(l, cart.tier) - l.unitPrice), 0));
   const items = cart.lines.reduce((s, l) => s + l.quantity, 0);
-  return { gross, lineDiscounts, subtotal: round2(gross - lineDiscounts), listTotal, items };
+  return { gross, lineDiscounts, priceReductions, subtotal: round2(gross - lineDiscounts), listTotal, items };
 }
 
 type ProductLike = Pick<ProductListItem, 'id' | 'displayName' | 'sku' | 'unitName' | 'imageFileId' | 'quantity' | 'retailPrice' | 'wholesalePrice' | 'minSalePrice' | 'averageCost'>;
