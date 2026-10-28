@@ -95,6 +95,25 @@ public sealed class CatalogTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_default_alert_level_fills_imported_products_and_can_be_applied_to_all()
+    {
+        var admin = await factory.LoginAsync();
+        var settings = await admin.GetFromJsonAsync<Application.Settings.SettingsDto>("/api/settings", TestJson.Options);
+        (await admin.PutAsJsonAsync("/api/settings", settings! with { DefaultReorderLevel = 10 })).EnsureSuccessStatusCode();
+        var custom = await admin.CreateProductAsync(reorderLevel: 25);
+        var name = TestData.Unique("بدون حد");
+        var file = Workbook(["اسم المنتج", "الصنف", "سعر المفرق"], [name, TestData.Unique("صنف"), "15"]);
+
+        (await (await admin.PostAsync("/api/products/import", file)).ReadAsync<ProductImportResult>()).Created.Should().Be(1);
+        var imported = (await admin.GetFromJsonAsync<PagedResult<ProductListItemDto>>($"/api/products?search={name}", TestJson.Options))!.Items.Single();
+        (await admin.GetProductAsync(imported.Id)).ReorderLevel.Should().Be(10, "a blank «حد التنبيه» takes the store default");
+
+        var applied = await (await admin.PostAsync("/api/settings/apply-reorder-level", null)).ReadAsync<System.Text.Json.JsonElement>();
+        applied.GetProperty("changed").GetInt32().Should().BeGreaterThan(0);
+        (await admin.GetProductAsync(custom.Id)).ReorderLevel.Should().Be(10);
+    }
+
+    [Fact]
     public async Task Excel_import_with_any_invalid_row_imports_nothing()
     {
         var admin = await factory.LoginAsync();

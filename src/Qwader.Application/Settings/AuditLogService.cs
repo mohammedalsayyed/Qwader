@@ -33,6 +33,7 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Role.Update"] = "تعديل صلاحيات دور",
         ["Role.Delete"] = "حذف دور",
         ["Settings.Update"] = "تعديل الإعدادات",
+        ["Settings.ApplyReorderLevel"] = "تطبيق حد التنبيه على كل المنتجات",
         ["System.Reset"] = "تصفير النظام",
         ["System.Backup"] = "تنزيل نسخة احتياطية",
         ["Product.Create"] = "إضافة منتج",

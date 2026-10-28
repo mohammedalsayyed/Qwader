@@ -20,6 +20,12 @@ public interface ISettingsService
 {
     Task<SettingsDto> GetAsync(CancellationToken ct = default);
     Task<SettingsDto> UpdateAsync(SettingsDto request, CancellationToken ct = default);
+
+    /// <summary>
+    /// The default «حد التنبيه» only fills in new products; this sets it on every existing product as well.
+    /// Returns how many products changed.
+    /// </summary>
+    Task<int> ApplyDefaultReorderLevelAsync(CancellationToken ct = default);
 }
 
 public sealed class SettingsDtoValidator : AbstractValidator<SettingsDto>
@@ -54,6 +60,16 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
     {
         var values = await LoadAsync(ct);
         return ToDto(values);
+    }
+
+    public async Task<int> ApplyDefaultReorderLevelAsync(CancellationToken ct = default)
+    {
+        var level = (await GetAsync(ct)).DefaultReorderLevel;
+        var changed = await db.Products.Where(p => p.ReorderLevel != level)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.ReorderLevel, level), ct);
+        audit.Log("Settings.ApplyReorderLevel", "Product", null, null, new { ReorderLevel = level, Products = changed });
+        await db.SaveChangesAsync(ct);
+        return changed;
     }
 
     public async Task<SettingsDto> UpdateAsync(SettingsDto request, CancellationToken ct = default)

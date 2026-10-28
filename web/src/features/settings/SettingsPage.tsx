@@ -7,6 +7,7 @@ import { settingsApi, type Settings } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, TextArea } from '@/components/ui/Field';
 import { Card, ErrorState, PageHeader, Spinner } from '@/components/ui/Feedback';
+import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { toAsciiDigits } from '@/lib/arabic';
@@ -63,6 +64,17 @@ export function SettingsPage() {
     },
   });
 
+  const confirm = useConfirm();
+  const applyReorder = useMutation({
+    mutationFn: settingsApi.applyReorderLevel,
+    onSuccess: (r) => {
+      toast.success(`تم تطبيق حد التنبيه على ${r.changed} منتج`);
+      // Low-stock counts on the dashboard, products and the bell all change.
+      for (const k of ['products', 'product', 'inventory-summary', 'notifications']) void queryClient.invalidateQueries({ queryKey: [k] });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+
   if (settings.isPending) return <Spinner />;
   if (settings.isError) return <ErrorState message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} />;
 
@@ -101,9 +113,25 @@ export function SettingsPage() {
             <Field label="أقصى خصم مسموح %" error={errors.maxDiscountPercent?.message}>
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.maxDiscountPercent} {...register('maxDiscountPercent')} />}
             </Field>
-            <Field label="حد التنبيه الافتراضي للمخزون" error={errors.defaultReorderLevel?.message}>
+            <Field label="حد التنبيه الافتراضي للمخزون" error={errors.defaultReorderLevel?.message} hint="يُعبّأ تلقائيًا للمنتجات الجديدة">
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.defaultReorderLevel} {...register('defaultReorderLevel')} />}
             </Field>
+          </div>
+          {/* Each product keeps its own limit; this is the way to bring all of them to the default. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-canvas p-3">
+            <p className="text-xs leading-5 text-muted">
+              كل منتج له حد تنبيه خاص به. لجعل حد كل المنتجات الحالية = {settings.data.defaultReorderLevel}، احفظ الإعدادات ثم اضغط:
+            </p>
+            <Button variant="outline" size="sm" disabled={isDirty} loading={applyReorder.isPending}
+              onClick={async () => {
+                if (await confirm({
+                  title: 'تطبيق حد التنبيه على كل المنتجات',
+                  message: `سيصبح حد التنبيه لكل المنتجات الحالية ${settings.data.defaultReorderLevel}، وتُستبدل الحدود الخاصة التي وضعتها لبعض المنتجات.`,
+                  confirmLabel: 'تطبيق على الكل',
+                })) applyReorder.mutate();
+              }}>
+              تطبيق على كل المنتجات
+            </Button>
           </div>
         </Card>
 

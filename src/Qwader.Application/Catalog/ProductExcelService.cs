@@ -30,7 +30,8 @@ public sealed class ProductExcelService(
     ICurrentUser currentUser,
     IDocumentNumberGenerator numbers,
     IInventoryLedger inventory,
-    IAuditService audit) : IProductExcelService
+    IAuditService audit,
+    Settings.ISettingsService settings) : IProductExcelService
 {
     private const int MaxRows = 5000;
 
@@ -190,6 +191,9 @@ public sealed class ProductExcelService(
 
         if (errors.Count > 0) return new ProductImportResult(0, 0, errors.OrderBy(e => e.Row).ToList());
 
+        // A new product without «حد التنبيه» gets the store's default, as when it is added on screen.
+        var defaultReorderLevel = (await settings.GetAsync(ct)).DefaultReorderLevel;
+
         // Everything validated: apply in one transaction.
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var categories = await db.Categories.ToDictionaryAsync(c => c.Name, StringComparer.OrdinalIgnoreCase, ct);
@@ -241,7 +245,7 @@ public sealed class ProductExcelService(
             product.RetailPrice = row.Retail;
             product.WholesalePrice = row.Wholesale ?? (isNew ? row.Retail : product.WholesalePrice);
             product.MinSalePrice = row.MinPrice ?? (isNew ? 0 : product.MinSalePrice);
-            product.ReorderLevel = row.ReorderLevel ?? product.ReorderLevel;
+            product.ReorderLevel = row.ReorderLevel ?? (isNew ? defaultReorderLevel : product.ReorderLevel);
             product.NormalizedName = ProductService.BuildSearchText(product.Name, product.Size, product.Color, product.Model,
                 brand?.Name ?? row.Brand, product.Sku, product.Barcode);
 
