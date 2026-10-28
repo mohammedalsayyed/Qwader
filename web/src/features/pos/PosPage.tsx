@@ -240,7 +240,7 @@ export function PosPage() {
           onSave={(patch) => update(editing.productId, patch)} onRemove={() => remove(editing.productId)} onClose={() => setEditing(null)} />
       )}
       {checkout && (
-        <CheckoutSheet cart={cart} subtotal={totals.subtotal} listTotal={totals.listTotal} onClose={() => setCheckout(false)}
+        <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} onClose={() => setCheckout(false)}
           onDone={(sale, change) => { setCheckout(false); reset(); setDone({ sale, change }); }} />
       )}
       {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}

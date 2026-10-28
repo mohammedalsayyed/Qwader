@@ -25,10 +25,11 @@ interface PaymentRow {
   reference: string;
 }
 
-export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
+export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }: {
   cart: Cart;
   subtotal: number;
-  listTotal: number;
+  /** Discounts already given on lines; with `subtotal` they make the gross the discount limit is measured against. */
+  lineDiscounts: number;
   onClose: () => void;
   onDone: (sale: Sale, change: number) => void;
 }) {
@@ -58,7 +59,9 @@ export function CheckoutSheet({ cart, subtotal, listTotal, onClose, onDone }: {
 
   const discountN = parseNumber(discount) ?? 0;
   const total = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
-  const discountPercent = listTotal > 0 ? round2(((listTotal - total) / listTotal) * 100) : 0;
+  // As the server counts it: line and invoice discounts against the lines at their (possibly changed) prices.
+  const gross = subtotal + lineDiscounts;
+  const discountPercent = gross > 0 ? round2(((gross - total) / gross) * 100) : 0;
   const maxDiscount = settings.data?.maxDiscountPercent ?? 0;
   // Store setting: a transfer taken at the till either waits for verification (stays debt) or counts at once.
   const transfersPending = settings.data?.saleTransfersPending ?? true;
