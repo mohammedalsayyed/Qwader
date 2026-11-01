@@ -504,7 +504,8 @@ public sealed class SaleService(
             Discounts = g.Sum(s => s.LineDiscountTotal + s.InvoiceDiscount),
             Net = g.Sum(s => s.Total),
             Cost = g.Sum(s => s.TotalCost),
-            Paid = g.Sum(s => s.PaidAmount),
+            // Collected later (a confirmed transfer, a receipt) settles the debt too.
+            Paid = g.Sum(s => s.PaidAmount + s.CollectedAmount),
         }).FirstOrDefaultAsync(ct);
 
         // Returns are counted on the day they happen, whatever the date of the original invoice.

@@ -56,7 +56,7 @@ public sealed record CreateReceiptRequest(
 
 public sealed record CreatePaymentRequest(
     Guid IdempotencyKey, PaymentPurpose Purpose, int? SupplierId, string? BeneficiaryName,
-    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false);
+    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false, int? CustomerId = null);
 
 public sealed record CreateExpenseRequest(
     Guid IdempotencyKey, int ExpenseCategoryId, string Description, decimal Amount, int FinancialAccountId,
@@ -197,10 +197,11 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
     public CreatePaymentRequestValidator()
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
-        RuleFor(x => x.Purpose).Must(p => p is PaymentPurpose.SupplierPayment or PaymentPurpose.Other)
+        RuleFor(x => x.Purpose).Must(p => p is PaymentPurpose.SupplierPayment or PaymentPurpose.Other or PaymentPurpose.CustomerRefund)
             .WithMessage("لتسجيل مصروف استخدم شاشة المصروفات");
         RuleFor(x => x.SupplierId).NotNull().When(x => x.Purpose == PaymentPurpose.SupplierPayment).WithMessage("اختر المورد");
-        RuleFor(x => x.BeneficiaryName).NotEmpty().When(x => x.SupplierId is null).WithMessage("اسم المستفيد مطلوب");
+        RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose == PaymentPurpose.CustomerRefund).WithMessage("اختر العميل");
+        RuleFor(x => x.BeneficiaryName).NotEmpty().When(x => x.SupplierId is null && x.CustomerId is null).WithMessage("اسم المستفيد مطلوب");
         RuleFor(x => x.BeneficiaryName).MaximumLength(150);
         RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب الذي ستخرج منه الأموال");

@@ -105,7 +105,8 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             Gross = g.Sum(x => x.GrossTotal),
             Discounts = g.Sum(x => x.LineDiscountTotal + x.InvoiceDiscount),
             Net = g.Sum(x => x.Total),
-            Paid = g.Sum(x => x.PaidAmount),
+            // Collected later (a confirmed transfer, a receipt) settles the debt too.
+            Paid = g.Sum(x => x.PaidAmount + x.CollectedAmount),
             Cost = g.Sum(x => x.TotalCost),
         }).FirstOrDefaultAsync(ct);
 

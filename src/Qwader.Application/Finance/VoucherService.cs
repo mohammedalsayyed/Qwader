@@ -274,7 +274,18 @@ public sealed class VoucherService(
                     : $"المبلغ أكبر من المستحق للمورد «{supplier.Name}» ({supplier.Balance:0.00} ₪)");
         }
 
-        var beneficiary = supplier?.Name ?? request.BeneficiaryName!.Trim();
+        // Paying back a customer's credit: never more than the store owes them.
+        Customer? customer = null;
+        if (request.Purpose == PaymentPurpose.CustomerRefund)
+        {
+            customer = await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.CustomerId, ct) ?? throw new ValidationFailedException("customerId", "العميل غير موجود");
+            if (request.Amount > -customer.Balance + 0.009m)
+                throw new BusinessRuleException(customer.Balance >= 0
+                    ? $"لا يوجد رصيد للعميل «{customer.Name}» لإعادته"
+                    : $"المبلغ أكبر من رصيد العميل «{customer.Name}» ({-customer.Balance:0.00} ₪)");
+        }
+
+        var beneficiary = supplier?.Name ?? customer?.Name ?? request.BeneficiaryName!.Trim();
         if (!request.ConfirmDuplicate)
         {
             var since = clock.UtcNow - DuplicateWindow;
@@ -288,6 +299,7 @@ public sealed class VoucherService(
             Date = clock.UtcNow,
             Purpose = request.Purpose,
             SupplierId = supplier?.Id,
+            CustomerId = customer?.Id,
             BeneficiaryName = beneficiary,
             Amount = request.Amount,
             FinancialAccountId = request.FinancialAccountId,
@@ -313,11 +325,18 @@ public sealed class VoucherService(
         {
             PaymentPurpose.SupplierPayment => AccountTransactionCategory.SupplierPayment,
             PaymentPurpose.Expense => AccountTransactionCategory.Expense,
+            PaymentPurpose.CustomerRefund => AccountTransactionCategory.SaleRefund,
             _ => AccountTransactionCategory.OtherPayment,
         };
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, category, source, voucher.Date, ct, requireFunds: true);
         if (voucher.SupplierId is { } supplierId && voucher.Purpose == PaymentPurpose.SupplierPayment)
             await suppliers.PostAsync(supplierId, SupplierEntryType.Payment, voucher.Amount, 0, source, voucher.Date, ct);
+        if (voucher.CustomerId is { } customerId && voucher.Purpose == PaymentPurpose.CustomerRefund)
+        {
+            // Checked again under the ledger's row lock, so two refunds at once cannot both pass.
+            var after = await customers.PostAsync(customerId, CustomerEntryType.Refund, voucher.Amount, 0, source with { Description = "إعادة رصيد للعميل" }, voucher.Date, ct);
+            if (after > 0.009m) throw new BusinessRuleException("المبلغ أكبر من رصيد العميل");
+        }
 
         audit.Log("Voucher.Payment", "PaymentVoucher", voucher.Id.ToString(), null, new { voucher.Number, voucher.Amount, voucher.BeneficiaryName, voucher.Purpose });
         return voucher;
@@ -342,6 +361,8 @@ public sealed class VoucherService(
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.In, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct);
         if (voucher.SupplierId is { } supplierId && voucher.Purpose == PaymentPurpose.SupplierPayment)
             await suppliers.PostAsync(supplierId, SupplierEntryType.Reversal, 0, voucher.Amount, source, now, ct);
+        if (voucher.CustomerId is { } customerId && voucher.Purpose == PaymentPurpose.CustomerRefund)
+            await customers.PostAsync(customerId, CustomerEntryType.Reversal, 0, voucher.Amount, source, now, ct);
 
         voucher.Status = VoucherStatus.Voided;
         voucher.VoidedAt = now;
@@ -354,9 +375,10 @@ public sealed class VoucherService(
     {
         var users = db.Users;
         var expenses = db.Expenses;
-        return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.BeneficiaryName, null, null, v.SupplierId, v.Amount,
+        return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.BeneficiaryName, null, v.CustomerId, v.SupplierId, v.Amount,
             v.FinancialAccountId, v.FinancialAccount.Name, v.Purpose.ToString(),
-            v.Purpose == PaymentPurpose.SupplierPayment ? "دفعة لمورد" : v.Purpose == PaymentPurpose.Expense ? "مصروف" : "صرف آخر",
+            v.Purpose == PaymentPurpose.SupplierPayment ? "دفعة لمورد" : v.Purpose == PaymentPurpose.Expense ? "مصروف"
+                : v.Purpose == PaymentPurpose.CustomerRefund ? "إعادة رصيد لعميل" : "صرف آخر",
             v.Reference, v.Notes, v.AttachmentFileId, v.Status, users.Where(u => u.Id == v.CreatedById).Select(u => u.FullName).FirstOrDefault(),
             v.VoidedAt, v.VoidReason, null, null,
             expenses.Where(e => e.PaymentVoucherId == v.Id).Select(e => e.Category.Name).FirstOrDefault()));

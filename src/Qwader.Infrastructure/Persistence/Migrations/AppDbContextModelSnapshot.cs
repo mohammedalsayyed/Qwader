@@ -925,6 +925,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Property<int?>("CreatedById")
                         .HasColumnType("int");
 
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("Date")
                         .HasColumnType("datetime2");
 
@@ -970,6 +973,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
 
                     b.HasIndex("Date");
 
@@ -2556,6 +2561,11 @@ namespace Qwader.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Qwader.Domain.Finance.PaymentVoucher", b =>
                 {
+                    b.HasOne("Qwader.Domain.Sales.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Qwader.Domain.Finance.FinancialAccount", "FinancialAccount")
                         .WithMany()
                         .HasForeignKey("FinancialAccountId")
@@ -2566,6 +2576,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Customer");
 
                     b.Navigation("FinancialAccount");
 

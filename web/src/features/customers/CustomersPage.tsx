@@ -4,7 +4,9 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowRight, HandCoins, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Users } from 'lucide-react';
+import { ArrowRight, HandCoins, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Undo2, Users } from 'lucide-react';
+import { ApiError } from '@/api/client';
+import { paymentsApi } from '@/api/finance';
 import { customersApi, salesApi, SALE_STATUS, type Customer } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -14,12 +16,15 @@ import { Badge, Card, EmptyState, ErrorState, FilterChips, PageHeader, Paginatio
 import { InfoList, Stat, Tabs } from '@/components/ui/Layout';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
+import { AccountChips } from '@/components/finance/FinanceBits';
 import { StatementView } from '@/components/finance/StatementView';
+import { useConfirm } from '@/components/ui/Confirm';
 import { cn } from '@/lib/cn';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
-import { useDebouncedValue } from '@/lib/hooks';
-import { zOptionalAmount } from '@/lib/numbers';
+import { useDebouncedValue, useIdempotencyKey } from '@/lib/hooks';
+import { parseNumber, zOptionalAmount } from '@/lib/numbers';
+import { useLookups } from '@/lib/queries';
 
 type Filter = 'all' | 'debt';
 const PAGE_SIZE = 30;
@@ -33,7 +38,7 @@ export function CustomersPage() {
 
   const query = useQuery({
     queryKey: ['customers', { term, filter, page }],
-    queryFn: () => customersApi.list({ search: term, page, pageSize: PAGE_SIZE, withBalance: filter === 'debt' || undefined }),
+    queryFn: () => customersApi.list({ search: term, page, pageSize: PAGE_SIZE, withBalance: filter === 'debt' || undefined, excludeWalkIn: true }),
     placeholderData: keepPreviousData,
   });
 
@@ -54,7 +59,7 @@ export function CustomersPage() {
       ) : (
         <>
           <ul className={cn('grid grid-cols-1 gap-2 md:grid-cols-2', query.isPlaceholderData && 'opacity-60')}>
-            {query.data.items.filter((c) => !c.isWalkIn).map((c) => (
+            {query.data.items.map((c) => (
               <li key={c.id}>
                 <Link to={`/customers/${c.id}`} className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 hover:border-brand-200">
                   <div className="min-w-0">
@@ -151,6 +156,7 @@ export function CustomerDetailPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('invoices');
   const [editing, setEditing] = useState(false);
+  const [refunding, setRefunding] = useState(false);
   const query = useQuery({ queryKey: ['customer', id], queryFn: () => customersApi.get(id) });
 
   if (query.isPending) return <Spinner />;
@@ -186,6 +192,9 @@ export function CustomerDetailPage() {
         {can(P.VouchersCreate) && c.balance > 0 && (
           <Link to={`/receipts/new?customerId=${c.id}`} className="contents"><Button variant="secondary"><HandCoins className="size-4" /> تحصيل دفعة</Button></Link>
         )}
+        {can(P.VouchersCreate) && c.balance < 0 && (
+          <Button variant="secondary" onClick={() => setRefunding(true)}><Undo2 className="size-4" /> إعادة الرصيد للعميل</Button>
+        )}
         {can(P.SalesCreate) && (
           <Link to="/pos" className="contents"><Button variant="outline"><ShoppingCart className="size-4" /> بيع جديد</Button></Link>
         )}
@@ -200,7 +209,66 @@ export function CustomerDetailPage() {
         <CustomerInvoices customerId={id} />
       )}
       {editing && <CustomerSheet customer={c} onClose={() => setEditing(false)} />}
+      {refunding && <RefundSheet customer={c} onClose={() => setRefunding(false)} />}
     </div>
+  );
+}
+
+/** Pays back a customer who has credit («له»): money leaves an account and the credit goes down. */
+function RefundSheet({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const accounts = useLookups().data?.accounts ?? [];
+  const [key] = useIdempotencyKey();
+  const credit = -customer.balance;
+  const [amount, setAmount] = useState(String(credit));
+  const [accountId, setAccountId] = useState<number | null>(null);
+  const [notes, setNotes] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const save = useMutation({
+    mutationFn: (confirmDuplicate: boolean) => paymentsApi.create({
+      idempotencyKey: key, purpose: 'CustomerRefund', customerId: customer.id, amount: parseNumber(amount)!, financialAccountId: accountId!,
+      notes: notes.trim() || null, confirmDuplicate,
+    }),
+    onSuccess: (v) => {
+      for (const k of ['payment', 'accounts', 'customers', 'customer', 'customer-statement']) void queryClient.invalidateQueries({ queryKey: [k] });
+      toast.success(`تمت إعادة ${formatMoney(v.amount)} للعميل — سند صرف ${v.number}`);
+      onClose();
+    },
+    onError: async (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        if (await confirm({ title: 'سند مشابه مسجّل', message: e.message, confirmLabel: 'نعم، دفعة جديدة' })) save.mutate(true);
+        return;
+      }
+      setErrors({ form: errorMessage(e) });
+    },
+  });
+
+  const submit = () => {
+    const e: Record<string, string> = {};
+    const n = parseNumber(amount);
+    if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
+    else if (n > credit + 0.009) e.amount = `المبلغ أكبر من رصيد العميل (${formatMoney(credit)})`;
+    if (!accountId) e.account = 'اختر الحساب الذي ستخرج منه الأموال';
+    setErrors(e);
+    if (Object.keys(e).length === 0) save.mutate(false);
+  };
+
+  return (
+    <Sheet open onClose={onClose} title="إعادة الرصيد للعميل"
+      footer={<Button block size="lg" loading={save.isPending} onClick={submit}>إعادة المبلغ</Button>}>
+      <div className="space-y-4">
+        <p className="rounded-xl bg-black/5 p-3 text-sm">رصيد «{customer.name}»: <strong className="tabular">{formatMoney(credit)}</strong>. يُسجَّل سند صرف ويخرج المبلغ من الحساب الذي تختاره.</p>
+        {errors.form && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{errors.form}</p>}
+        <Field label="المبلغ" required error={errors.amount}>
+          {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.amount} value={amount} onChange={(e) => setAmount(e.target.value)} />}
+        </Field>
+        <AccountChips accounts={accounts} value={accountId} onChange={setAccountId} label="يخرج من حساب" error={errors.account} />
+        <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
+      </div>
+    </Sheet>
   );
 }
 

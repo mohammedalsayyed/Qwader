@@ -139,7 +139,7 @@ export interface SaveCustomerInput {
 }
 
 export const customersApi = {
-  list: (params: { page?: number; pageSize?: number; search?: string; withBalance?: boolean; isActive?: boolean }, signal?: AbortSignal) =>
+  list: (params: { page?: number; pageSize?: number; search?: string; withBalance?: boolean; isActive?: boolean; excludeWalkIn?: boolean }, signal?: AbortSignal) =>
     api<PagedResult<CustomerListItem>>('/customers', { query: params, signal }),
   get: (id: number) => api<Customer>(`/customers/${id}`),
   statement: (id: number, from?: string, to?: string) => api<Statement>(`/customers/${id}/statement`, { query: { from, to } }),

@@ -87,4 +87,26 @@ public sealed class CollectionsTests(ApiFactory factory)
         (await admin.PostAsync($"/api/incoming-transfers/{second.Id}/confirm?acceptCredit=true", null)).EnsureSuccessStatusCode();
         (await (await admin.GetAsync($"/api/customers/{customer.Id}")).ReadAsync<CustomerDto>()).Balance.Should().Be(-100, "the reviewer accepted the credit");
     }
+
+    [Fact]
+    public async Task A_customer_with_credit_is_paid_back_by_a_refund_voucher_never_more_than_the_credit()
+    {
+        var (admin, _, customer, _) = await SetupAsync(openingDebt: 0);
+        var wallet = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Wallet).Id;
+        var transfer = await (await admin.PostAsJsonAsync("/api/incoming-transfers", new CreateIncomingTransferRequest(Guid.NewGuid(), customer.Name, null, 100, null, wallet,
+            TestData.Unique("CR"), null, null, customer.Id, null))).ReadAsync<IncomingTransferDto>();
+        (await admin.PostAsync($"/api/incoming-transfers/{transfer.Id}/confirm?acceptCredit=true", null)).EnsureSuccessStatusCode(); // له 100
+        CreatePaymentRequest Refund(decimal amount) => new(Guid.NewGuid(), PaymentPurpose.CustomerRefund, null, null, amount, wallet, null, null, null, false, customer.Id);
+        async Task<decimal> BalanceAsync() => (await (await admin.GetAsync($"/api/customers/{customer.Id}")).ReadAsync<CustomerDto>()).Balance;
+
+        (await admin.PostAsJsonAsync("/api/payment-vouchers", Refund(150))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        var voucher = await (await admin.PostAsJsonAsync("/api/payment-vouchers", Refund(60))).ReadAsync<VoucherDto>();
+        voucher.PartyName.Should().Be(customer.Name);
+        voucher.CustomerId.Should().Be(customer.Id);
+        (await BalanceAsync()).Should().Be(-40);
+
+        await (await admin.PostAsJsonAsync($"/api/payment-vouchers/{voucher.Id}/void", new VoidDocumentRequest("خطأ"))).ReadAsync<VoucherDto>();
+        (await BalanceAsync()).Should().Be(-100);
+    }
 }

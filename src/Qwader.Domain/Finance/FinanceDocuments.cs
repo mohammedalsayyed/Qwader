@@ -101,6 +101,8 @@ public enum PaymentPurpose
     /// <summary>Created by an expense; the expense is what reports count.</summary>
     Expense = 2,
     Other = 3,
+    /// <summary>Money paid back to a customer who has credit («له»).</summary>
+    CustomerRefund = 4,
 }
 
 public class PaymentVoucher : AuditableEntity
@@ -112,6 +114,7 @@ public class PaymentVoucher : AuditableEntity
     public int FinancialAccountId { get; set; }
     public PaymentPurpose Purpose { get; set; }
     public int? SupplierId { get; set; }
+    public int? CustomerId { get; set; }
     public string? Reference { get; set; }
     public string? Notes { get; set; }
     public Guid? AttachmentFileId { get; set; }
@@ -122,6 +125,7 @@ public class PaymentVoucher : AuditableEntity
 
     public FinancialAccount FinancialAccount { get; set; } = null!;
     public Supplier? Supplier { get; set; }
+    public Customer? Customer { get; set; }
 }
 
 public class Expense : AuditableEntity

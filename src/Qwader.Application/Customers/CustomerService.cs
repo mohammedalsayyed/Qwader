@@ -21,6 +21,8 @@ public sealed class CustomerListRequest : PagedRequest
 {
     public bool? WithBalance { get; set; }
     public bool? IsActive { get; set; }
+    // Leaves out «زبون نقدي», which is not a real customer.
+    public bool? ExcludeWalkIn { get; set; }
 }
 
 public interface ICustomerService
@@ -81,6 +83,7 @@ public sealed class CustomerService(
         var query = db.Customers.AsNoTracking();
         if (request.IsActive is { } active) query = query.Where(c => c.IsActive == active);
         if (request.WithBalance == true) query = query.Where(c => c.Balance != 0);
+        if (request.ExcludeWalkIn == true) query = query.Where(c => !c.IsWalkIn);
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
             var raw = request.Search.Trim();

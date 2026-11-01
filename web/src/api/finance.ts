@@ -93,7 +93,7 @@ export interface IncomingTransfer {
 }
 
 export type ReceiptPurpose = 'DebtCollection' | 'OtherIncome';
-export type PaymentPurpose = 'SupplierPayment' | 'Expense' | 'Other';
+export type PaymentPurpose = 'SupplierPayment' | 'Expense' | 'Other' | 'CustomerRefund';
 export type VoucherStatus = 'Posted' | 'Voided';
 
 export interface Voucher {
@@ -199,7 +199,7 @@ export const paymentsApi = {
   list: (params: VoucherListParams) => api<PagedResult<Voucher>>('/payment-vouchers', { query: { ...params } }),
   get: (id: number) => api<Voucher>(`/payment-vouchers/${id}`),
   create: (input: {
-    idempotencyKey: string; purpose: PaymentPurpose; supplierId?: number | null; beneficiaryName?: string | null;
+    idempotencyKey: string; purpose: PaymentPurpose; supplierId?: number | null; customerId?: number | null; beneficiaryName?: string | null;
     amount: number; financialAccountId: number; reference?: string | null; notes?: string | null; attachmentFileId?: string | null; confirmDuplicate?: boolean;
   }) => api<Voucher>('/payment-vouchers', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Voucher>(`/payment-vouchers/${id}/void`, { method: 'POST', body: { reason } }),

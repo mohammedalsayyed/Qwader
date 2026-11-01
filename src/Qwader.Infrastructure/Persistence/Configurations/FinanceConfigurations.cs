@@ -89,6 +89,7 @@ public sealed class PaymentVoucherConfiguration : IEntityTypeConfiguration<Payme
         b.HasIndex(v => new { v.SupplierId, v.Date });
         b.HasOne(v => v.FinancialAccount).WithMany().HasForeignKey(v => v.FinancialAccountId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(v => v.Supplier).WithMany().HasForeignKey(v => v.SupplierId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(v => v.Customer).WithMany().HasForeignKey(v => v.CustomerId).OnDelete(DeleteBehavior.Restrict);
         b.ToTable(t => t.HasCheckConstraint("CK_PaymentVouchers_Amount", "[Amount] > 0"));
     }
 }
