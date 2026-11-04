@@ -15,7 +15,7 @@ import { applyOfflineChanges, discardQueued, refreshOfflineData, retryQueued, sn
 
 // Full copy now and then; changes (stock, prices, balances) every few seconds so the copy is current when the connection drops.
 const REFRESH_EVERY = 30 * 60_000;
-const CHANGES_EVERY = 10_000;
+const CHANGES_EVERY = 5_000;
 const SYNC_EVERY = 15_000;
 
 /** True when the till must work from the device's copy: no connection, or the server could not be reached at start. */
