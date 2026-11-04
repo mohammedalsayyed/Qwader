@@ -53,6 +53,11 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** For components that may render outside the provider (the provider's own sheet among them). */
+export function useOptionalConfirm() {
+  return useContext(ConfirmContext);
+}
+
 export function useConfirm() {
   const ctx = useContext(ConfirmContext);
   if (!ctx) throw new Error('useConfirm must be used inside ConfirmProvider');

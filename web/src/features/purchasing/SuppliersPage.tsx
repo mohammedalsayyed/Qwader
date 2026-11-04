@@ -97,7 +97,7 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { register, control, handleSubmit, setError, formState: { errors } } = useForm<FormInput, unknown, FormValues>({
+  const { register, control, handleSubmit, setError, formState: { errors, isDirty } } = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: supplier?.name ?? '', phone: supplier?.phone ?? '', address: supplier?.address ?? '', notes: supplier?.notes ?? '', isActive: supplier?.isActive ?? true, openingBalance: '' },
   });
@@ -122,7 +122,7 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
   const onSubmit = handleSubmit((v) => save.mutate(v));
 
   return (
-    <Sheet open onClose={onClose} title={supplier ? 'تعديل المورد' : 'مورد جديد'}
+    <Sheet open onClose={onClose} dirty={isDirty} title={supplier ? 'تعديل المورد' : 'مورد جديد'}
       footer={<Button block size="lg" loading={save.isPending} onClick={() => void onSubmit()}>حفظ</Button>}>
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         <Field label="اسم المورد" required error={errors.name?.message}>

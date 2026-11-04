@@ -1,5 +1,6 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { cleanNumberInput } from '@/lib/numbers';
 
 interface FieldProps {
   label: string;
@@ -47,12 +48,20 @@ const controlBase =
   'focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-canvas disabled:text-muted';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
-  function Input({ className, invalid, ...rest }, ref) {
+  function Input({ className, invalid, onChange, ...rest }, ref) {
+    // Amount fields (inputMode="decimal") drop anything that is not part of a number as it is typed or pasted.
+    const decimal = rest.inputMode === 'decimal';
     return (
       <input
         ref={ref}
         aria-invalid={invalid || undefined}
+        aria-required={rest.required || undefined}
         className={cn(controlBase, 'h-12', invalid ? 'border-danger' : 'border-line', className)}
+        onChange={decimal && onChange ? (e) => {
+          const clean = cleanNumberInput(e.target.value);
+          if (clean !== e.target.value) e.target.value = clean;
+          onChange(e);
+        } : onChange}
         {...rest}
       />
     );

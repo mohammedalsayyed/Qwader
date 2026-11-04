@@ -102,7 +102,7 @@ function CustomerSheet({ customer, onClose }: { customer: Customer | null; onClo
   const toast = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { register, control, handleSubmit, setError, formState: { errors } } = useForm<FormInput, unknown, FormValues>({
+  const { register, control, handleSubmit, setError, formState: { errors, isDirty } } = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: customer?.name ?? '', phone: customer?.phone ?? '', address: customer?.address ?? '', notes: customer?.notes ?? '', isActive: customer?.isActive ?? true, openingBalance: '' },
   });
@@ -126,7 +126,7 @@ function CustomerSheet({ customer, onClose }: { customer: Customer | null; onClo
   const onSubmit = handleSubmit((v) => save.mutate(v));
 
   return (
-    <Sheet open onClose={onClose} title={customer ? 'تعديل العميل' : 'عميل جديد'}
+    <Sheet open onClose={onClose} dirty={isDirty} title={customer ? 'تعديل العميل' : 'عميل جديد'}
       footer={<Button block size="lg" loading={save.isPending} onClick={() => void onSubmit()}>حفظ</Button>}>
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         <Field label="اسم العميل" required error={errors.name?.message}>

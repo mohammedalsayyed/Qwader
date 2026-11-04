@@ -63,7 +63,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
   const canOpenStock = can(P.InventoryAdjust, P.PurchasesManage);
   const margin = settings.data?.defaultMarginPercent ?? 25;
 
-  const { register, control, handleSubmit, reset, setFocus, setValue, setError, getValues, formState: { errors } } = useForm<FormInput, unknown, FormValues>({
+  const { register, control, handleSubmit, reset, setFocus, setValue, setError, getValues, formState: { errors, isDirty } } = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema),
     defaultValues: EMPTY,
   });
@@ -128,6 +128,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
     <Sheet
       open
       onClose={onClose}
+      dirty={isDirty}
       title="إضافة منتج"
       footer={
         <div className="space-y-2">

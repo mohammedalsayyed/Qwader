@@ -42,7 +42,7 @@ export function UserSheet({ user, onClose }: { user: User | null; onClose: () =>
     control,
     handleSubmit,
     setError,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<FormValues>({
     resolver: zodResolver(isNew ? createSchema : baseSchema),
     defaultValues: {
@@ -89,6 +89,7 @@ export function UserSheet({ user, onClose }: { user: User | null; onClose: () =>
     <Sheet
       open
       onClose={onClose}
+      dirty={isDirty}
       title={isNew ? 'مستخدم جديد' : 'تعديل المستخدم'}
       footer={
         <Button block size="lg" loading={save.isPending} onClick={() => void onSubmit()}>
@@ -176,7 +177,7 @@ function ResetPasswordSheet({ user, onClose }: { user: User; onClose: () => void
     register,
     handleSubmit,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<{ newPassword: string }>({ resolver: zodResolver(schema), defaultValues: { newPassword: '' } });
 
   const onSubmit = handleSubmit(async (v) => {
@@ -194,6 +195,7 @@ function ResetPasswordSheet({ user, onClose }: { user: User; onClose: () => void
     <Sheet
       open
       onClose={onClose}
+      dirty={isDirty}
       title={`كلمة مرور جديدة لـ ${user.fullName}`}
       footer={
         <Button block size="lg" loading={isSubmitting} onClick={() => void onSubmit()}>

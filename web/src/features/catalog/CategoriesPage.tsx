@@ -95,7 +95,7 @@ type FormValues = z.infer<typeof schema>;
 export function CategorySheet({ category, onClose, onSaved }: { category: Category | null; onClose: () => void; onSaved?: (c: Category) => void }) {
   const toast = useToast();
   const queryClient = useQueryClient();
-  const { register, control, handleSubmit, setError, formState: { errors } } = useForm<FormValues>({
+  const { register, control, handleSubmit, setError, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { name: category?.name ?? '', code: category?.code ?? '', description: category?.description ?? '', isActive: category?.isActive ?? true },
   });
@@ -120,7 +120,7 @@ export function CategorySheet({ category, onClose, onSaved }: { category: Catego
   const onSubmit = handleSubmit((v) => save.mutate(v));
 
   return (
-    <Sheet open onClose={onClose} title={category ? 'تعديل الصنف' : 'صنف جديد'}
+    <Sheet open onClose={onClose} dirty={isDirty} title={category ? 'تعديل الصنف' : 'صنف جديد'}
       footer={<Button block size="lg" loading={save.isPending} onClick={() => void onSubmit()}>{category ? 'حفظ' : 'إضافة الصنف'}</Button>}>
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         <Field label="اسم الصنف" required error={errors.name?.message}>

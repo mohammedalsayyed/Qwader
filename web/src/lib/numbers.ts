@@ -11,6 +11,23 @@ export function parseNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
+/**
+ * What a number field keeps while typing: digits (Latin or Arabic), thousands commas, one decimal point and a leading
+ * minus. Letters and a second point never reach the field, so «abc-12.5.5» becomes «-12.55».
+ */
+export function cleanNumberInput(value: string): string {
+  let out = '';
+  let point = false;
+  for (const c of value) {
+    if (/[0-9٠-٩۰-۹,٬]/.test(c)) out += c;
+    else if ((c === '.' || c === '٫') && !point) {
+      out += c;
+      point = true;
+    } else if (c === '-' && out === '') out += c;
+  }
+  return out;
+}
+
 const invalid = 'أدخل رقمًا صحيحًا';
 
 /** Required non-negative number field for zod schemas (accepts the raw input string). */
