@@ -20,7 +20,8 @@ const queryClient = new QueryClient({
       // Retry only transient failures (network / server), never validation or permission errors.
       retry: (count, error) => count < 2 && error instanceof ApiError && (error.isNetwork || error.status >= 500),
     },
-    mutations: { retry: false },
+    // Offline, a save runs at once: the till keeps the sale on the device, and other saves report the missing connection instead of waiting silently.
+    mutations: { retry: false, networkMode: 'always' },
   },
 });
 

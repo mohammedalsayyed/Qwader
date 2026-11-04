@@ -87,6 +87,8 @@ export function PickerSheet<T>({
     queryKey: ['picker', queryKey, term],
     queryFn: ({ signal }) => search(term, signal),
     placeholderData: keepPreviousData,
+    // The search may read the device's offline copy, so it must run without a connection too.
+    networkMode: 'always',
   });
 
   return (
