@@ -1,0 +1,173 @@
+// Selling without internet: the device keeps a copy of products, customers and accounts, and a queue of sales
+// made while offline. The queue is sent, oldest first, as soon as the connection (and a valid session) returns.
+// Each queued sale keeps its idempotency key, so a sale the server already saved is never saved twice.
+
+import { useSyncExternalStore } from 'react';
+import { ApiError, type CurrentUser } from '@/api/client';
+import { lookupsApi, settingsApi, type Lookups, type Settings } from '@/api/endpoints';
+import { salesApi, type CreateSaleInput, type OfflineCustomer, type OfflineData, type OfflineProduct } from '@/api/sales';
+import { normalizeArabic } from '@/lib/arabic';
+import { idb } from '@/lib/idb';
+
+export interface OfflineSnapshot extends OfflineData {
+  user: CurrentUser;
+  lookups: Lookups;
+  settings: Settings;
+}
+
+export interface QueuedSale {
+  /** The sale's idempotency key. */
+  key: string;
+  userId: number;
+  /** Shown on the receipt until the server gives the real number. */
+  number: string;
+  input: CreateSaleInput;
+  total: number;
+  customerName: string;
+  createdAt: string;
+  /** Set when the server refused it: it stays here until retried or discarded. */
+  error?: string;
+}
+
+interface State {
+  loaded: boolean;
+  snapshot: OfflineSnapshot | null;
+  queue: QueuedSale[];
+}
+
+let state: State = { loaded: false, snapshot: null, queue: [] };
+const listeners = new Set<() => void>();
+
+function setState(patch: Partial<State>) {
+  state = { ...state, ...patch };
+  listeners.forEach((l) => l());
+}
+
+/** Resolves once the stored copy and queue are read from the device. */
+export const offlineReady: Promise<State> = (async () => {
+  try {
+    const [snapshot, queue] = await Promise.all([idb.get<OfflineSnapshot>('snapshot'), idb.get<QueuedSale[]>('queue')]);
+    setState({ loaded: true, snapshot: snapshot ?? null, queue: queue ?? [] });
+  } catch {
+    setState({ loaded: true }); // storage unavailable (private mode): offline selling is simply not offered
+  }
+  return state;
+})();
+
+export function useOfflineState() {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => state,
+  );
+}
+
+async function saveSnapshot(snapshot: OfflineSnapshot | null) {
+  setState({ snapshot });
+  try {
+    if (snapshot) await idb.set('snapshot', snapshot);
+    else await idb.del('snapshot');
+  } catch {
+    /* kept in memory for this session */
+  }
+}
+
+async function saveQueue(queue: QueuedSale[]) {
+  setState({ queue });
+  try {
+    await idb.set('queue', queue);
+  } catch {
+    /* kept in memory for this session */
+  }
+}
+
+/** Downloads a fresh copy for this user. Sales still queued are taken off the stock again, since the server has not seen them. */
+export async function refreshOfflineData(user: CurrentUser) {
+  const [data, lookups, settings] = await Promise.all([salesApi.offlineData(), lookupsApi.get(), settingsApi.get()]);
+  await saveSnapshot(withQueuedSales({ ...data, user, lookups, settings }, state.queue.filter((q) => q.userId === user.id)));
+}
+
+function withQueuedSales(snapshot: OfflineSnapshot, queue: QueuedSale[]): OfflineSnapshot {
+  if (queue.length === 0) return snapshot;
+  const sold = new Map<number, number>();
+  for (const q of queue) for (const l of q.input.lines) sold.set(l.productId, (sold.get(l.productId) ?? 0) + l.quantity);
+  return { ...snapshot, products: snapshot.products.map((p) => (sold.has(p.id) ? { ...p, quantity: p.quantity - sold.get(p.id)! } : p)) };
+}
+
+/** Forgets the copy on this device (logout). Queued sales stay: they are sent when their seller logs in again. */
+export const clearOfflineData = () => saveSnapshot(null);
+
+/** Hours since the copy was downloaded, and whether it may still be sold from. */
+export function snapshotAge(snapshot: OfflineSnapshot | null, now = Date.now()) {
+  if (!snapshot) return { usable: false, hours: Infinity };
+  const hours = (now - Date.parse(snapshot.generatedAt)) / 3_600_000;
+  return { usable: hours < snapshot.maxHours, hours };
+}
+
+export function searchProducts(snapshot: OfflineSnapshot, term: string, limit = 8): OfflineProduct[] {
+  const raw = term.trim().toLowerCase();
+  const words = normalizeArabic(term).split(' ').filter(Boolean);
+  if (words.length === 0) return [];
+  const isCode = (p: OfflineProduct) => p.sku.toLowerCase() === raw || p.barcode?.toLowerCase() === raw;
+  const found = snapshot.products.filter((p) => isCode(p) || words.every((w) => p.search.includes(w)));
+  return found.sort((a, b) => Number(isCode(b)) - Number(isCode(a))).slice(0, limit);
+}
+
+export function findByCode(snapshot: OfflineSnapshot, code: string): OfflineProduct | undefined {
+  const c = code.trim().toLowerCase();
+  return snapshot.products.find((p) => p.sku.toLowerCase() === c || p.barcode?.toLowerCase() === c);
+}
+
+export function searchCustomers(snapshot: OfflineSnapshot, term: string, limit = 20): OfflineCustomer[] {
+  const words = normalizeArabic(term).split(' ').filter(Boolean);
+  const digits = term.replace(/\D/g, '').replace(/^0/, '');
+  return snapshot.customers
+    .filter((c) => (digits.length >= 4 && c.phone?.includes(digits)) || (words.length > 0 && words.every((w) => c.search.includes(w))) || c.code === term.trim())
+    .slice(0, limit);
+}
+
+/** Keeps a sale made without internet until it can be sent. Its goods come off the device's stock at once. */
+export async function queueSale(sale: Omit<QueuedSale, 'number' | 'createdAt'>): Promise<QueuedSale> {
+  const queued: QueuedSale = { ...sale, number: `OFF-${Date.now().toString(36).toUpperCase().slice(-6)}`, createdAt: new Date().toISOString() };
+  await saveQueue([...state.queue.filter((q) => q.key !== sale.key), queued]);
+  if (state.snapshot) await saveSnapshot(withQueuedSales(state.snapshot, [queued]));
+  return queued;
+}
+
+let syncing: Promise<number> | null = null;
+
+/**
+ * Sends this user's queued sales, oldest first. Stops at the first connection problem (the rest wait for the next try);
+ * a sale the server refuses keeps its reason and waits for a decision. Resolves with how many were sent.
+ */
+export function syncQueue(userId: number): Promise<number> {
+  syncing ??= (async () => {
+    let sent = 0;
+    try {
+      for (const q of state.queue.filter((x) => x.userId === userId && !x.error)) {
+        try {
+          await salesApi.create(q.input);
+          await saveQueue(state.queue.filter((x) => x.key !== q.key));
+          sent++;
+        } catch (e) {
+          if (!(e instanceof ApiError) || e.isNetwork || e.status === 401 || e.status >= 500) break;
+          await saveQueue(state.queue.map((x) => (x.key === q.key ? { ...x, error: e.message } : x)));
+        }
+      }
+    } finally {
+      syncing = null;
+    }
+    return sent;
+  })();
+  return syncing;
+}
+
+export async function retryQueued(key: string) {
+  await saveQueue(state.queue.map((x) => (x.key === key ? { ...x, error: undefined } : x)));
+}
+
+export async function discardQueued(key: string) {
+  await saveQueue(state.queue.filter((x) => x.key !== key));
+}

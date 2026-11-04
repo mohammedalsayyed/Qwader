@@ -20,7 +20,9 @@ public sealed record CreateSaleRequest(
     decimal InvoiceDiscount,
     IReadOnlyList<SaleLineInput> Lines,
     IReadOnlyList<SalePaymentInput> Payments,
-    string? Notes);
+    string? Notes,
+    /// <summary>Set by a device that sold without internet: when the sale happened. Rules it broke are recorded for review instead of refusing it.</summary>
+    DateTime? SoldOfflineAt = null);
 
 public sealed record SaleReturnLineInput(int SaleInvoiceLineId, decimal Quantity, ReturnCondition Condition = ReturnCondition.Sellable);
 
@@ -35,7 +37,9 @@ public sealed record SaleListItemDto(
     int Id, string Number, DateTime Date, string CustomerName, string? CustomerPhone, bool IsWalkIn,
     decimal Total, decimal PaidAmount, decimal ReturnedTotal, SaleStatus Status, string SalespersonName, int ItemCount,
     /// <summary>Still owed on the invoice (after later collections and returns credited to the customer).</summary>
-    decimal Remaining = 0);
+    decimal Remaining = 0,
+    bool SoldOffline = false,
+    bool NeedsReview = false);
 
 public sealed record SaleLineDto(
     int Id, int ProductId, string Sku, string ProductName, string UnitName, decimal Quantity, decimal UnitPrice, decimal LineDiscount,
@@ -54,7 +58,8 @@ public sealed record SaleDetailDto(
     decimal ReturnedTotal, decimal? TotalCost, decimal? Profit,
     string SalespersonName, string? Notes, DateTime? VoidedAt, string? VoidReason,
     IReadOnlyList<SaleLineDto> Lines, IReadOnlyList<SalePaymentDto> Payments, IReadOnlyList<SaleReturnSummaryDto> Returns,
-    IReadOnlyList<SalePendingTransferDto> Transfers);
+    IReadOnlyList<SalePendingTransferDto> Transfers,
+    bool SoldOffline = false, string? ReviewNote = null, DateTime? ReviewedAt = null, string? ReviewedByName = null);
 
 public sealed class SaleListRequest : PagedRequest
 {
@@ -64,7 +69,18 @@ public sealed class SaleListRequest : PagedRequest
     public int? CustomerId { get; set; }
     /// <summary>Only invoices with money still owed at the till.</summary>
     public bool? Unpaid { get; set; }
+    /// <summary>Only offline sales that broke a rule and nobody has reviewed yet.</summary>
+    public bool? NeedsReview { get; set; }
 }
+
+/// <summary>What a till needs to keep selling without internet: products with prices and stock, customers, and how long the copy is good for.</summary>
+public sealed record OfflineDataDto(DateTime GeneratedAt, int MaxHours, IReadOnlyList<OfflineProductDto> Products, IReadOnlyList<OfflineCustomerDto> Customers);
+
+public sealed record OfflineProductDto(
+    int Id, string Sku, string? Barcode, string DisplayName, string Search, string UnitName, Guid? ImageFileId,
+    decimal Quantity, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice, decimal? AverageCost);
+
+public sealed record OfflineCustomerDto(int Id, string Code, string Name, string? Phone, string Search, decimal Balance);
 
 public sealed record AccountAmountDto(int AccountId, string AccountName, decimal Amount);
 
@@ -82,6 +98,9 @@ public interface ISaleService
     Task<SaleDetailDto> ReturnAsync(int id, SaleReturnRequest request, CancellationToken ct = default);
     Task<SaleDetailDto> VoidAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
     Task<SalesSummaryDto> SummaryAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);
+    Task<OfflineDataDto> OfflineDataAsync(CancellationToken ct = default);
+    /// <summary>A manager has looked at an offline sale's problems: it leaves the «تحتاج مراجعة» list.</summary>
+    Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default);
 }
 
 public sealed class CreateSaleRequestValidator : AbstractValidator<CreateSaleRequest>

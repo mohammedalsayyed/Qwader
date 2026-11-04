@@ -20,6 +20,35 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 
+/** An invoice made without internet that broke a rule a connected till would have refused: shown until a manager reviews it. */
+function ReviewNote({ sale: s }: { sale: Sale }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const reviewed = useMutation({
+    mutationFn: () => salesApi.markReviewed(s.id),
+    onSuccess: (sale) => {
+      queryClient.setQueryData(['sale', s.id], sale);
+      void queryClient.invalidateQueries({ queryKey: ['sales'] });
+      toast.success('تم تسجيل المراجعة');
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <div className={cn('rounded-xl p-3 text-sm', s.reviewedAt ? 'bg-black/5' : 'bg-amber-50 text-amber-900')}>
+      <p className="font-semibold">{s.reviewedAt ? 'بيعت بدون إنترنت — تمت مراجعتها' : 'بيعت بدون إنترنت وتحتاج مراجعة'}</p>
+      <ul className="mt-1 list-disc space-y-0.5 ps-5">
+        {s.reviewNote!.split('\n').map((line) => <li key={line}>{line}</li>)}
+      </ul>
+      {s.reviewedAt ? (
+        <p className="mt-1 text-xs text-muted">راجعها {s.reviewedByName} في {formatDateTime(s.reviewedAt)}</p>
+      ) : can(P.SalesViewAll) && (
+        <Button size="sm" variant="secondary" className="mt-2" loading={reviewed.isPending} onClick={() => reviewed.mutate()}>تمت المراجعة</Button>
+      )}
+    </div>
+  );
+}
+
 export function SaleDetailPage() {
   const id = Number(useParams().id);
   const [params, setParams] = useSearchParams();
@@ -79,6 +108,7 @@ export function SaleDetailPage() {
         </div>
 
         {s.status === 'Voided' && <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">أُلغيت في {formatDateTime(s.voidedAt)} — السبب: {s.voidReason}</p>}
+        {s.reviewNote && <ReviewNote sale={s} />}
 
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => window.print()}><Printer className="size-4" /> طباعة</Button>

@@ -3,6 +3,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { Download, RefreshCw, Share, SquarePlus, WifiOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { hasUnsavedWork } from '@/lib/hooks';
+import { snapshotAge, useOfflineState } from '@/lib/offline';
 import { Sheet } from '@/components/ui/Sheet';
 
 // ---------- Install prompt ----------
@@ -176,7 +177,7 @@ export function UpdatePrompt() {
   );
 }
 
-function useOnline() {
+export function useOnline() {
   const [online, setOnline] = useState(() => navigator.onLine);
   useEffect(() => {
     const on = () => setOnline(true);
@@ -191,14 +192,17 @@ function useOnline() {
   return online;
 }
 
-/** Saving needs the server (stock and money must stay consistent), so offline is announced clearly. */
-export function OfflineBanner() {
+/** Only selling works without internet (from the device's copy); everything else waits for the connection. */
+export function OfflineBanner({ force = false }: { force?: boolean }) {
   const online = useOnline();
-  if (online) return null;
+  const { snapshot } = useOfflineState();
+  if (online && !force) return null;
   return (
     <div role="alert" className="flex items-center justify-center gap-2 bg-amber-500 px-4 py-2 text-sm font-semibold text-black print:hidden">
       <WifiOff className="size-4 shrink-0" />
-      لا يوجد اتصال بالإنترنت — يمكنك التصفح، لكن لن تُحفظ أي عملية حتى يعود الاتصال.
+      {snapshotAge(snapshot).usable
+        ? 'لا يوجد اتصال بالإنترنت — البيع يعمل، وتُرسل الفواتير تلقائيًا عند عودة الاتصال. باقي العمليات تنتظر الاتصال.'
+        : 'لا يوجد اتصال بالإنترنت — لن تُحفظ أي عملية حتى يعود الاتصال.'}
     </div>
   );
 }

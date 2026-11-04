@@ -46,6 +46,7 @@ public sealed class SaleInvoiceConfiguration : IEntityTypeConfiguration<SaleInvo
         b.Property(s => s.CustomerPhone).HasMaxLength(20);
         b.Property(s => s.Notes).HasMaxLength(500);
         b.Property(s => s.VoidReason).HasMaxLength(300);
+        b.Property(s => s.ReviewNote).HasMaxLength(1000);
         b.Property(s => s.TotalCost).AsCostMoney();
         b.HasIndex(s => s.Number).IsUnique();
         b.HasIndex(s => s.Date);

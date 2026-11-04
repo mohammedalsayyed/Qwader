@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
+import { CloudOff, Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
 import { productsApi } from '@/api/catalog';
 import { ApiError } from '@/api/client';
 import type { PriceTier, Sale } from '@/api/sales';
@@ -19,7 +19,10 @@ import { formatMoney, formatQuantity } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
+import { findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
+import { formatDateTime } from '@/lib/format';
 import { cartTotals, lineTotal, tierPrice, toCartProduct, useCart, type CartLine } from './cart';
+import { useIsOffline } from './OfflineSales';
 import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
@@ -44,13 +47,22 @@ export function PosPage() {
   const term = useDebouncedValue(q.trim(), 200);
   const totals = cartTotals(cart);
 
-  const results = useQuery({
+  // Without internet the till searches the copy of the products saved on this device.
+  const offline = useIsOffline();
+  const { snapshot } = useOfflineState();
+  const age = snapshotAge(snapshot);
+  const canSellOffline = offline && age.usable && !!snapshot;
+  const remote = useQuery({
     queryKey: ['pos-search', term],
     queryFn: ({ signal }) => productsApi.list({ search: term, pageSize: 8 }, signal),
-    enabled: term.length > 0,
+    enabled: term.length > 0 && !offline,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
+  const localItems = canSellOffline && term ? searchProducts(snapshot, term) : [];
+  const results = offline
+    ? { data: { items: localItems }, isPending: false, isFetching: false }
+    : remote;
 
   const addProduct = (p: Parameters<typeof add>[0]) => {
     const error = add(p);
@@ -66,6 +78,14 @@ export function PosPage() {
   const onEnter = async () => {
     const code = q.trim();
     if (!code) return;
+    if (offline) {
+      const local = canSellOffline ? findByCode(snapshot, code) : undefined;
+      if (local && addProduct(local)) setQ('');
+      else if (!local && localItems.length === 1 && addProduct(localItems[0])) setQ('');
+      else if (!local && localItems.length === 0) toast.error(`لا يوجد منتج بالكود أو الاسم «${code}»`);
+      searchRef.current?.querySelector('input')?.focus();
+      return;
+    }
     try {
       const product = await productsApi.byCode(code);
       if (addProduct(toCartProduct(product))) setQ('');
@@ -81,6 +101,12 @@ export function PosPage() {
 
   /** Camera read: add by exact barcode/code; the scanner stays open for the next item. */
   const onScanned = async (code: string) => {
+    if (offline) {
+      const local = canSellOffline ? findByCode(snapshot, code) : undefined;
+      if (local) addProduct(local);
+      else toast.error(`لا يوجد منتج بالباركود ${code}`);
+      return;
+    }
     try {
       addProduct(toCartProduct(await productsApi.byCode(code)));
     } catch (e) {
@@ -105,6 +131,20 @@ export function PosPage() {
             ))}
           </div>}
         </div>
+
+        {offline && (canSellOffline ? (
+          <p className="mb-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+            <CloudOff className="mt-0.5 size-4 shrink-0" />
+            <span>بيع بدون إنترنت من بيانات {formatDateTime(snapshot.generatedAt)}. تُحفظ الفاتورة على الجهاز وتُرسل عند عودة الاتصال.</span>
+          </p>
+        ) : (
+          <p role="alert" className="mb-3 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm text-danger">
+            <CloudOff className="mt-0.5 size-4 shrink-0" />
+            <span>{snapshot
+              ? `لا يمكن البيع بدون إنترنت: بيانات المنتجات على هذا الجهاز أقدم من ${snapshot.maxHours} ساعة. اتصل بالإنترنت لتحديثها.`
+              : 'لا يمكن البيع بدون إنترنت: لا توجد بيانات منتجات محفوظة على هذا الجهاز. افتح نقطة البيع مرة واحدة والإنترنت متصل.'}</span>
+          </p>
+        ))}
 
         <div ref={searchRef} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void onEnter(); } }}>
           <div className="flex gap-2">
@@ -242,7 +282,8 @@ export function PosPage() {
           onSave={(patch) => update(editing.productId, patch)} onRemove={() => remove(editing.productId)} onClose={() => setEditing(null)} />
       )}
       {checkout && (
-        <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} onClose={() => setCheckout(false)}
+        <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} offline={offline} canSellOffline={!!snapshot && age.usable}
+          onClose={() => setCheckout(false)}
           onDone={(sale, change) => { setCheckout(false); reset(); setDone({ sale, change }); }} />
       )}
       {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}

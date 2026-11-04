@@ -1337,10 +1337,7 @@ namespace Qwader.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("WarehouseId");
 
-                    b.ToTable("StockBalances", t =>
-                        {
-                            t.HasCheckConstraint("CK_StockBalances_NonNegative", "[Quantity] >= 0");
-                        });
+                    b.ToTable("StockBalances");
                 });
 
             modelBuilder.Entity("Qwader.Domain.Inventory.StockCount", b =>
@@ -2144,8 +2141,21 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Property<int>("PriceTier")
                         .HasColumnType("int");
 
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedById")
+                        .HasColumnType("int");
+
                     b.Property<int>("SalespersonId")
                         .HasColumnType("int");
+
+                    b.Property<bool>("SoldOffline")
+                        .HasColumnType("bit");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");

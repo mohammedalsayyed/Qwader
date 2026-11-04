@@ -13,7 +13,7 @@ import { errorMessage } from '@/lib/forms';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 
-type Filter = 'all' | 'unpaid' | SaleStatus;
+type Filter = 'all' | 'unpaid' | 'review' | SaleStatus;
 const PAGE_SIZE = 25;
 
 export function SalesPage() {
@@ -30,7 +30,8 @@ export function SalesPage() {
     queryFn: () => salesApi.list({
       search: term, page, pageSize: PAGE_SIZE, from: range.from, to: range.to,
       unpaid: filter === 'unpaid' || undefined,
-      status: filter !== 'all' && filter !== 'unpaid' ? filter : undefined,
+      needsReview: filter === 'review' || undefined,
+      status: filter !== 'all' && filter !== 'unpaid' && filter !== 'review' ? filter : undefined,
     }),
     placeholderData: keepPreviousData,
   });
@@ -42,7 +43,8 @@ export function SalesPage() {
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="رقم الفاتورة أو اسم العميل أو جواله" />
         <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'all', 'custom']} />
         <FilterChips value={filter} onChange={(v) => { setFilter(v); setPage(1); }}
-          options={[{ value: 'all', label: 'الكل' }, { value: 'unpaid', label: 'غير مسددة' }, { value: 'PartiallyReturned', label: 'عليها مرتجع' }, { value: 'Voided', label: 'الملغاة' }]} />
+          options={[{ value: 'all', label: 'الكل' }, { value: 'unpaid', label: 'غير مسددة' }, { value: 'PartiallyReturned', label: 'عليها مرتجع' }, { value: 'Voided', label: 'الملغاة' },
+            ...(can(P.SalesViewAll) ? [{ value: 'review' as const, label: 'تحتاج مراجعة' }] : [])]} />
       </div>
 
       {query.isPending ? (
@@ -65,7 +67,10 @@ export function SalesPage() {
                         <p className="text-xs text-muted"><span className="ltr inline-block">{s.number}</span> · {formatDateTime(s.date)}</p>
                         <p className="text-xs text-muted">{s.itemCount} بند · {s.salespersonName}</p>
                       </div>
-                      <Badge tone={SALE_STATUS[s.status].tone}>{SALE_STATUS[s.status].label}</Badge>
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <Badge tone={SALE_STATUS[s.status].tone}>{SALE_STATUS[s.status].label}</Badge>
+                        {s.needsReview && <Badge tone="warning">تحتاج مراجعة</Badge>}
+                      </span>
                     </div>
                     <div className="mt-2 flex items-end justify-between">
                       <span className={cn('text-xs', due > 0 && s.status !== 'Voided' ? 'font-semibold text-danger' : 'text-muted')}>

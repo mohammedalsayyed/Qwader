@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Printer, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
-import { customersApi, salesApi, type CustomerListItem, type Sale } from '@/api/sales';
+import { CheckCircle2, CloudOff, Plus, Printer, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
+import { ApiError } from '@/api/client';
+import { customersApi, salesApi, type CreateSaleInput, type CustomerListItem, type Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -15,7 +16,8 @@ import { formatMoney } from '@/lib/format';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { useLookups, useStoreSettings } from '@/lib/queries';
-import type { Cart } from './cart';
+import { queueSale, searchCustomers, useOfflineState } from '@/lib/offline';
+import { lineTotal, type Cart } from './cart';
 
 type CustomerMode = 'walkin' | 'customer';
 interface PaymentRow {
@@ -25,15 +27,20 @@ interface PaymentRow {
   reference: string;
 }
 
-export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }: {
+export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, canSellOffline = false, onClose, onDone }: {
   cart: Cart;
   subtotal: number;
   /** Discounts already given on lines; with `subtotal` they make the gross the discount limit is measured against. */
   lineDiscounts: number;
+  /** No connection: the sale is kept on the device and sent later. */
+  offline?: boolean;
+  /** The device has a recent enough copy of the products to sell from. */
+  canSellOffline?: boolean;
   onClose: () => void;
   onDone: (sale: Sale, change: number) => void;
 }) {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
+  const { snapshot } = useOfflineState();
   const queryClient = useQueryClient();
   const lookups = useLookups();
   const settings = useStoreSettings();
@@ -80,18 +87,41 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }
   const change = !split && fullAccountType === 'Cash' && tenderedN !== undefined && !Number.isNaN(tenderedN) ? round2(tenderedN - total) : 0;
   const hasCustomer = mode === 'customer' && (customer !== null || (newName.trim() !== '' && newPhone.trim() !== ''));
 
+  const input = (): CreateSaleInput => ({
+    idempotencyKey: cart.key,
+    priceTier: cart.tier,
+    customerId: mode === 'customer' ? customer?.id ?? null : null,
+    customerName: mode === 'customer' && !customer ? newName.trim() : null,
+    customerPhone: mode === 'customer' && !customer ? newPhone.trim() : null,
+    invoiceDiscount: discountN,
+    lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount })),
+    payments,
+  });
+
+  /** Keeps the sale on the device; the receipt shows a temporary number until it is sent. */
+  const saveOffline = async (): Promise<Sale> => {
+    const q = await queueSale({
+      key: cart.key, userId: user!.id, input: { ...input(), soldOfflineAt: new Date().toISOString() }, total,
+      customerName: mode === 'customer' ? customer?.name ?? newName.trim() : 'زبون نقدي',
+    });
+    // Just what the «تم البيع» sheet shows; id 0 marks a sale the server has not seen yet.
+    return {
+      id: 0, number: q.number, total, invoiceDiscount: discountN, remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
+      lines: cart.lines.map((l) => ({ productName: l.name, quantity: l.quantity, lineTotal: lineTotal(l) })),
+    } as unknown as Sale;
+  };
+
   const submit = useMutation({
-    mutationFn: () =>
-      salesApi.create({
-        idempotencyKey: cart.key,
-        priceTier: cart.tier,
-        customerId: mode === 'customer' ? customer?.id ?? null : null,
-        customerName: mode === 'customer' && !customer ? newName.trim() : null,
-        customerPhone: mode === 'customer' && !customer ? newPhone.trim() : null,
-        invoiceDiscount: discountN,
-        lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount })),
-        payments,
-      }),
+    mutationFn: async () => {
+      if (offline) return saveOffline();
+      try {
+        return await salesApi.create(input());
+      } catch (e) {
+        // The connection dropped while sending: keep it on the device (same key, so it is never saved twice).
+        if (e instanceof ApiError && e.isNetwork && canSellOffline) return saveOffline();
+        throw e;
+      }
+    },
     onSuccess: (sale) => {
       for (const k of ['products', 'pos-search', 'sales', 'sales-summary', 'customers', 'notifications', 'inventory-summary'])
         void queryClient.invalidateQueries({ queryKey: [k] });
@@ -103,7 +133,9 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }
 
   const confirmSale = () => {
     setError(undefined);
+    if (offline && !canSellOffline) return setError('لا يمكن البيع بدون إنترنت: بيانات المنتجات على هذا الجهاز قديمة أو غير موجودة');
     if (Number.isNaN(discountN) || discountN < 0 || discountN > subtotal) return setError('الخصم غير صحيح');
+    if (offline && maxDiscount && !can(P.SalesPriceOverride) && discountPercent > maxDiscount + 0.001) return setError(`الخصم (${discountPercent}%) يتجاوز الحد المسموح (${maxDiscount}%)`);
     if (payments.some((p) => Number.isNaN(p.amount))) return setError('أحد المبالغ غير صحيح');
     if (payments.some((p) => !p.accountId)) return setError('اختر الحساب لكل دفعة');
     if (pendingPaid > 0 && !hasCustomer) return setError('الحوالة بانتظار التحقق تبقى دينًا حتى تأكيدها: اختر العميل أو اكتب اسمه وجواله');
@@ -125,6 +157,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }
               : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
           </div>
+          {offline && <p className="flex items-center gap-1.5 text-xs text-amber-800"><CloudOff className="size-4" /> بدون إنترنت: تُحفظ على الجهاز وتُرسل عند عودة الاتصال</p>}
           <Button block size="lg" variant="accent" loading={submit.isPending} onClick={confirmSale}>
             <CheckCircle2 className="size-5" /> اعتماد الفاتورة
           </Button>
@@ -159,8 +192,10 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, onClose, onDone }
                   valueLabel={null}
                   placeholder="ابحث عن عميل مسجّل بالاسم أو الجوال"
                   title="اختيار عميل"
-                  queryKey="pos-customers"
-                  search={async (q, signal) => (await customersApi.list({ search: q, pageSize: 20, isActive: true }, signal)).items.filter((c) => !c.isWalkIn)}
+                  queryKey={offline ? 'pos-customers-offline' : 'pos-customers'}
+                  search={async (q, signal) => offline
+                    ? (snapshot ? searchCustomers(snapshot, q).map((c) => ({ ...c, isActive: true, isWalkIn: false })) : [])
+                    : (await customersApi.list({ search: q, pageSize: 20, isActive: true }, signal)).items.filter((c) => !c.isWalkIn)}
                   getKey={(c) => c.id}
                   renderItem={(c) => (
                     <div className="flex items-center justify-between gap-2">
@@ -298,24 +333,31 @@ export function SaleDoneSheet({ sale, change, onClose }: { sale: Sale; change: n
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
   };
 
+  // id 0: kept on this device until the connection returns; it can be printed from «الفواتير» once sent.
+  const queued = sale.id === 0;
   return (
-    <Sheet open onClose={onClose} title="تم البيع"
+    <Sheet open onClose={onClose} title={queued ? 'تم البيع — بدون إنترنت' : 'تم البيع'}
       footer={
         <div className="space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" size="lg" onClick={() => navigate(`/sales/${sale.id}?print=1`)}><Printer className="size-5" /> طباعة</Button>
-            <Button variant="outline" size="lg" onClick={() => void share()}><Share2 className="size-5" /> مشاركة</Button>
-          </div>
+          {queued ? (
+            <Button block variant="outline" size="lg" onClick={() => void share()}><Share2 className="size-5" /> مشاركة</Button>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="lg" onClick={() => navigate(`/sales/${sale.id}?print=1`)}><Printer className="size-5" /> طباعة</Button>
+              <Button variant="outline" size="lg" onClick={() => void share()}><Share2 className="size-5" /> مشاركة</Button>
+            </div>
+          )}
           <Button block size="lg" onClick={onClose}><ShoppingCart className="size-5" /> بيع جديد</Button>
         </div>
       }>
       <div className="py-2 text-center">
         <CheckCircle2 className="mx-auto size-14 text-success" />
-        <p className="mt-2 text-sm text-muted">رقم الفاتورة</p>
+        <p className="mt-2 text-sm text-muted">{queued ? 'رقم مؤقت' : 'رقم الفاتورة'}</p>
         <p className="ltr text-center text-xl font-bold">{sale.number}</p>
         <p className="tabular mt-3 text-3xl font-bold">{formatMoney(sale.total)}</p>
         {change > 0 && <p className="mt-2 rounded-xl bg-green-50 p-3 text-lg font-bold text-success">الباقي للزبون: {formatMoney(change)}</p>}
         {sale.remaining > 0 && <p className="mt-2 rounded-xl bg-amber-50 p-3 font-semibold text-amber-800">آجل على {sale.customerName}: {formatMoney(sale.remaining)}</p>}
+        {queued && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">حُفظت الفاتورة على هذا الجهاز وتُرسل تلقائيًا عند عودة الإنترنت، فتأخذ رقمها النهائي ويمكن طباعتها من «الفواتير».</p>}
       </div>
     </Sheet>
   );

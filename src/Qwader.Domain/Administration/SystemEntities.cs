@@ -19,6 +19,8 @@ public static class SettingKeys
     public const string LowStockDefault = "Inventory.DefaultReorderLevel";
     /// <summary>"true": transfers taken at the till wait for verification (stay as debt); "false": they count as paid at once.</summary>
     public const string SaleTransfersPending = "Sales.TransfersPending";
+    /// <summary>How long a device may keep selling without internet on the product data it last downloaded.</summary>
+    public const string OfflineSaleMaxHours = "Sales.OfflineMaxHours";
 }
 
 public enum DocumentType

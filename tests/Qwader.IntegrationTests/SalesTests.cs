@@ -327,4 +327,43 @@ public sealed class SalesTests(ApiFactory factory)
         summary.Received.Should().Be(30);
         summary.GrossProfit.Should().BeNull();
     }
+
+    [Fact]
+    public async Task A_sale_made_without_internet_is_accepted_at_its_time_and_flagged_for_review()
+    {
+        var admin = await factory.LoginAsync();
+        var seller = await SalesUserAsync();
+        var product = await admin.CreateProductAsync(retail: 25, openingQuantity: 1, openingCost: 15);
+        var cash = await AccountAsync(admin, "الصندوق النقدي");
+
+        // Connected, the same sale is refused: not enough stock.
+        (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 3, 25)], [new(cash, 75)]))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        var data = await (await seller.GetAsync("/api/sales/offline-data")).ReadAsync<OfflineDataDto>();
+        data.MaxHours.Should().Be(24);
+        data.Products.Should().Contain(p => p.Id == product.Id && p.Quantity == 1);
+        data.Products.First(p => p.Id == product.Id).AverageCost.Should().BeNull("a seller does not see costs");
+
+        var soldAt = DateTime.UtcNow.AddHours(-2);
+        var offline = Sale([new(product.Id, 3, 10)], [new(cash, 30)]) with { SoldOfflineAt = soldAt };
+        var sale = await (await seller.PostAsJsonAsync("/api/sales", offline)).ReadAsync<SaleDetailDto>();
+
+        sale.SoldOffline.Should().BeTrue();
+        sale.Date.Should().BeCloseTo(soldAt, TimeSpan.FromSeconds(1));
+        sale.Total.Should().Be(30);
+        sale.ReviewNote.Should().Contain("المخزون لم يكفِ").And.Contain("أقل من التكلفة");
+        (await admin.GetProductAsync(product.Id)).Quantity.Should().Be(-2);
+
+        // Sending it again (the device retries after a dropped answer) does not sell twice.
+        (await (await seller.PostAsJsonAsync("/api/sales", offline)).ReadAsync<SaleDetailDto>()).Id.Should().Be(sale.Id);
+
+        var flagged = await admin.GetFromJsonAsync<Application.Common.PagedResult<SaleListItemDto>>("/api/sales?needsReview=true&pageSize=100", TestJson.Options);
+        flagged!.Items.Should().Contain(s => s.Id == sale.Id && s.NeedsReview);
+
+        (await seller.PostAsync($"/api/sales/{sale.Id}/reviewed", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var reviewed = await (await admin.PostAsync($"/api/sales/{sale.Id}/reviewed", null)).ReadAsync<SaleDetailDto>();
+        reviewed.ReviewedAt.Should().NotBeNull();
+        flagged = await admin.GetFromJsonAsync<Application.Common.PagedResult<SaleListItemDto>>("/api/sales?needsReview=true&pageSize=100", TestJson.Options);
+        flagged!.Items.Should().NotContain(s => s.Id == sale.Id);
+    }
 }

@@ -27,11 +27,12 @@ const schema = z.object({
   maxDiscountPercent: num(0, 100, 'نسبة الخصم يجب أن تكون بين 0 و100'),
   defaultReorderLevel: num(0, 1_000_000, 'حد التنبيه لا يمكن أن يكون سالبًا'),
   saleTransfersPending: z.boolean(),
+  offlineSaleMaxHours: num(1, 168, 'المدة يجب أن تكون بين 1 و168 ساعة').pipe(z.number().int('أدخل عدد ساعات صحيحًا')),
 });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
 
-const FIELDS = ['storeName', 'storeAddress', 'storePhone', 'invoiceFooter', 'defaultMarginPercent', 'maxDiscountPercent', 'defaultReorderLevel'] as const;
+const FIELDS = ['storeName', 'storeAddress', 'storePhone', 'invoiceFooter', 'defaultMarginPercent', 'maxDiscountPercent', 'defaultReorderLevel', 'offlineSaleMaxHours'] as const;
 
 export function SettingsPage() {
   const toast = useToast();
@@ -152,6 +153,17 @@ export function SettingsPage() {
                 ))}
               </div>
             )} />
+        </Card>
+
+        <Card className="space-y-2 p-5">
+          <h2 className="font-bold">البيع بدون إنترنت</h2>
+          <p className="text-sm text-muted">
+            يحفظ كل جهاز نسخة من المنتجات والأسعار والكميات، فيستمر البيع إذا انقطع الإنترنت، وتُرسل الفواتير تلقائيًا عند عودته.
+            بعد هذه المدة من آخر تحديث للنسخة يتوقف البيع بدون إنترنت حتى يتصل الجهاز ويحدّثها.
+          </p>
+          <Field label="أقصى مدة للبيع بدون إنترنت (ساعة)" error={errors.offlineSaleMaxHours?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} inputMode="numeric" className="ltr" invalid={!!errors.offlineSaleMaxHours} {...register('offlineSaleMaxHours')} />}
+          </Field>
         </Card>
 
         <div className="sticky bottom-nav z-20 lg:bottom-4">

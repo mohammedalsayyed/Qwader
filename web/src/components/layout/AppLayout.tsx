@@ -9,6 +9,7 @@ import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
 import { BOTTOM_TABS, NAV_GROUP_LABELS, NAV_ITEMS, type NavItem } from './navigation';
 import { GlobalSearchButton, NotificationsButton } from './TopBarTools';
+import { OfflineSync, QueuedSalesChip } from '@/features/pos/OfflineSales';
 
 const STORE_NAME = 'معرض قويدر';
 
@@ -61,6 +62,7 @@ export function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <OfflineSync />
         <OfflineBanner />
         <TopBar />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-page lg:px-8 lg:pb-10 print:p-0">
@@ -159,6 +161,7 @@ function TopBar() {
 
       <div className="hidden lg:block"><GlobalSearchButton /></div>
       <div className="flex items-center gap-1">
+      <QueuedSalesChip />
       <div className="lg:hidden"><GlobalSearchButton /></div>
       <NotificationsButton />
       <button

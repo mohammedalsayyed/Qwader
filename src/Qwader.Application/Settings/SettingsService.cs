@@ -14,7 +14,8 @@ public sealed record SettingsDto(
     decimal DefaultMarginPercent,
     decimal MaxDiscountPercent,
     decimal DefaultReorderLevel,
-    bool SaleTransfersPending = true);
+    bool SaleTransfersPending = true,
+    int OfflineSaleMaxHours = 24);
 
 public interface ISettingsService
 {
@@ -39,6 +40,7 @@ public sealed class SettingsDtoValidator : AbstractValidator<SettingsDto>
         RuleFor(x => x.DefaultMarginPercent).InclusiveBetween(0, 1000).WithMessage("نسبة الربح يجب أن تكون بين 0 و1000");
         RuleFor(x => x.MaxDiscountPercent).InclusiveBetween(0, 100).WithMessage("نسبة الخصم يجب أن تكون بين 0 و100");
         RuleFor(x => x.DefaultReorderLevel).GreaterThanOrEqualTo(0).WithMessage("حد التنبيه لا يمكن أن يكون سالبًا");
+        RuleFor(x => x.OfflineSaleMaxHours).InclusiveBetween(1, 168).WithMessage("مدة البيع بدون إنترنت يجب أن تكون بين 1 و168 ساعة");
     }
 }
 
@@ -54,6 +56,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         [SettingKeys.MaxDiscountPercent] = "10",
         [SettingKeys.LowStockDefault] = "5",
         [SettingKeys.SaleTransfersPending] = "true",
+        [SettingKeys.OfflineSaleMaxHours] = "24",
     };
 
     public async Task<SettingsDto> GetAsync(CancellationToken ct = default)
@@ -85,6 +88,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
             [SettingKeys.MaxDiscountPercent] = request.MaxDiscountPercent.ToString(CultureInfo.InvariantCulture),
             [SettingKeys.LowStockDefault] = request.DefaultReorderLevel.ToString(CultureInfo.InvariantCulture),
             [SettingKeys.SaleTransfersPending] = request.SaleTransfersPending ? "true" : "false",
+            [SettingKeys.OfflineSaleMaxHours] = request.OfflineSaleMaxHours.ToString(CultureInfo.InvariantCulture),
         };
 
         var existing = await db.Settings.ToDictionaryAsync(s => s.Key, ct);
@@ -121,7 +125,8 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         decimal.Parse(v[SettingKeys.DefaultMarginPercent], CultureInfo.InvariantCulture),
         decimal.Parse(v[SettingKeys.MaxDiscountPercent], CultureInfo.InvariantCulture),
         decimal.Parse(v[SettingKeys.LowStockDefault], CultureInfo.InvariantCulture),
-        v[SettingKeys.SaleTransfersPending] != "false");
+        v[SettingKeys.SaleTransfersPending] != "false",
+        int.TryParse(v[SettingKeys.OfflineSaleMaxHours], CultureInfo.InvariantCulture, out var hours) ? hours : 24);
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

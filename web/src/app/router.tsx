@@ -9,6 +9,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { ChangePasswordPage } from '@/features/auth/ChangePasswordPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { ForbiddenPage, NotFoundPage } from '@/features/common/Placeholders';
+import { OfflineQueuePage, OfflineSync, QueuedSalesChip } from '@/features/pos/OfflineSales';
 // Pages load on demand so the first visit on a slow connection only downloads what it shows.
 const page = <T, K extends keyof T>(load: () => Promise<T>, name: K) =>
   lazy(() => load().then((m) => ({ default: m[name] as ComponentType<any> })));
@@ -47,6 +48,8 @@ function SessionGate() {
   const location = useLocation();
 
   if (status === 'loading') return <Spinner className="min-h-dvh" />;
+  // Opened without internet by someone whose sales data is on this device: the till keeps working.
+  if (status === 'offline' && user?.permissions.includes(P.SalesCreate)) return <OfflineShell />;
   if (status === 'offline')
     return (
       <div className="min-h-dvh">
@@ -59,6 +62,31 @@ function SessionGate() {
   if (status === 'anonymous') return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   if (user?.mustChangePassword && location.pathname !== '/account/password') return <Navigate to="/account/password" replace />;
   return <Outlet />;
+}
+
+/** The app without a server: only selling (and the list of sales waiting to be sent). */
+function OfflineShell() {
+  const { user } = useAuth();
+  const location = useLocation();
+  return (
+    <div className="min-h-dvh">
+      <OfflineSync />
+      <OfflineBanner force />
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-line bg-surface/95 px-4 backdrop-blur print:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+          <img src="/brand/mark.png" alt="" className="h-8 w-auto" width={400} height={200} />
+          <span className="truncate font-bold">بيع بدون إنترنت</span>
+        </span>
+        <span className="flex items-center gap-2">
+          <QueuedSalesChip />
+          <span className="hidden text-sm text-muted sm:block">{user?.fullName}</span>
+        </span>
+      </header>
+      <main className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 lg:px-8">
+        <Suspense fallback={<Spinner />}>{location.pathname === '/pos/queue' ? <OfflineQueuePage /> : <PosPage />}</Suspense>
+      </main>
+    </div>
+  );
 }
 
 function AnonymousOnly({ children }: { children: ReactNode }) {
@@ -142,6 +170,7 @@ export const router = createBrowserRouter([
           guarded('purchases/:id', <PurchaseDetailPage />, [P.PurchasesView]),
           guarded('purchases/:id/edit', <PurchaseFormPage />, [P.PurchasesManage]),
           guarded('pos', <PosPage />, [P.SalesCreate]),
+          guarded('pos/queue', <OfflineQueuePage />, [P.SalesCreate]),
           guarded('sales', <SalesPage />, [P.SalesCreate, P.SalesViewAll]),
           guarded('sales/:id', <SaleDetailPage />, [P.SalesCreate, P.SalesViewAll]),
           guarded('customers', <CustomersPage />, [P.CustomersManage, P.SalesCreate]),

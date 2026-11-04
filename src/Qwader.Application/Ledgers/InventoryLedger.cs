@@ -26,7 +26,8 @@ public interface IInventoryLedger
     /// Stock out. Leaves at the current average unless <paramref name="atCost"/> is given (purchase returns/voids),
     /// in which case the average is recomputed. Fails without side effects when stock is insufficient.
     /// </summary>
-    Task<StockPosting> IssueAsync(StockEntry entry, decimal? atCost = null, CancellationToken ct = default);
+    /// <param name="allowNegative">Goods already handed over (a sale made without internet): post it even if the stock goes below zero.</param>
+    Task<StockPosting> IssueAsync(StockEntry entry, decimal? atCost = null, CancellationToken ct = default, bool allowNegative = false);
 }
 
 /// <summary>
@@ -61,7 +62,7 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
         return new StockPosting(unitCost, balance, newAverage);
     }
 
-    public async Task<StockPosting> IssueAsync(StockEntry entry, decimal? atCost = null, CancellationToken ct = default)
+    public async Task<StockPosting> IssueAsync(StockEntry entry, decimal? atCost = null, CancellationToken ct = default, bool allowNegative = false)
     {
         EnsureTransaction();
         if (entry.Quantity <= 0) throw new ArgumentOutOfRangeException(nameof(entry), "Quantity must be positive.");
@@ -71,8 +72,13 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
         var balances = await db.Database.SqlQuery<decimal>($"""
             UPDATE StockBalances SET Quantity = Quantity - {entry.Quantity}
             OUTPUT inserted.Quantity AS Value
-            WHERE ProductId = {entry.ProductId} AND WarehouseId = {entry.WarehouseId} AND Quantity >= {entry.Quantity};
+            WHERE ProductId = {entry.ProductId} AND WarehouseId = {entry.WarehouseId} AND (Quantity >= {entry.Quantity} OR {allowNegative} = 1);
             """).ToListAsync(ct);
+        if (balances.Count == 0 && allowNegative)
+            balances = await db.Database.SqlQuery<decimal>($"""
+                INSERT INTO StockBalances (ProductId, WarehouseId, Quantity) OUTPUT inserted.Quantity AS Value
+                VALUES ({entry.ProductId}, {entry.WarehouseId}, {-entry.Quantity});
+                """).ToListAsync(ct);
 
         if (balances.Count == 0)
         {

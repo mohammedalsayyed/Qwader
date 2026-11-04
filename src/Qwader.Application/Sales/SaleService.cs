@@ -49,13 +49,23 @@ public sealed class SaleService(
         if (request.PriceTier == PriceTier.Wholesale && !currentUser.HasPermission(Permissions.SalesWholesale))
             throw new ForbiddenException("البيع بسعر الجملة متاح لمدير النظام ومدير المعرض فقط");
 
+        // A sale made without internet already happened: the goods and the money changed hands on data that may since
+        // have changed. Rules a connected till enforces are then recorded for a manager to review instead of refusing it.
+        var offline = request.SoldOfflineAt is not null;
+        var review = new List<string>();
+        void Breach(string problem)
+        {
+            if (!offline) throw new BusinessRuleException(problem);
+            review.Add(problem);
+        }
+
         var productIds = request.Lines.Select(l => l.ProductId).Distinct().ToList();
         var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
             .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost })
             .ToDictionaryAsync(p => p.Id, ct);
         if (products.Count != productIds.Count) throw new ValidationFailedException("lines", "أحد المنتجات غير موجود");
-        if (products.Values.FirstOrDefault(p => p.IsArchived) is { } archived)
-            throw new BusinessRuleException($"المنتج «{archived.Name}» مؤرشف ولا يمكن بيعه");
+        foreach (var archived in products.Values.Where(p => p.IsArchived))
+            Breach($"المنتج «{archived.Name}» مؤرشف ولا يمكن بيعه");
 
         // ---- amounts (always recomputed here; client totals are never trusted)
         // A price lowered at the till is recorded as a discount: the line keeps the product's price and the difference
@@ -102,10 +112,13 @@ public sealed class SaleService(
         if (discountGiven > 0.009m)
         {
             if (!currentUser.HasPermission(Permissions.SalesDiscount) && !canOverride)
-                throw new ForbiddenException("ليست لديك صلاحية إعطاء خصم");
+            {
+                if (!offline) throw new ForbiddenException("ليست لديك صلاحية إعطاء خصم");
+                review.Add($"خصم {discountGiven:0.##} ₪ بدون صلاحية خصم");
+            }
             var maxPercent = (await settings.GetAsync(ct)).MaxDiscountPercent;
             if (!canOverride && chargedGross > 0 && discountGiven / chargedGross * 100 > maxPercent + 0.001m)
-                throw new BusinessRuleException($"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
+                Breach($"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
         }
 
         var overridden = new List<string>();
@@ -116,11 +129,11 @@ public sealed class SaleService(
             // A wholesale price set below the minimum is the floor for wholesale sales.
             var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(p.MinSalePrice, p.WholesalePrice) : p.MinSalePrice;
             if (netUnit + 0.0001m < minimum)
-                throw new BusinessRuleException($"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)");
+                Breach($"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)");
             if (netUnit + 0.0001m < p.AverageCost)
             {
                 if (!canOverride)
-                    throw new BusinessRuleException($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
+                    Breach($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
                 line.PriceOverridden = true;
                 overridden.Add(line.ProductName);
             }
@@ -151,7 +164,11 @@ public sealed class SaleService(
         if (request.CustomerId is { } customerId)
         {
             customer = await db.Customers.FirstOrDefaultAsync(c => c.Id == customerId, ct) ?? throw new ValidationFailedException("customerId", "العميل غير موجود");
-            if (!customer.IsActive) throw new ValidationFailedException("customerId", "العميل غير فعّال");
+            if (!customer.IsActive)
+            {
+                if (!offline) throw new ValidationFailedException("customerId", "العميل غير فعّال");
+                review.Add($"العميل «{customer.Name}» غير فعّال");
+            }
         }
         else if (!string.IsNullOrWhiteSpace(request.CustomerPhone))
             customer = await customerService.FindOrCreateByPhoneAsync(request.CustomerName!, request.CustomerPhone, ct);
@@ -164,7 +181,10 @@ public sealed class SaleService(
                 ? "الحوالة غير المؤكدة تبقى دينًا حتى التحقق منها: اكتب اسم العميل ورقم جواله"
                 : "المبلغ المدفوع أقل من الإجمالي. للبيع الآجل أو الجزئي اكتب اسم العميل ورقم جواله");
 
+        // An offline sale keeps the moment it was sold (never in the future, never more than a week back).
         var now = clock.UtcNow;
+        if (request.SoldOfflineAt is { } soldAt)
+            now = new[] { new[] { soldAt.ToUniversalTime(), now.AddDays(-7) }.Max(), now }.Min();
         var invoice = new SaleInvoice
         {
             Number = await numbers.NextAsync(DocumentType.SaleInvoice, ct),
@@ -181,6 +201,7 @@ public sealed class SaleService(
             PaidAmount = paid,
             SalespersonId = currentUser.RequiredUserId,
             Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
+            SoldOffline = offline,
         };
         foreach (var line in lines) invoice.Lines.Add(line);
         foreach (var (p, _, _) in payments.Where(p => !p.Pending))
@@ -192,8 +213,15 @@ public sealed class SaleService(
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId).ThenBy(l => l.Id))
         {
             var posting = await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.Sale,
-                "SaleInvoice", invoice.Id, invoice.Number), ct: ct);
+                "SaleInvoice", invoice.Id, invoice.Number), ct: ct, allowNegative: offline);
             line.UnitCost = posting.UnitCost;
+            if (posting.BalanceAfter < 0)
+                review.Add($"«{line.ProductName}»: بيعت {line.Quantity:0.###} والمخزون لم يكفِ (الرصيد الآن {posting.BalanceAfter:0.###})");
+        }
+        if (review.Count > 0)
+        {
+            var note = string.Join('\n', review.Distinct());
+            invoice.ReviewNote = note.Length > 1000 ? note[..1000] : note;
         }
         invoice.TotalCost = invoice.Lines.Sum(l => l.Quantity * l.UnitCost);
 
@@ -220,6 +248,10 @@ public sealed class SaleService(
         await tx.CommitAsync(ct);
 
         await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), ct);
+        if (invoice.ReviewNote is not null)
+            push.Notify(PushTopics.Sales, new PushMessage($"فاتورة تحتاج مراجعة — {invoice.Number}", invoice.ReviewNote, $"/sales/{invoice.Id}",
+                $"review-{invoice.Id}"),
+                Permissions.SalesViewAll);
         return await GetAsync(invoice.Id, ct);
     }
 
@@ -237,6 +269,7 @@ public sealed class SaleService(
         var paid = payments.Select(p => $"{accountNames[p.AccountId]} {PushMessage.Money(p.Amount)}{(p.Pending ? " (بانتظار التحقق)" : "")}").ToList();
         var onCredit = invoice.Total - payments.Sum(p => p.Amount);
         if (onCredit > 0.004m) paid.Add($"آجل {PushMessage.Money(onCredit)}");
+        // A sale made without internet notifies the same way, at the moment it reaches the server.
         push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد — {PushMessage.Money(invoice.Total)}",
             string.Join('\n', new[]
             {
@@ -278,6 +311,7 @@ public sealed class SaleService(
         if (!CanSeeAll) query = query.Where(s => s.SalespersonId == currentUser.UserId);
         if (request.Status is { } status) query = query.Where(s => s.Status == status);
         if (request.CustomerId is { } customerId) query = query.Where(s => s.CustomerId == customerId);
+        if (request.NeedsReview == true) query = query.Where(s => s.ReviewNote != null && s.ReviewedAt == null);
         if (request.Unpaid == true)
             query = query.Where(s => s.Status != SaleStatus.Voided && s.PaidAmount + s.CollectedAmount + (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0) < s.Total - 0.004m);
         if (request.From is not null || request.To is not null)
@@ -302,7 +336,8 @@ public sealed class SaleService(
                 s.Status,
                 users.Where(u => u.Id == s.SalespersonId).Select(u => u.FullName).FirstOrDefault() ?? "",
                 s.Lines.Count,
-                s.Status == SaleStatus.Voided ? 0 : s.Total - s.PaidAmount - s.CollectedAmount - (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0)))
+                s.Status == SaleStatus.Voided ? 0 : s.Total - s.PaidAmount - s.CollectedAmount - (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0),
+                s.SoldOffline, s.ReviewNote != null && s.ReviewedAt == null))
             .ToPagedAsync(request, ct);
     }
 
@@ -314,6 +349,7 @@ public sealed class SaleService(
                 Invoice = x,
                 x.Customer.IsWalkIn,
                 Salesperson = db.Users.Where(u => u.Id == x.SalespersonId).Select(u => u.FullName).FirstOrDefault(),
+                Reviewer = db.Users.Where(u => u.Id == x.ReviewedById).Select(u => u.FullName).FirstOrDefault(),
                 Lines = x.Lines.OrderBy(l => l.Id).Select(l => new
                 {
                     l.Id, l.ProductId, l.Product.Sku, l.ProductName, Unit = l.Product.Unit.Name, l.Quantity, l.UnitPrice, l.LineDiscount,
@@ -349,7 +385,41 @@ public sealed class SaleService(
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden)).ToList(),
-            s.Payments, returns, pendingTransfers);
+            s.Payments, returns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer);
+    }
+
+    public async Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default)
+    {
+        var invoice = await db.SaleInvoices.FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
+        if (invoice.ReviewNote is null) throw new BusinessRuleException("الفاتورة لا تحتاج مراجعة");
+        if (invoice.ReviewedAt is null)
+        {
+            invoice.ReviewedAt = clock.UtcNow;
+            invoice.ReviewedById = currentUser.UserId;
+            audit.Log("Sale.Reviewed", "SaleInvoice", id.ToString(), null, new { invoice.Number });
+            await db.SaveChangesAsync(ct);
+        }
+        return await GetAsync(id, ct);
+    }
+
+    public async Task<OfflineDataDto> OfflineDataAsync(CancellationToken ct = default)
+    {
+        var showCost = currentUser.HasPermission(Permissions.ProductsViewCost);
+        var products = await db.Products.AsNoTracking().Where(p => !p.IsArchived)
+            .OrderBy(p => p.Name).ThenBy(p => p.Id)
+            .Select(p => new
+            {
+                p.Id, p.Sku, p.Barcode, p.Name, p.Size, p.Color, p.Model, p.NormalizedName, Unit = p.Unit.Name, p.ImageFileId,
+                Quantity = p.StockBalances.Sum(b => (decimal?)b.Quantity) ?? 0,
+                p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost,
+            }).ToListAsync(ct);
+        var customers = await db.Customers.AsNoTracking().Where(c => c.IsActive && !c.IsWalkIn).OrderBy(c => c.Name)
+            .Select(c => new OfflineCustomerDto(c.Id, c.Code, c.Name, c.Phone, c.NormalizedName, c.Balance)).ToListAsync(ct);
+        return new OfflineDataDto(clock.UtcNow, (await settings.GetAsync(ct)).OfflineSaleMaxHours,
+            products.Select(p => new OfflineProductDto(p.Id, p.Sku, p.Barcode, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
+                p.NormalizedName, p.Unit, p.ImageFileId, p.Quantity, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
+                showCost ? p.AverageCost : null)).ToList(),
+            customers);
     }
 
     // ------------------------------------------------------------------ returns

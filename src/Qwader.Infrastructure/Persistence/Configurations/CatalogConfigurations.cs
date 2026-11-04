@@ -84,7 +84,6 @@ public sealed class StockBalanceConfiguration : IEntityTypeConfiguration<StockBa
         b.HasOne(s => s.Product).WithMany(p => p.StockBalances).HasForeignKey(s => s.ProductId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(s => s.Warehouse).WithMany().HasForeignKey(s => s.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         // Last line of defence against negative stock, whatever code path writes it.
-        b.ToTable(t => t.HasCheckConstraint("CK_StockBalances_NonNegative", "[Quantity] >= 0"));
     }
 }
 

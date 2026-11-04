@@ -4,6 +4,7 @@ import { refreshSession, session, type CurrentUser } from '@/api/client';
 import { authApi } from '@/api/endpoints';
 import type { Permission } from './permissions';
 import { forgetDeviceOnLogout } from '@/lib/push';
+import { clearOfflineData, offlineReady } from '@/lib/offline';
 
 type Status = 'loading' | 'authenticated' | 'anonymous' | 'offline';
 
@@ -37,6 +38,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await refreshSession(); // updates state through the session listener
     } catch {
+      // No connection: the user saved with the device's offline copy may keep selling until it returns.
+      const { snapshot } = await offlineReady;
+      if (snapshot) setUser(snapshot.user);
       setStatus('offline');
     }
   }, []);
@@ -71,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       session.set(null);
       queryClient.clear();
+      void clearOfflineData();
     }
   }, [queryClient]);
 

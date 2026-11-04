@@ -91,6 +91,8 @@ export interface Settings {
   maxDiscountPercent: number;
   defaultReorderLevel: number;
   saleTransfersPending: boolean;
+  /** How long a till may sell without internet on the data it last downloaded. */
+  offlineSaleMaxHours: number;
 }
 
 export interface LookupItem {

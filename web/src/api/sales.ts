@@ -20,6 +20,9 @@ export interface SaleListItem {
   itemCount: number;
   /** Still owed: after later collections and returns credited to the customer. */
   remaining: number;
+  soldOffline: boolean;
+  /** Sold without internet and broke a rule nobody has reviewed yet. */
+  needsReview: boolean;
 }
 
 export interface SaleLine {
@@ -65,6 +68,11 @@ export interface Sale {
   payments: { id: number; accountId: number; accountName: string; amount: number; reference: string | null }[];
   returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null }[];
   transfers: { id: number; number: string; amount: number; accountName: string; reference: string | null; status: 'Pending' | 'Confirmed' | 'Rejected' }[];
+  soldOffline: boolean;
+  /** What an offline sale broke (one problem per line), for a manager to review. */
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  reviewedByName: string | null;
 }
 
 export interface CreateSaleInput {
@@ -77,6 +85,41 @@ export interface CreateSaleInput {
   lines: { productId: number; quantity: number; unitPrice: number; lineDiscount: number }[];
   payments: { accountId: number; amount: number; reference?: string | null }[];
   notes?: string | null;
+  /** Set when the sale was made without internet: when it happened. */
+  soldOfflineAt?: string | null;
+}
+
+/** What a till keeps on the device to sell without internet. */
+export interface OfflineData {
+  generatedAt: string;
+  maxHours: number;
+  products: OfflineProduct[];
+  customers: OfflineCustomer[];
+}
+
+export interface OfflineProduct {
+  id: number;
+  sku: string;
+  barcode: string | null;
+  displayName: string;
+  /** Normalized search text (name, variants, brand, codes). */
+  search: string;
+  unitName: string;
+  imageFileId: string | null;
+  quantity: number;
+  retailPrice: number;
+  wholesalePrice: number;
+  minSalePrice: number;
+  averageCost: number | null;
+}
+
+export interface OfflineCustomer {
+  id: number;
+  code: string;
+  name: string;
+  phone: string | null;
+  search: string;
+  balance: number;
 }
 
 export interface SalesSummary {
@@ -97,7 +140,7 @@ export interface SalesSummary {
 
 export const salesApi = {
   create: (input: CreateSaleInput) => api<Sale>('/sales', { method: 'POST', body: input }),
-  list: (params: { page?: number; pageSize?: number; search?: string; from?: string; to?: string; status?: SaleStatus; customerId?: number; unpaid?: boolean }) =>
+  list: (params: { page?: number; pageSize?: number; search?: string; from?: string; to?: string; status?: SaleStatus; customerId?: number; unpaid?: boolean; needsReview?: boolean }) =>
     api<PagedResult<SaleListItem>>('/sales', { query: params }),
   get: (id: number) => api<Sale>(`/sales/${id}`),
   summary: (from?: string, to?: string) => api<SalesSummary>('/sales/summary', { query: { from, to } }),
@@ -106,6 +149,8 @@ export const salesApi = {
     input: { idempotencyKey: string; settlement: ReturnSettlement; refundAccountId?: number | null; reason?: string | null; lines: { saleInvoiceLineId: number; quantity: number; condition: ReturnCondition }[] },
   ) => api<Sale>(`/sales/${id}/returns`, { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Sale>(`/sales/${id}/void`, { method: 'POST', body: { reason } }),
+  offlineData: () => api<OfflineData>('/sales/offline-data'),
+  markReviewed: (id: number) => api<Sale>(`/sales/${id}/reviewed`, { method: 'POST' }),
 };
 
 // ---- Customers ----

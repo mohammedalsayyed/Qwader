@@ -97,6 +97,13 @@ public class SaleInvoice : AuditableEntity
     public int? VoidedById { get; set; }
     public string? VoidReason { get; set; }
 
+    /// <summary>Made on a device without internet and sent when the connection returned; <see cref="Date"/> is when it was sold.</summary>
+    public bool SoldOffline { get; set; }
+    /// <summary>What an offline sale broke that a connected one would have refused (stock short, price under the minimum…).</summary>
+    public string? ReviewNote { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public int? ReviewedById { get; set; }
+
     public Customer Customer { get; set; } = null!;
     public Warehouse Warehouse { get; set; } = null!;
     public ICollection<SaleInvoiceLine> Lines { get; set; } = new List<SaleInvoiceLine>();
