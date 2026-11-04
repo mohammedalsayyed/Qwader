@@ -89,6 +89,37 @@ export async function refreshOfflineData(user: CurrentUser) {
   await saveSnapshot(withQueuedSales({ ...data, user, lookups, settings }, state.queue.filter((q) => q.userId === user.id)));
 }
 
+/**
+ * Brings the copy up to date with only what changed (stock, prices, balances) — small enough to ask every few seconds,
+ * so a collection or a sale on another device shows here before the connection drops. Falls back to a full download.
+ */
+export async function applyOfflineChanges(user: CurrentUser) {
+  const current = state.snapshot;
+  if (!current?.cursor || current.user.id !== user.id) return refreshOfflineData(user);
+  const changes = await salesApi.offlineChanges(current.cursor);
+  const snapshot = state.snapshot;
+  if (snapshot !== current) return; // replaced while we were asking
+  const queued = state.queue.filter((q) => q.userId === user.id);
+  const fresh = withQueuedSales({ ...snapshot, products: changes.products }, queued).products;
+  await saveSnapshot({
+    ...snapshot,
+    generatedAt: changes.generatedAt,
+    maxHours: changes.maxHours,
+    cursor: changes.cursor,
+    products: merge(snapshot.products, fresh, changes.removedProductIds),
+    customers: merge(snapshot.customers, changes.customers, changes.removedCustomerIds),
+  });
+}
+
+function merge<T extends { id: number }>(rows: T[], changed: T[], removed: number[]): T[] {
+  if (changed.length === 0 && removed.length === 0) return rows;
+  const byId = new Map(changed.map((r) => [r.id, r]));
+  const gone = new Set(removed);
+  const kept = rows.filter((r) => !gone.has(r.id)).map((r) => byId.get(r.id) ?? r);
+  const known = new Set(rows.map((r) => r.id));
+  return [...kept, ...changed.filter((r) => !known.has(r.id))];
+}
+
 function withQueuedSales(snapshot: OfflineSnapshot, queue: QueuedSale[]): OfflineSnapshot {
   if (queue.length === 0) return snapshot;
   const sold = new Map<number, number>();

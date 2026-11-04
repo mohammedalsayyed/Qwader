@@ -11,10 +11,12 @@ import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { formatDateTime, formatMoney } from '@/lib/format';
-import { discardQueued, refreshOfflineData, retryQueued, snapshotAge, syncQueue, useOfflineState } from '@/lib/offline';
+import { applyOfflineChanges, discardQueued, refreshOfflineData, retryQueued, snapshotAge, syncQueue, useOfflineState } from '@/lib/offline';
 
-const REFRESH_EVERY = 5 * 60_000;
-const SYNC_EVERY = 30_000;
+// Full copy now and then; changes (stock, prices, balances) every few seconds so the copy is current when the connection drops.
+const REFRESH_EVERY = 30 * 60_000;
+const CHANGES_EVERY = 10_000;
+const SYNC_EVERY = 15_000;
 
 /** True when the till must work from the device's copy: no connection, or the server could not be reached at start. */
 export function useIsOffline() {
@@ -34,24 +36,31 @@ export function OfflineSync() {
   const canSell = can(P.SalesCreate);
   const ready = status === 'authenticated' && online && canSell && !!user;
 
-  // Fresh copy now (if old or someone else's) and every few minutes.
+  // A fresh copy now if missing, old or someone else's; then only the changes every few seconds.
   useEffect(() => {
     if (!ready || !loaded) return;
     const refresh = () => void refreshOfflineData(user).catch(() => undefined);
-    const age = snapshot ? Date.now() - Date.parse(snapshot.generatedAt) : Infinity;
-    if (!snapshot || snapshot.user.id !== user.id || age > REFRESH_EVERY) refresh();
-    const timer = setInterval(refresh, REFRESH_EVERY);
-    return () => clearInterval(timer);
+    const update = () => { if (document.visibilityState === 'visible') void applyOfflineChanges(user).catch(() => undefined); };
+    if (!snapshot || snapshot.user.id !== user.id || !snapshot.cursor || Date.now() - Date.parse(snapshot.generatedAt) > REFRESH_EVERY) refresh();
+    else update();
+    const full = setInterval(refresh, REFRESH_EVERY);
+    const changes = setInterval(update, CHANGES_EVERY);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      clearInterval(full);
+      clearInterval(changes);
+      document.removeEventListener('visibilitychange', update);
+    };
     // Re-run only on session/connection changes, not every time the copy is refreshed.
   }, [ready, loaded, user?.id]);
 
-  // Send queued sales when the connection returns, then every half minute while any wait.
+  // Send queued sales the moment the connection returns, then every few seconds while any wait.
   useEffect(() => {
     if (!ready || !loaded) return;
     const sync = async () => {
       if ((await syncQueue(user.id)) > 0) {
         for (const k of ['sales', 'sales-summary', 'products', 'customers', 'notifications', 'inventory-summary']) void queryClient.invalidateQueries({ queryKey: [k] });
-        void refreshOfflineData(user).catch(() => undefined);
+        void applyOfflineChanges(user).catch(() => undefined);
       }
     };
     void sync();

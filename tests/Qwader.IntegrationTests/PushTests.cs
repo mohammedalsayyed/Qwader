@@ -87,4 +87,23 @@ public sealed class PushTests(ApiFactory factory)
         (await client.PostAsJsonAsync("/api/auth/change-password", new ChangePasswordRequest("Temp12345", "Changed123"))).EnsureSuccessStatusCode();
         return await factory.LoginAsync(userName, "Changed123");
     }
+
+    [Fact]
+    public async Task A_sale_sent_after_the_connection_returned_notifies_like_any_sale()
+    {
+        var admin = await factory.LoginAsync();
+        var phone = Endpoint("offline-admin");
+        await SubscribeAsync(admin, phone, new PushTopicsDto(true, true, true));
+        var product = await admin.CreateProductAsync(retail: 40, openingQuantity: 1, openingCost: 10);
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash);
+
+        // Sold 2 while the device was offline, but only 1 was in stock: the sale is kept and a manager is told.
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 2, 40)], [new(cash.Id, 80)], null, DateTime.UtcNow.AddMinutes(-20)))).ReadAsync<SaleDetailDto>();
+
+        (await factory.Push.WaitForAsync(phone, "بيع جديد — 80 ₪")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(phone, $"فاتورة {sale.Number}")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(phone, $"فاتورة تحتاج مراجعة — {sale.Number}")).Should().BeTrue();
+        factory.Push.Received(phone, "بدون إنترنت").Should().BeFalse("the sale notification looks the same as any other");
+    }
 }

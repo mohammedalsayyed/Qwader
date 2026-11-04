@@ -404,8 +404,48 @@ public sealed class SaleService(
 
     public async Task<OfflineDataDto> OfflineDataAsync(CancellationToken ct = default)
     {
+        var cursor = await CursorAsync(ct); // read first: anything after it comes with the next changes
+        var products = await OfflineProductsAsync(db.Products.Where(p => !p.IsArchived), ct);
+        var customers = await db.Customers.AsNoTracking().Where(c => c.IsActive && !c.IsWalkIn).OrderBy(c => c.Name)
+            .Select(c => new OfflineCustomerDto(c.Id, c.Code, c.Name, c.Phone, c.NormalizedName, c.Balance)).ToListAsync(ct);
+        return new OfflineDataDto(cursor.At, (await settings.GetAsync(ct)).OfflineSaleMaxHours, products, customers, cursor);
+    }
+
+    public async Task<OfflineChangesDto> OfflineChangesAsync(long movementId, long ledgerEntryId, DateTime at, CancellationToken ct = default)
+    {
+        var cursor = await CursorAsync(ct);
+        // A little overlap: a transaction that started earlier may commit after the last read. Sending a row twice is harmless.
+        var fromMovement = movementId - 100;
+        var fromEntry = ledgerEntryId - 100;
+        var since = at.ToUniversalTime().AddMinutes(-1);
+
+        var productIds = await db.StockMovements.Where(m => m.Id > fromMovement).Select(m => m.ProductId)
+            .Union(db.Products.Where(p => p.CreatedAt >= since || p.UpdatedAt >= since).Select(p => p.Id))
+            .Distinct().ToListAsync(ct);
+        var changed = await db.Products.Where(p => productIds.Contains(p.Id)).Select(p => new { p.Id, p.IsArchived }).ToListAsync(ct);
+        var live = changed.Where(p => !p.IsArchived).Select(p => p.Id).ToList();
+        var products = await OfflineProductsAsync(db.Products.Where(p => live.Contains(p.Id)), ct);
+
+        var customerIds = await db.CustomerLedgerEntries.Where(e => e.Id > fromEntry).Select(e => e.CustomerId)
+            .Union(db.Customers.Where(c => c.CreatedAt >= since || c.UpdatedAt >= since).Select(c => c.Id))
+            .Distinct().ToListAsync(ct);
+        var customers = await db.Customers.AsNoTracking().Where(c => customerIds.Contains(c.Id) && !c.IsWalkIn)
+            .Select(c => new { Dto = new OfflineCustomerDto(c.Id, c.Code, c.Name, c.Phone, c.NormalizedName, c.Balance), c.IsActive }).ToListAsync(ct);
+
+        return new OfflineChangesDto(cursor.At, (await settings.GetAsync(ct)).OfflineSaleMaxHours, cursor,
+            products, changed.Where(p => p.IsArchived).Select(p => p.Id).ToList(),
+            customers.Where(c => c.IsActive).Select(c => c.Dto).ToList(), customers.Where(c => !c.IsActive).Select(c => c.Dto.Id).ToList());
+    }
+
+    private async Task<OfflineCursor> CursorAsync(CancellationToken ct) => new(
+        await db.StockMovements.MaxAsync(m => (long?)m.Id, ct) ?? 0,
+        await db.CustomerLedgerEntries.MaxAsync(e => (long?)e.Id, ct) ?? 0,
+        clock.UtcNow);
+
+    private async Task<List<OfflineProductDto>> OfflineProductsAsync(IQueryable<Product> query, CancellationToken ct)
+    {
         var showCost = currentUser.HasPermission(Permissions.ProductsViewCost);
-        var products = await db.Products.AsNoTracking().Where(p => !p.IsArchived)
+        var products = await query.AsNoTracking()
             .OrderBy(p => p.Name).ThenBy(p => p.Id)
             .Select(p => new
             {
@@ -413,13 +453,9 @@ public sealed class SaleService(
                 Quantity = p.StockBalances.Sum(b => (decimal?)b.Quantity) ?? 0,
                 p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost,
             }).ToListAsync(ct);
-        var customers = await db.Customers.AsNoTracking().Where(c => c.IsActive && !c.IsWalkIn).OrderBy(c => c.Name)
-            .Select(c => new OfflineCustomerDto(c.Id, c.Code, c.Name, c.Phone, c.NormalizedName, c.Balance)).ToListAsync(ct);
-        return new OfflineDataDto(clock.UtcNow, (await settings.GetAsync(ct)).OfflineSaleMaxHours,
-            products.Select(p => new OfflineProductDto(p.Id, p.Sku, p.Barcode, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
-                p.NormalizedName, p.Unit, p.ImageFileId, p.Quantity, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
-                showCost ? p.AverageCost : null)).ToList(),
-            customers);
+        return products.Select(p => new OfflineProductDto(p.Id, p.Sku, p.Barcode, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
+            p.NormalizedName, p.Unit, p.ImageFileId, p.Quantity, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
+            showCost ? p.AverageCost : null)).ToList();
     }
 
     // ------------------------------------------------------------------ returns

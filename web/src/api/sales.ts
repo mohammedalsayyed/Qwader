@@ -95,6 +95,24 @@ export interface OfflineData {
   maxHours: number;
   products: OfflineProduct[];
   customers: OfflineCustomer[];
+  cursor: OfflineCursor | null;
+}
+
+/** Where a device's copy stands, so the next poll asks only for what changed after it. */
+export interface OfflineCursor {
+  movementId: number;
+  ledgerEntryId: number;
+  at: string;
+}
+
+export interface OfflineChanges {
+  generatedAt: string;
+  maxHours: number;
+  cursor: OfflineCursor;
+  products: OfflineProduct[];
+  removedProductIds: number[];
+  customers: OfflineCustomer[];
+  removedCustomerIds: number[];
 }
 
 export interface OfflineProduct {
@@ -150,6 +168,7 @@ export const salesApi = {
   ) => api<Sale>(`/sales/${id}/returns`, { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Sale>(`/sales/${id}/void`, { method: 'POST', body: { reason } }),
   offlineData: () => api<OfflineData>('/sales/offline-data'),
+  offlineChanges: (c: OfflineCursor) => api<OfflineChanges>('/sales/offline-changes', { query: { movementId: c.movementId, ledgerEntryId: c.ledgerEntryId, at: c.at } }),
   markReviewed: (id: number) => api<Sale>(`/sales/${id}/reviewed`, { method: 'POST' }),
 };
 

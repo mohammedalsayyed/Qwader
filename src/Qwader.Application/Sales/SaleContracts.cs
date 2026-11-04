@@ -74,7 +74,16 @@ public sealed class SaleListRequest : PagedRequest
 }
 
 /// <summary>What a till needs to keep selling without internet: products with prices and stock, customers, and how long the copy is good for.</summary>
-public sealed record OfflineDataDto(DateTime GeneratedAt, int MaxHours, IReadOnlyList<OfflineProductDto> Products, IReadOnlyList<OfflineCustomerDto> Customers);
+public sealed record OfflineDataDto(DateTime GeneratedAt, int MaxHours, IReadOnlyList<OfflineProductDto> Products, IReadOnlyList<OfflineCustomerDto> Customers,
+    OfflineCursor? Cursor = null);
+
+/// <summary>Where a device's copy stands: the last stock movement and customer ledger entry it has seen, and when it was read.</summary>
+public sealed record OfflineCursor(long MovementId, long LedgerEntryId, DateTime At);
+
+/// <summary>Only what changed since a cursor: stock, prices, balances. Polled every few seconds, so it stays small.</summary>
+public sealed record OfflineChangesDto(DateTime GeneratedAt, int MaxHours, OfflineCursor Cursor,
+    IReadOnlyList<OfflineProductDto> Products, IReadOnlyList<int> RemovedProductIds,
+    IReadOnlyList<OfflineCustomerDto> Customers, IReadOnlyList<int> RemovedCustomerIds);
 
 public sealed record OfflineProductDto(
     int Id, string Sku, string? Barcode, string DisplayName, string Search, string UnitName, Guid? ImageFileId,
@@ -99,6 +108,7 @@ public interface ISaleService
     Task<SaleDetailDto> VoidAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
     Task<SalesSummaryDto> SummaryAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);
     Task<OfflineDataDto> OfflineDataAsync(CancellationToken ct = default);
+    Task<OfflineChangesDto> OfflineChangesAsync(long movementId, long ledgerEntryId, DateTime at, CancellationToken ct = default);
     /// <summary>A manager has looked at an offline sale's problems: it leaves the «تحتاج مراجعة» list.</summary>
     Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default);
 }

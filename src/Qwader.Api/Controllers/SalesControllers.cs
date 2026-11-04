@@ -41,6 +41,12 @@ public sealed class SalesController(ISaleService sales) : ControllerBase
     [HasPermission(Permissions.SalesCreate)]
     public Task<OfflineDataDto> OfflineData(CancellationToken ct) => sales.OfflineDataAsync(ct);
 
+    /// <summary>What changed since the device's copy (stock, prices, balances), polled every few seconds.</summary>
+    [HttpGet("offline-changes")]
+    [HasPermission(Permissions.SalesCreate)]
+    public Task<OfflineChangesDto> OfflineChanges([FromQuery] long movementId, [FromQuery] long ledgerEntryId, [FromQuery] DateTime at, CancellationToken ct) =>
+        sales.OfflineChangesAsync(movementId, ledgerEntryId, at, ct);
+
     [HttpPost("{id:int}/reviewed")]
     [HasPermission(Permissions.SalesViewAll)]
     public Task<SaleDetailDto> Reviewed(int id, CancellationToken ct) => sales.MarkReviewedAsync(id, ct);

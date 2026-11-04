@@ -366,4 +366,31 @@ public sealed class SalesTests(ApiFactory factory)
         flagged = await admin.GetFromJsonAsync<Application.Common.PagedResult<SaleListItemDto>>("/api/sales?needsReview=true&pageSize=100", TestJson.Options);
         flagged!.Items.Should().NotContain(s => s.Id == sale.Id);
     }
+
+    [Fact]
+    public async Task A_device_copy_picks_up_balances_and_stock_changed_by_others()
+    {
+        var admin = await factory.LoginAsync();
+        var seller = await SalesUserAsync();
+        var product = await admin.CreateProductAsync(retail: 20, openingQuantity: 10, openingCost: 5);
+        var customer = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("نسخة"), Phone(), null, null, true, 50)))
+            .ReadAsync<CustomerDto>();
+
+        var copy = await (await seller.GetAsync("/api/sales/offline-data")).ReadAsync<OfflineDataDto>();
+        copy.Customers.First(c => c.Id == customer.Id).Balance.Should().Be(50);
+        var cursor = copy.Cursor!;
+
+        // Meanwhile: the debt is collected and another till sells 3.
+        var cash = await AccountAsync(admin, "الصندوق النقدي");
+        (await admin.PostAsJsonAsync("/api/receipt-vouchers", new Application.Finance.CreateReceiptRequest(Guid.NewGuid(), Domain.Finance.ReceiptPurpose.DebtCollection,
+            customer.Id, null, null, 50, cash, null, null, null))).EnsureSuccessStatusCode();
+        await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 3, 20)], [new(cash, 60)]))).ReadAsync<SaleDetailDto>();
+
+        var changes = await (await seller.GetAsync(
+            $"/api/sales/offline-changes?movementId={cursor.MovementId}&ledgerEntryId={cursor.LedgerEntryId}&at={Uri.EscapeDataString(cursor.At.ToString("o"))}"))
+            .ReadAsync<OfflineChangesDto>();
+        changes.Customers.Should().Contain(c => c.Id == customer.Id && c.Balance == 0);
+        changes.Products.Should().Contain(p => p.Id == product.Id && p.Quantity == 7);
+        changes.Cursor.MovementId.Should().BeGreaterThan(cursor.MovementId);
+    }
 }
