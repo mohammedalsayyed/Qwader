@@ -78,7 +78,7 @@ public sealed class ProductsController(IProductService products, IProductExcelSe
 
     [HttpGet("import-template")]
     [HasPermission(Permissions.ProductsManage)]
-    public IActionResult Template() => File(excel.Template(), XlsxType, "products-template.xlsx");
+    public async Task<IActionResult> Template(CancellationToken ct) => File(await excel.TemplateAsync(ct), XlsxType, "products-template.xlsx");
 
     [HttpPost("import")]
     [HasPermission(Permissions.ProductsManage)]

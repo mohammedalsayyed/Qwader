@@ -64,7 +64,7 @@ export function CustomersPage() {
                 <Link to={`/customers/${c.id}`} className="flex items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 hover:border-brand-200">
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 font-semibold"><span className="truncate">{c.name}</span>{!c.isActive && <Badge tone="danger">غير فعّال</Badge>}</p>
-                    <p className="ltr text-sm text-muted">{c.phone ?? c.code}</p>
+                    <p className="ltr text-start text-sm text-muted">{c.code}{c.phone && ` · ${c.phone}`}</p>
                   </div>
                   {c.balance !== 0 && (
                     <div className="shrink-0 text-end">
@@ -172,7 +172,7 @@ export function CustomerDetailPage() {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold">{c.name}</h1>
-          <p className="ltr text-sm text-muted">{c.phone ?? c.code}</p>
+          <p className="ltr text-start text-sm text-muted">{c.code}{c.phone && ` · ${c.phone}`}</p>
         </div>
         <div className="flex shrink-0 gap-2">
           {c.phone && <a href={`tel:${c.phone}`}><Button variant="outline" aria-label="اتصال"><Phone className="size-4" /></Button></a>}

@@ -25,6 +25,7 @@ public sealed class PayrollEntryConfiguration : IEntityTypeConfiguration<Payroll
         b.HasIndex(e => new { e.EmployeeId, e.SettlementId, e.Status });
         b.HasOne(e => e.Employee).WithMany().HasForeignKey(e => e.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<Expense>().WithMany().HasForeignKey(e => e.ExpenseId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<PaymentVoucher>().WithMany().HasForeignKey(e => e.PaymentVoucherId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PayrollSettlement>().WithMany().HasForeignKey(e => e.SettlementId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<PayrollSettlement>().WithMany().HasForeignKey(e => e.CarriedFromSettlementId).OnDelete(DeleteBehavior.Restrict);
         b.ToTable(t => t.HasCheckConstraint("CK_PayrollEntries_Amount", "[Amount] > 0"));

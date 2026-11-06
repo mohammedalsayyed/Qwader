@@ -46,6 +46,23 @@ public sealed class ExcelService : IExcelService
         sheet.SheetView.FreezeRows(1);
         if (r > 2) sheet.Range(1, 1, r - 1, columns.Count).SetAutoFilter();
 
+        // Columns with a fixed set of values (units…) get a drop-down, fed from a hidden sheet so the list can be long.
+        // Typing another value stays allowed (a new unit is created on import).
+        var lastRow = Math.Max(r + 2000, 5000);
+        IXLWorksheet? lists = null;
+        for (var c = 0; c < columns.Count; c++)
+        {
+            if (columns[c].Choices is not { Count: > 0 } choices) continue;
+            lists ??= workbook.Worksheets.Add("القوائم");
+            var listColumn = lists.LastColumnUsed()?.ColumnNumber() + 1 ?? 1;
+            lists.Cell(1, listColumn).Value = columns[c].Header;
+            for (var i = 0; i < choices.Count; i++) lists.Cell(i + 2, listColumn).SetValue(choices[i]);
+            var validation = sheet.Range(2, c + 1, lastRow, c + 1).CreateDataValidation();
+            validation.List(lists.Range(2, listColumn, choices.Count + 1, listColumn), true);
+            validation.ShowErrorMessage = false;
+        }
+        if (lists is not null) lists.Visibility = XLWorksheetVisibility.Hidden;
+
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();

@@ -125,4 +125,6 @@ export type SystemResetMode = 'TransactionsOnly' | 'Everything';
 
 export const lookupsApi = {
   get: () => api<Lookups>('/lookups'),
+  /** A unit of measure typed in a product form; an existing one with that name comes back instead. */
+  addUnit: (name: string) => api<LookupItem>('/lookups/units', { method: 'POST', body: { name } }),
 };

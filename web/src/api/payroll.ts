@@ -103,6 +103,7 @@ export const payrollApi = {
   mine: async () => (await api<Employee | undefined>('/payroll/me')) ?? null,
   create: (input: SaveEmployeeInput) => api<Employee>('/payroll/employees', { method: 'POST', body: input }),
   update: (id: number, input: SaveEmployeeInput) => api<Employee>(`/payroll/employees/${id}`, { method: 'PUT', body: input }),
+  remove: (id: number) => api<void>(`/payroll/employees/${id}`, { method: 'DELETE' }),
   addEntry: (id: number, input: { idempotencyKey: string; type: PayrollEntryType; amount: number; date?: string | null; financialAccountId?: number | null; notes?: string | null }) =>
     api<Employee>(`/payroll/employees/${id}/entries`, { method: 'POST', body: input }),
   voidEntry: (id: number, reason: string) => api<Employee>(`/payroll/entries/${id}/void`, { method: 'POST', body: { reason } }),

@@ -44,6 +44,15 @@ export function numberToArabicWords(value: number): string {
 export function amountInWords(amount: number): string {
   const shekels = Math.floor(amount);
   const agorot = Math.round((amount - shekels) * 100);
-  const main = `${numberToArabicWords(shekels)} شيكل`;
+  const main = shekelWords(shekels);
   return agorot ? `${main} و${agorot} أغورة فقط لا غير` : `${main} فقط لا غير`;
+}
+
+/** The counted noun follows Arabic number agreement: شيكل واحد، شيكلان، ثلاثة شواقل، أربعون شيكلًا، مئة شيكل. */
+function shekelWords(n: number): string {
+  if (n === 1) return 'شيكل واحد';
+  if (n === 2) return 'شيكلان';
+  const r = n % 100;
+  const noun = r >= 3 && r <= 10 ? 'شواقل' : r >= 11 ? 'شيكلًا' : 'شيكل';
+  return `${numberToArabicWords(n)} ${noun}`;
 }

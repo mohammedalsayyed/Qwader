@@ -136,7 +136,7 @@ public sealed class CreateSaleRequestValidator : AbstractValidator<CreateSaleReq
             p.RuleFor(x => x.Reference).MaximumLength(100);
         });
         RuleFor(x => x.CustomerName).MaximumLength(150);
-        RuleFor(x => x.CustomerPhone).MaximumLength(20);
+        RuleFor(x => x.CustomerPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.CustomerName).NotEmpty().When(x => x.CustomerId is null && !string.IsNullOrWhiteSpace(x.CustomerPhone))
             .WithMessage("اكتب اسم العميل");
         RuleFor(x => x.Notes).MaximumLength(500);

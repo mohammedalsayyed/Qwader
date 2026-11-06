@@ -68,6 +68,12 @@ public sealed class LookupsController(ILookupService lookups) : ControllerBase
 {
     [HttpGet]
     public Task<LookupsDto> Get(CancellationToken ct) => lookups.GetAsync(ct);
+
+    public sealed record AddUnitRequest(string Name);
+
+    [HttpPost("units")]
+    [HasPermission(Permissions.ProductsManage)]
+    public Task<LookupItem> AddUnit(AddUnitRequest request, CancellationToken ct) => lookups.AddUnitAsync(request.Name, ct);
 }
 
 /// <summary>Public: the sign-in page shows the version under the copyright line.</summary>

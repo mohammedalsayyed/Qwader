@@ -20,7 +20,7 @@ public sealed record ProductImportResult(int Created, int Updated, IReadOnlyList
 public interface IProductExcelService
 {
     Task<byte[]> ExportAsync(ProductListRequest filter, CancellationToken ct = default);
-    byte[] Template();
+    Task<byte[]> TemplateAsync(CancellationToken ct = default);
     Task<ProductImportResult> ImportAsync(Stream content, CancellationToken ct = default);
 }
 
@@ -73,9 +73,10 @@ public sealed class ProductExcelService(
             .Take(50_000)
             .ToListAsync(ct);
 
+        var units = await UnitNamesAsync(ct);
         var columns = new List<ExcelColumn>
         {
-            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10), new(H.Brand, 14),
+            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10, units), new(H.Brand, 14),
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12),
         };
         if (canViewCost) columns.AddRange([new(H.PurchasePrice, 12), new(H.AverageCost, 12)]);
@@ -90,9 +91,12 @@ public sealed class ProductExcelService(
         }));
     }
 
-    public byte[] Template() => excel.Write("المنتجات",
+    private async Task<IReadOnlyList<string>> UnitNamesAsync(CancellationToken ct) =>
+        await db.Units.AsNoTracking().Where(u => u.IsActive).OrderBy(u => u.Id).Select(u => u.Name).ToListAsync(ct);
+
+    public async Task<byte[]> TemplateAsync(CancellationToken ct = default) => excel.Write("المنتجات",
         [
-            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10), new(H.Brand, 14),
+            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10, await UnitNamesAsync(ct)), new(H.Brand, 14),
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12), new(H.PurchasePrice, 12), new(H.Wholesale, 12),
             new(H.Retail, 12), new(H.MinPrice, 12), new(H.ReorderLevel, 10), new(H.OpeningQuantity, 14),
         ],
@@ -160,8 +164,8 @@ public sealed class ProductExcelService(
 
         var units = await db.Units.AsNoTracking().ToDictionaryAsync(u => u.Name, u => u.Id, ct);
         var defaultUnitId = units.GetValueOrDefault("قطعة", units.Values.FirstOrDefault());
-        foreach (var row in rows.Where(r => r.Unit is not null && !units.ContainsKey(r.Unit)))
-            errors.Add(new ImportRowError(row.Number, $"وحدة القياس «{row.Unit}» غير معروفة. المتاح: {string.Join("، ", units.Keys)}"));
+        foreach (var row in rows.Where(r => r.Unit is { Length: > 30 }))
+            errors.Add(new ImportRowError(row.Number, $"اسم وحدة القياس «{row.Unit}» طويل جدًا (30 حرفًا على الأكثر)"));
 
         var skus = rows.Where(r => r.Sku is not null).Select(r => r.Sku!).ToList();
         var existing = await db.Products.Where(p => skus.Contains(p.Sku)).ToDictionaryAsync(p => p.Sku, StringComparer.OrdinalIgnoreCase, ct);
@@ -199,6 +203,14 @@ public sealed class ProductExcelService(
         var categories = await db.Categories.ToDictionaryAsync(c => c.Name, StringComparer.OrdinalIgnoreCase, ct);
         var brands = await db.Brands.ToDictionaryAsync(b => b.Name, StringComparer.OrdinalIgnoreCase, ct);
         var warehouseId = await db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);
+        // A unit the store does not have yet is added, as categories are.
+        foreach (var name in rows.Where(r => r.Unit is not null && !units.ContainsKey(r.Unit)).Select(r => r.Unit!).Distinct())
+        {
+            var unit = new Unit { Name = name };
+            db.Units.Add(unit);
+            await db.SaveChangesAsync(ct);
+            units[name] = unit.Id;
+        }
         int created = 0, updated = 0;
         var openings = new List<(Product Product, decimal Quantity, decimal Cost)>();
 

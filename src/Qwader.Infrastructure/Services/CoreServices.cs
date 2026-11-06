@@ -78,6 +78,18 @@ public sealed class AuditService(AppDbContext db, ICurrentUser currentUser, IClo
         WriteIndented = false,
     };
 
+    public void LogAs(int userId, string userName, string action, string entityType, string? entityId) =>
+        db.AuditLogs.Add(new AuditLog
+        {
+            UserId = userId,
+            UserName = userName,
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            IpAddress = currentUser.IpAddress,
+            OccurredAt = clock.UtcNow,
+        });
+
     public void Log(string action, string entityType, string? entityId, object? oldValues = null, object? newValues = null, string? reason = null)
     {
         db.AuditLogs.Add(new AuditLog

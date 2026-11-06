@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, Banknote, HandCoins, MinusCircle, Pencil, Phone, PlusCircle, Receipt, UserPlus, Wallet } from 'lucide-react';
+import { ArrowRight, Ban, Banknote, HandCoins, MinusCircle, Pencil, Phone, PlusCircle, Receipt, Trash2, UserPlus, Wallet } from 'lucide-react';
+import { useConfirm } from '@/components/ui/Confirm';
 import { ENTRY_TYPE, PAY_PERIOD, payrollApi, type Employee, type PayPeriod, type PayrollEntry, type PayrollEntryType, type PayrollSettlement } from '@/api/payroll';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, Select, Switch, TextArea } from '@/components/ui/Field';
@@ -43,6 +44,13 @@ export function payUnits(period: PayPeriod, from: string, to: string): number {
   const t = toUtc(to);
   if (f.getUTCDate() === 1 && to === monthEnd(to)) return (t.getUTCFullYear() - f.getUTCFullYear()) * 12 + t.getUTCMonth() - f.getUTCMonth() + 1;
   return round2(days / 30);
+}
+
+/** The most units a period can hold, as the server checks it (a month counts as at least 28 days). */
+export function maxUnits(period: PayPeriod, from: string, to: string): number {
+  if (to < from) return 0;
+  const days = daysBetween(from, to);
+  return period === 'Daily' ? days : Math.ceil((days / (period === 'Weekly' ? 7 : 28)) * 100) / 100;
 }
 
 const rateLabel = (period: PayPeriod, rate: number) => `${formatMoney(rate)} / ${PAY_PERIOD[period].unit}`;
@@ -280,6 +288,18 @@ function EmployeeSheet({ employee, onClose }: { employee: Employee | null; onClo
   const [isActive, setIsActive] = useState(employee?.isActive ?? true);
   const [error, setError] = useState<string>();
   const payPeriod = period ?? settings.data?.defaultPayPeriod ?? 'Monthly';
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const remove = useMutation({
+    mutationFn: () => payrollApi.remove(employee!.id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['payroll'] });
+      toast.success('حُذف العامل من الرواتب');
+      onClose();
+      navigate('/payroll');
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
   const dirty = !employee ? !!(userId || rate || phone || notes) : rate !== String(employee.rate) || phone !== (employee.phone ?? '') || payPeriod !== employee.payPeriod || notes !== (employee.notes ?? '') || isActive !== employee.isActive;
 
   const save = useMutation({
@@ -341,6 +361,12 @@ function EmployeeSheet({ employee, onClose }: { employee: Employee | null; onClo
         <Field label="تاريخ بدء العمل" hint="تبدأ منه أول مخالصة">{(id) => <Input id={id} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />}</Field>
         <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
         {employee && <Switch label="على رأس العمل" checked={isActive} onChange={setIsActive} />}
+        {employee && employee.entries.length === 0 && employee.settlements.length === 0 && (
+          <Button variant="ghost" className="text-danger" loading={remove.isPending}
+            onClick={async () => { if (await confirm({ title: 'حذف من الرواتب', message: `يُحذف «${employee.fullName}» من الرواتب. حسابه كمستخدم يبقى كما هو.`, confirmLabel: 'حذف', danger: true })) remove.mutate(); }}>
+            <Trash2 className="size-4" /> حذف من الرواتب
+          </Button>
+        )}
       </div>
     </Sheet>
   );
@@ -376,7 +402,7 @@ function EntrySheet({ employee, type, onClose }: { employee: Employee; type: Pay
     save.mutate();
   };
 
-  const hint = advance ? 'تُصرف الآن من الحساب الذي تختاره، وتُخصم من المخالصة القادمة.'
+  const hint = advance ? 'تُصرف الآن من الحساب الذي تختاره، وتبقى دينًا على العامل حتى تُخصم من مخالصته القادمة (وتُحسب مصروف رواتب عندها).'
     : type === 'Deduction' ? 'يُطرح من المخالصة القادمة، ولا يتحرك أي مبلغ الآن.' : 'تُضاف للمخالصة القادمة، ولا يتحرك أي مبلغ الآن.';
   return (
     <Sheet open onClose={onClose} dirty={!!(amount || notes)} title={`${ENTRY_TYPE[type].label} — ${employee.fullName}`}
@@ -384,8 +410,8 @@ function EntrySheet({ employee, type, onClose }: { employee: Employee; type: Pay
       <div className="space-y-4">
         <p className="rounded-xl bg-black/5 p-3 text-sm">{hint}</p>
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{error}</p>}
-        <Field label="المبلغ (₪)" required>{(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} onChange={(e) => setAmount(e.target.value)} />}</Field>
-        {advance && <AccountChips accounts={accounts} value={accountId} onChange={setAccountId} label="تُصرف من حساب" />}
+        <Field label="المبلغ (₪)" required>{(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} onChange={(e) => { setAmount(e.target.value); setError(undefined); }} />}</Field>
+        {advance && <AccountChips accounts={accounts} value={accountId} onChange={(id) => { setAccountId(id); setError(undefined); }} label="تُصرف من حساب" />}
         <Field label="التاريخ">{(id) => <Input id={id} type="date" max={localToday()} value={date} onChange={(e) => setDate(e.target.value)} />}</Field>
         <Field label={type === 'Deduction' ? 'السبب' : 'ملاحظات'}>{(id) => <TextArea id={id} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
       </div>
@@ -415,7 +441,10 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
     setFrom(f);
     setTo(t);
     setUnits(String(payUnits(e.payPeriod, f, t)));
+    setError(undefined);
   };
+  const most = maxUnits(e.payPeriod, from, to);
+  const unitWord = e.payPeriod === 'Daily' ? 'الأيام' : e.payPeriod === 'Weekly' ? 'الأسابيع' : 'الأشهر';
 
   const save = useMutation({
     mutationFn: () => payrollApi.settle(e.id, { idempotencyKey: key, periodFrom: from, periodTo: to, units: u, financialAccountId: net > 0 ? accountId : null, notes: notes.trim() || null }),
@@ -429,7 +458,8 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
 
   const submit = () => {
     if (!from || !to || to < from) return setError('حدد الفترة');
-    if (!u || Number.isNaN(u) || u <= 0) return setError(`أدخل عدد ${e.payPeriod === 'Daily' ? 'الأيام' : e.payPeriod === 'Weekly' ? 'الأسابيع' : 'الأشهر'}`);
+    if (!u || Number.isNaN(u) || u <= 0) return setError(`أدخل عدد ${unitWord}`);
+    if (u > most + 0.001) return setError(`عدد ${unitWord} (${u}) أكبر مما في الفترة (${most})`);
     if (net > 0 && !accountId) return setError('اختر الحساب الذي يُصرف منه الراتب');
     setError(undefined);
     save.mutate();
@@ -453,7 +483,8 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
         </div>
         <Field label={`عدد ${e.payPeriod === 'Daily' ? 'أيام العمل' : e.payPeriod === 'Weekly' ? 'الأسابيع' : 'الأشهر'}`}
           hint={`${rateLabel(e.payPeriod, e.rate)} — عدّله إذا غاب العامل أو عمل جزءًا من الفترة`}>
-          {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr text-lg" value={units} onChange={(ev) => setUnits(ev.target.value)} />}
+          {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr text-lg" value={units} invalid={u > most + 0.001}
+            onChange={(ev) => { setUnits(ev.target.value); setError(undefined); }} />}
         </Field>
 
         <Card className="p-4">
@@ -467,7 +498,7 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
           {due < 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">السلف أكبر من الراتب: لا يُصرف شيء، ويبقى {formatMoney(-due)} سلفة تُخصم من المخالصة القادمة.</p>}
         </Card>
 
-        {net > 0 && <AccountChips accounts={accounts} value={accountId} onChange={setAccountId} label="يُصرف من حساب" />}
+        {net > 0 && <AccountChips accounts={accounts} value={accountId} onChange={(id) => { setAccountId(id); setError(undefined); }} label="يُصرف من حساب" />}
         <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(ev) => setNotes(ev.target.value)} />}</Field>
       </div>
     </Sheet>

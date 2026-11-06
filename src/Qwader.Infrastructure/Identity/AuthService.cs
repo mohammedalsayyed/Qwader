@@ -36,7 +36,7 @@ public sealed class AuthService(
 
         await userManager.ResetAccessFailedCountAsync(user);
         user.LastLoginAt = clock.UtcNow;
-        audit.Log("Auth.Login", "User", user.Id.ToString());
+        audit.LogAs(user.Id, user.UserName!, "Auth.Login", "User", user.Id.ToString());
         return await IssueAsync(user, ct);
     }
 

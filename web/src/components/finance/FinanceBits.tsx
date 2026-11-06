@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, FileText, ImagePlus, Loader2, Paperclip, Trash2 } from 'lucide-react';
 import { filesApi, type FilePurpose } from '@/api/catalog';
-import { fetchPrivateFile } from '@/api/finance';
+import { useQuery } from '@tanstack/react-query';
+import { accountsApi, fetchPrivateFile } from '@/api/finance';
+import { useAuth } from '@/auth/AuthProvider';
+import { P } from '@/auth/permissions';
 import type { AccountType } from '@/api/endpoints';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
@@ -22,6 +25,15 @@ export function AccountChips({
   label?: string;
   error?: string;
 }) {
+  // Each account's balance under its name, so a short account is seen before saving (for whoever may see balances).
+  const { can } = useAuth();
+  const balances = useQuery({
+    queryKey: ['accounts', 'chips'],
+    queryFn: () => accountsApi.list(),
+    enabled: can(P.AccountsView, P.AccountsManage),
+    staleTime: 15_000,
+  }).data;
+  const balanceOf = (id: number) => balances?.find((b) => b.id === id)?.currentBalance;
   return (
     <fieldset>
       <legend className="mb-2 text-sm font-medium">{label} <span className="text-danger">*</span></legend>
@@ -30,7 +42,10 @@ export function AccountChips({
           <button key={a.id} type="button" role="radio" aria-checked={value === a.id} onClick={() => onChange(a.id)}
             className={cn('min-h-12 rounded-xl border px-2 text-sm font-semibold leading-tight',
               value === a.id ? 'border-brand-700 bg-brand-50 text-brand-800' : error ? 'border-danger' : 'border-line')}>
-            {a.name}
+            <span className="block">{a.name}</span>
+            {balanceOf(a.id) !== undefined && (
+              <span className={cn('tabular mt-0.5 block text-xs font-normal', balanceOf(a.id)! <= 0 ? 'text-danger' : 'text-muted')}>{formatMoney(balanceOf(a.id)!)}</span>
+            )}
           </button>
         ))}
       </div>

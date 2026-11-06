@@ -103,6 +103,8 @@ public enum PaymentPurpose
     Other = 3,
     /// <summary>Money paid back to a customer who has credit («له»).</summary>
     CustomerRefund = 4,
+    /// <summary>An advance to an employee: money out now, owed by the employee until their next settlement takes it off the salary.</summary>
+    EmployeeAdvance = 5,
 }
 
 public class PaymentVoucher : AuditableEntity

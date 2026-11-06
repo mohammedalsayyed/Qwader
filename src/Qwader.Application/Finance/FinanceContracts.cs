@@ -104,6 +104,7 @@ public static class FinanceNames
         AccountTransactionCategory.Expense => "مصروف",
         AccountTransactionCategory.SaleRefund => "استرداد لعميل",
         AccountTransactionCategory.OtherPayment => "صرف آخر",
+        AccountTransactionCategory.EmployeeAdvance => "سلف موظفين",
         AccountTransactionCategory.TransferIn => "تحويل وارد من حساب",
         AccountTransactionCategory.TransferOut => "تحويل صادر إلى حساب",
         AccountTransactionCategory.Reversal => "قيد عكسي",
@@ -117,6 +118,8 @@ public static class FinanceNames
     {
         PaymentPurpose.SupplierPayment => "دفعة لمورد",
         PaymentPurpose.Expense => "مصروف",
+        PaymentPurpose.CustomerRefund => "إعادة رصيد لعميل",
+        PaymentPurpose.EmployeeAdvance => "سلفة موظف",
         _ => "صرف آخر",
     };
 }
@@ -161,7 +164,7 @@ public sealed class CreateIncomingTransferRequestValidator : AbstractValidator<C
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
         RuleFor(x => x.SenderName).NotEmpty().WithMessage("اسم صاحب الحوالة مطلوب").MaximumLength(150);
-        RuleFor(x => x.SenderPhone).MaximumLength(20);
+        RuleFor(x => x.SenderPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
         RuleFor(x => x.Channel).MaximumLength(100);
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب المستلم");
@@ -184,7 +187,7 @@ public sealed class CreateReceiptRequestValidator : AbstractValidator<CreateRece
         RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose == ReceiptPurpose.DebtCollection).WithMessage("اختر العميل");
         RuleFor(x => x.PayerName).NotEmpty().When(x => x.CustomerId is null).WithMessage("اسم الدافع مطلوب");
         RuleFor(x => x.PayerName).MaximumLength(150);
-        RuleFor(x => x.PayerPhone).MaximumLength(20);
+        RuleFor(x => x.PayerPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب المستلم");
         RuleFor(x => x.Reference).MaximumLength(100);

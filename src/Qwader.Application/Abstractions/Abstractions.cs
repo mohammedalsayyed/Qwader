@@ -106,6 +106,9 @@ public interface IAuditService
 {
     /// <summary>Queues an audit entry on the current unit of work; it is persisted by the same SaveChanges as the change itself.</summary>
     void Log(string action, string entityType, string? entityId, object? oldValues = null, object? newValues = null, string? reason = null);
+
+    /// <summary>The same, for an action whose user is known but not yet signed in (the sign-in itself).</summary>
+    void LogAs(int userId, string userName, string action, string entityType, string? entityId);
 }
 
 public sealed record FileUpload(Stream Content, string FileName, string ContentType, long Length);
@@ -120,7 +123,8 @@ public interface IFileStorage
     void DeleteContent(string storagePath);
 }
 
-public sealed record ExcelColumn(string Header, int Width = 16);
+/// <param name="Choices">Offered as a drop-down list in the column's cells (other values may still be typed).</param>
+public sealed record ExcelColumn(string Header, int Width = 16, IReadOnlyList<string>? Choices = null);
 
 public interface IExcelService
 {

@@ -16,7 +16,7 @@ import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDateTime, formatMoney, formatQuantity } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
-import { parseNumber, round2 } from '@/lib/numbers';
+import { cleanNumberInput, parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 
@@ -309,7 +309,14 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
                 </div>
                 <input aria-label={`الكمية المرتجعة: ${l.productName}`} inputMode="decimal" placeholder="0"
                   className="ltr h-12 w-20 shrink-0 rounded-xl border border-line text-center" value={qty[l.id] ?? ''}
-                  onChange={(e) => setQty((s) => ({ ...s, [l.id]: e.target.value }))} />
+                  onChange={(e) => {
+                    // Never more than can still be returned: the field stops at the line's remaining quantity.
+                    const typed = cleanNumberInput(e.target.value);
+                    const left = l.quantity - l.returnedQuantity;
+                    const n = parseNumber(typed);
+                    setQty((s) => ({ ...s, [l.id]: n !== undefined && !Number.isNaN(n) && n > left ? String(left) : typed }));
+                    setError(undefined);
+                  }} />
               </div>
               {(parseNumber(qty[l.id]) ?? 0) > 0 && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -326,7 +333,7 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
         </ul>
         <Field label="التسوية">
           {(id) => (
-            <Select id={id} value={settlement} onChange={(e) => setSettlement(e.target.value as ReturnSettlement)} disabled={sale.isWalkIn}>
+            <Select id={id} value={settlement} onChange={(e) => { setSettlement(e.target.value as ReturnSettlement); setError(undefined); }} disabled={sale.isWalkIn}>
               <option value="Refund">إعادة المبلغ للعميل</option>
               {!sale.isWalkIn && <option value="ReduceBalance">خصم من دين العميل / رصيد له</option>}
             </Select>

@@ -159,6 +159,33 @@ public sealed class CatalogTests(ApiFactory factory)
         served.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
     }
 
+    [Fact]
+    public async Task A_new_unit_can_be_added_from_the_form_or_an_import_and_the_template_lists_units()
+    {
+        var admin = await factory.LoginAsync();
+        var box = "كرتونة " + Guid.NewGuid().ToString("N")[..6];
+        var added = await (await admin.PostAsJsonAsync("/api/lookups/units", new { name = "  " + box + " " })).ReadAsync<Application.Lookups.LookupItem>();
+        added.Name.Should().Be(box);
+        (await (await admin.PostAsJsonAsync("/api/lookups/units", new { name = box })).ReadAsync<Application.Lookups.LookupItem>()).Id.Should().Be(added.Id, "the same name is not added twice");
+        (await admin.LookupsAsync()).Units.Should().Contain(u => u.Id == added.Id);
+
+        // An import naming a unit the store does not have yet adds it, instead of refusing the row.
+        var roll = "لفة " + Guid.NewGuid().ToString("N")[..6];
+        var name = TestData.Unique("سلك");
+        var file = Workbook(["اسم المنتج", "الصنف", "الوحدة", "سعر المفرق"], [name, TestData.Unique("صنف"), roll, "15"]);
+        (await (await admin.PostAsync("/api/products/import", file)).ReadAsync<ProductImportResult>()).Created.Should().Be(1);
+        var imported = (await admin.GetFromJsonAsync<PagedResult<ProductListItemDto>>($"/api/products?search={name}", TestJson.Options))!.Items.Single();
+        imported.UnitName.Should().Be(roll);
+
+        // The template offers the units as a drop-down in its unit column.
+        var template = await admin.GetByteArrayAsync("/api/products/import-template");
+        using var wb = new XLWorkbook(new MemoryStream(template));
+        var sheet = wb.Worksheet("المنتجات");
+        var unitColumn = sheet.Row(1).CellsUsed().First(c => c.GetString() == "الوحدة").Address.ColumnNumber;
+        sheet.DataValidations.Should().Contain(v => v.Ranges.Any(r => r.RangeAddress.FirstAddress.ColumnNumber == unitColumn));
+        wb.Worksheet("القوائم").Column(1).CellsUsed().Select(c => c.GetString()).Should().Contain([box, roll]);
+    }
+
     private sealed record UploadedFile(Guid Id, string Url);
 
     private static MultipartFormDataContent Workbook(params string[][] rows)

@@ -1701,6 +1701,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<int?>("PaymentVoucherId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("SettlementId")
                         .HasColumnType("int");
 
@@ -1729,6 +1732,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ExpenseId");
 
+                    b.HasIndex("PaymentVoucherId");
+
                     b.HasIndex("SettlementId");
 
                     b.HasIndex("EmployeeId", "SettlementId", "Status");
@@ -1746,6 +1751,10 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AdvanceExpense")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("Advances")
                         .HasPrecision(18, 2)
@@ -3066,6 +3075,11 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.HasOne("Qwader.Domain.Finance.Expense", null)
                         .WithMany()
                         .HasForeignKey("ExpenseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Qwader.Domain.Finance.PaymentVoucher", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentVoucherId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Qwader.Domain.Payroll.PayrollSettlement", null)

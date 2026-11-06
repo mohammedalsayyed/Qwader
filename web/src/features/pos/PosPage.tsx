@@ -238,7 +238,7 @@ export function PosPage() {
                       onClick={() => (l.quantity <= 1 ? remove(l.productId) : update(l.productId, { quantity: l.quantity - 1 }))}>
                       {l.quantity <= 1 ? <Trash2 className="size-5 text-danger" /> : <Minus className="size-5" />}
                     </IconButton>
-                    <span className="tabular w-12 text-center text-lg font-bold">{formatQuantity(l.quantity)}</span>
+                    <QuantityInput line={l} onChange={(quantity) => update(l.productId, { quantity })} onLimit={(msg) => toast.error(msg)} />
                     <IconButton label="زيادة الكمية" className="border border-line" disabled={l.quantity >= l.available}
                       onClick={() => update(l.productId, { quantity: l.quantity + 1 })}>
                       <Plus className="size-5" />
@@ -289,6 +289,31 @@ export function PosPage() {
       {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}
       {done && <SaleDoneSheet sale={done.sale} change={done.change} onClose={() => { setDone(null); searchRef.current?.querySelector('input')?.focus(); }} />}
     </div>
+  );
+}
+
+/** The cart's quantity, typed directly (big quantities) as well as with − and +; never more than in stock. */
+function QuantityInput({ line, onChange, onLimit }: { line: CartLine; onChange: (quantity: number) => void; onLimit: (message: string) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const commit = () => {
+    if (text === null) return;
+    const n = parseNumber(text);
+    setText(null);
+    if (n === undefined || Number.isNaN(n) || n <= 0 || n === line.quantity) return;
+    if (n > line.available) {
+      onLimit(`المتوفر من «${line.name}» ${formatQuantity(line.available)} فقط`);
+      onChange(line.available);
+      return;
+    }
+    onChange(n);
+  };
+  return (
+    <Input aria-label={`الكمية: ${line.name}`} inputMode="decimal" className="tabular h-11 w-16 px-1 text-center text-lg font-bold"
+      value={text ?? formatQuantity(line.quantity)}
+      onFocus={(e) => { setText(String(line.quantity)); requestAnimationFrame(() => e.target.select()); }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }} />
   );
 }
 

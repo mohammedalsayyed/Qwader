@@ -393,4 +393,36 @@ public sealed class SalesTests(ApiFactory factory)
         changes.Products.Should().Contain(p => p.Id == product.Id && p.Quantity == 7);
         changes.Cursor.MovementId.Should().BeGreaterThan(cursor.MovementId);
     }
+
+    [Fact]
+    public async Task A_sale_and_a_sign_in_are_in_the_audit_log_under_who_did_them()
+    {
+        var seller = await SalesUserAsync();
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 12, openingQuantity: 3, openingCost: 5);
+        var cash = await AccountAsync(admin, "الصندوق النقدي");
+        var sale = await (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 12)], [new(cash, 12)]))).ReadAsync<SaleDetailDto>();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entry = await db.AuditLogs.SingleAsync(a => a.Action == "Sale.Create" && a.EntityId == sale.Id.ToString());
+        entry.UserId.Should().NotBeNull();
+        entry.NewValues.Should().Contain(sale.Number);
+        var login = await db.AuditLogs.Where(a => a.Action == "Auth.Login").OrderByDescending(a => a.Id).FirstAsync();
+        login.UserId.Should().NotBeNull("a sign-in is credited to the user who signed in, not to the system");
+        login.UserName.Should().Be("admin");
+    }
+
+    [Fact]
+    public async Task A_voided_voucher_and_its_reversal_leave_the_cash_flow()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = await AccountAsync(admin, "الصندوق النقدي");
+        var before = await admin.GetFromJsonAsync<Application.Reports.PeriodReportDto>("/api/reports/period", TestJson.Options);
+        var voucher = await (await admin.PostAsJsonAsync("/api/receipt-vouchers", new Application.Finance.CreateReceiptRequest(Guid.NewGuid(),
+            Domain.Finance.ReceiptPurpose.OtherIncome, null, "تمويل", null, 70, cash, null, null, null))).ReadAsync<Application.Finance.VoucherDto>();
+        (await admin.PostAsJsonAsync($"/api/receipt-vouchers/{voucher.Id}/void", new Application.Finance.VoidDocumentRequest("خطأ"))).EnsureSuccessStatusCode();
+        var after = await admin.GetFromJsonAsync<Application.Reports.PeriodReportDto>("/api/reports/period", TestJson.Options);
+        (after!.CashIn, after.CashOut).Should().Be((before!.CashIn, before.CashOut));
+    }
 }

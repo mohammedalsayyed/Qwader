@@ -46,7 +46,10 @@ public sealed class PayrollTests(ApiFactory factory)
         var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
         await admin.FundAsync(cash, 10_000);
         var start = await BalanceAsync(cash);
+        var expensesAtStart = await ExpensesTodayAsync(admin);
 
+        (await admin.PostAsJsonAsync("/api/payroll/employees", new SaveEmployeeRequest(userId, "abc12", PayPeriod.Monthly, 3000, null, null)))
+            .StatusCode.Should().Be((HttpStatusCode)400, "a phone number is digits only");
         var employee = await (await admin.PostAsJsonAsync("/api/payroll/employees", new SaveEmployeeRequest(userId, "0591234567", PayPeriod.Monthly, 3000, null, null)))
             .ReadAsync<EmployeeDto>();
         employee.Phone.Should().Be("0591234567");
@@ -69,9 +72,14 @@ public sealed class PayrollTests(ApiFactory factory)
         (await worker.GetFromJsonAsync<FeedPageDto>("/api/notification-feed", TestJson.Options))!.Items
             .Should().Contain(n => n.Title == "تم صرف سلفة لك — 500 ₪" && n.Url == "/account/payroll");
 
-        // The advance is a salary expense: it cannot be voided from the expenses screen.
-        var expenseId = await ExpenseIdAsync(before.Entries.First(e => e.Type == PayrollEntryType.Advance).Id);
-        (await admin.PostAsJsonAsync($"/api/expenses/{expenseId}/void", new VoidDocumentRequest("خطأ"))).StatusCode.Should().Be((HttpStatusCode)422);
+        // The advance is owed by the employee, not an expense yet, and is undone only from the payroll screen.
+        (await ExpensesTodayAsync(admin)).Should().Be(expensesAtStart);
+        var voucherId = await AdvanceVoucherAsync(before.Entries.First(e => e.Type == PayrollEntryType.Advance).Id);
+        (await admin.PostAsJsonAsync($"/api/payment-vouchers/{voucherId}/void", new VoidDocumentRequest("خطأ"))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        // More days than October holds is refused.
+        (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/settlements",
+            new CreateSettlementRequest(Guid.NewGuid(), new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), 3, cash, null))).StatusCode.Should().Be((HttpStatusCode)400);
 
         var paid = await (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/settlements",
             new CreateSettlementRequest(Guid.NewGuid(), new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 31), 1, cash, null))).ReadAsync<EmployeeDto>();
@@ -79,6 +87,8 @@ public sealed class PayrollTests(ApiFactory factory)
         (s.Gross, s.Bonuses, s.Deductions, s.Advances, s.Net).Should().Be((3000m, 50m, 100m, 500m, 2450m));
         paid.OpenAdvances.Should().Be(0);
         (await BalanceAsync(cash)).Should().Be(start - 500 - 2450);
+        // Now the whole salary is an expense: 3000 + 50 − 100, of which 500 was paid earlier as the advance.
+        (await ExpensesTodayAsync(admin)).Should().Be(expensesAtStart + 2950);
 
         // The same period cannot be paid twice.
         (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/settlements",
@@ -101,6 +111,7 @@ public sealed class PayrollTests(ApiFactory factory)
         voided.OpenAdvances.Should().Be(500);
         voided.OpenDeductions.Should().Be(100);
         (await BalanceAsync(cash)).Should().Be(start - 500);
+        (await ExpensesTodayAsync(admin)).Should().Be(expensesAtStart, "the advance is owed again, not an expense");
     }
 
     [Fact]
@@ -132,10 +143,13 @@ public sealed class PayrollTests(ApiFactory factory)
             .StatusCode.Should().Be((HttpStatusCode)422);
     }
 
-    private async Task<int> ExpenseIdAsync(int entryId)
+    private async Task<int> AdvanceVoucherAsync(int entryId)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        return await db.PayrollEntries.Where(e => e.Id == entryId).Select(e => e.ExpenseId!.Value).FirstAsync();
+        return await db.PayrollEntries.Where(e => e.Id == entryId).Select(e => e.PaymentVoucherId!.Value).FirstAsync();
     }
+
+    private static async Task<decimal> ExpensesTodayAsync(HttpClient admin) =>
+        (await admin.GetFromJsonAsync<Application.Reports.PeriodReportDto>("/api/reports/period", TestJson.Options))!.Expenses ?? 0;
 }

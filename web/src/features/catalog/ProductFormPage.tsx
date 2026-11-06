@@ -9,11 +9,11 @@ import { productsApi, type ProductDetail, type SaveProductInput } from '@/api/ca
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button } from '@/components/ui/Button';
-import { Field, Input, Select, TextArea } from '@/components/ui/Field';
+import { Field, Input, TextArea } from '@/components/ui/Field';
 import { Card, ErrorState, PageHeader, Spinner } from '@/components/ui/Feedback';
 import { Collapsible, StickyActions } from '@/components/ui/Layout';
 import { useToast } from '@/components/ui/Toast';
-import { ImagePicker, SupplierPicker } from '@/components/catalog/CatalogBits';
+import { ImagePicker, SupplierPicker, UnitSelect } from '@/components/catalog/CatalogBits';
 import { Controller } from 'react-hook-form';
 import { CategoryPicker } from '@/components/catalog/CatalogBits';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
@@ -288,9 +288,9 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
           </Field>
           <Field label="وحدة القياس" required error={errors.unitId?.message}>
             {(id, d) => (
-              <Select id={id} aria-describedby={d} {...register('unitId')}>
-                {lookups.data?.units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </Select>
+              <Controller control={control} name="unitId"
+                render={({ field }) => <UnitSelect id={id} describedBy={d} value={field.value as number | string} invalid={!!errors.unitId}
+                  onChange={(unitId) => field.onChange(String(unitId))} />} />
             )}
           </Field>
           <Field label="الماركة" error={errors.brandName?.message}>{(id) => <Input id={id} {...register('brandName')} />}</Field>

@@ -48,6 +48,8 @@ public interface IPayrollService
     Task<EmployeeDto?> MineAsync(CancellationToken ct = default);
     Task<EmployeeDto> CreateAsync(SaveEmployeeRequest request, CancellationToken ct = default);
     Task<EmployeeDto> UpdateAsync(int id, SaveEmployeeRequest request, CancellationToken ct = default);
+    /// <summary>Takes someone off the payroll who has no advances, deductions, bonuses or settlements (added by mistake).</summary>
+    Task RemoveAsync(int id, CancellationToken ct = default);
     Task<EmployeeDto> AddEntryAsync(int employeeId, CreatePayrollEntryRequest request, CancellationToken ct = default);
     Task<EmployeeDto> VoidEntryAsync(int entryId, VoidDocumentRequest request, CancellationToken ct = default);
     Task<EmployeeDto> SettleAsync(int employeeId, CreateSettlementRequest request, CancellationToken ct = default);
@@ -59,7 +61,7 @@ public sealed class SaveEmployeeRequestValidator : AbstractValidator<SaveEmploye
     public SaveEmployeeRequestValidator()
     {
         RuleFor(x => x.UserId).GreaterThan(0).WithMessage("اختر المستخدم");
-        RuleFor(x => x.Phone).MaximumLength(20);
+        RuleFor(x => x.Phone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.PayPeriod).IsInEnum().WithMessage("اختر نوع الراتب");
         RuleFor(x => x.Rate).GreaterThanOrEqualTo(0).WithMessage("الراتب لا يمكن أن يكون سالبًا").LessThan(10_000_000);
         RuleFor(x => x.Notes).MaximumLength(500);
@@ -147,8 +149,10 @@ public sealed class PayrollService(
         var users = db.Users;
         var entries = await db.PayrollEntries.AsNoTracking().Where(x => x.EmployeeId == e.Id).OrderByDescending(x => x.Date).ThenByDescending(x => x.Id)
             .Select(x => new PayrollEntryDto(x.Id, x.Type, x.Date, x.Amount, x.Notes,
-                db.Expenses.Where(ex => ex.Id == x.ExpenseId).Select(ex => ex.FinancialAccount.Name).FirstOrDefault(),
-                db.Expenses.Where(ex => ex.Id == x.ExpenseId).Select(ex => ex.Number).FirstOrDefault(),
+                db.PaymentVouchers.Where(v => v.Id == x.PaymentVoucherId).Select(v => v.FinancialAccount.Name).FirstOrDefault()
+                    ?? db.Expenses.Where(ex => ex.Id == x.ExpenseId).Select(ex => ex.FinancialAccount.Name).FirstOrDefault(),
+                db.PaymentVouchers.Where(v => v.Id == x.PaymentVoucherId).Select(v => v.Number).FirstOrDefault()
+                    ?? db.Expenses.Where(ex => ex.Id == x.ExpenseId).Select(ex => ex.Number).FirstOrDefault(),
                 x.CarriedFromSettlementId != null, x.SettlementId,
                 db.PayrollSettlements.Where(s => s.Id == x.SettlementId).Select(s => s.Number).FirstOrDefault(),
                 x.Status, x.VoidReason, users.Where(u => u.Id == x.CreatedById).Select(u => u.FullName).FirstOrDefault()))
@@ -179,7 +183,7 @@ public sealed class PayrollService(
             throw new BusinessRuleException($"«{user.FullName}» مسجّل في الرواتب من قبل");
         var employee = new Employee { UserId = user.Id };
         Apply(employee, request);
-        user.PhoneNumber = Clean(request.Phone) ?? user.PhoneNumber;
+        user.PhoneNumber = Customers.PhoneNumbers.Normalize(request.Phone) ?? user.PhoneNumber;
         db.Employees.Add(employee);
         await db.SaveChangesAsync(ct);
         audit.Log("Payroll.AddEmployee", "Employee", employee.Id.ToString(), null, new { user.FullName, employee.PayPeriod, employee.Rate });
@@ -192,10 +196,20 @@ public sealed class PayrollService(
         var employee = await db.Employees.Include(e => e.User).FirstOrDefaultAsync(e => e.Id == id, ct) ?? throw new NotFoundException("العامل غير موجود");
         var before = new { employee.PayPeriod, employee.Rate, employee.IsActive };
         Apply(employee, request);
-        employee.User.PhoneNumber = Clean(request.Phone);
+        employee.User.PhoneNumber = Customers.PhoneNumbers.Normalize(request.Phone);
         audit.Log("Payroll.UpdateEmployee", "Employee", id.ToString(), before, new { employee.PayPeriod, employee.Rate, employee.IsActive });
         await db.SaveChangesAsync(ct);
         return await GetAsync(id, ct);
+    }
+
+    public async Task RemoveAsync(int id, CancellationToken ct = default)
+    {
+        var employee = await db.Employees.Include(e => e.User).FirstOrDefaultAsync(e => e.Id == id, ct) ?? throw new NotFoundException("العامل غير موجود");
+        if (await db.PayrollEntries.AnyAsync(e => e.EmployeeId == id, ct) || await db.PayrollSettlements.AnyAsync(s => s.EmployeeId == id, ct))
+            throw new BusinessRuleException("للعامل حركات رواتب مسجّلة، فلا يُحذف؛ اجعله «متوقف» بدلًا من ذلك");
+        db.Employees.Remove(employee);
+        audit.Log("Payroll.RemoveEmployee", "Employee", id.ToString(), new { employee.User.FullName, employee.PayPeriod, employee.Rate }, null);
+        await db.SaveChangesAsync(ct);
     }
 
     private static void Apply(Employee employee, SaveEmployeeRequest request)
@@ -219,12 +233,12 @@ public sealed class PayrollService(
         var date = DocumentDates.ToUtc(request.Date, clock);
         var entry = new PayrollEntry { EmployeeId = employee.Id, Type = request.Type, Date = date, Amount = request.Amount, Notes = Clean(request.Notes) };
 
-        // An advance is money handed over now: it leaves the account as a salary expense.
+        // An advance is money handed over now, owed by the employee: it leaves the account, and becomes a salary
+        // expense only when a settlement takes it off the salary.
         if (request.Type == PayrollEntryType.Advance)
         {
-            var expense = await vouchers.PostExpenseAsync(await SalaryCategoryAsync(ct), $"سلفة — {employee.User.FullName}{Suffix(entry.Notes)}",
-                request.Amount, request.FinancialAccountId!.Value, date, ct);
-            entry.ExpenseId = expense.Id;
+            var voucher = await vouchers.PostAdvanceAsync($"سلفة — {employee.User.FullName}", request.Amount, request.FinancialAccountId!.Value, date, entry.Notes, ct);
+            entry.PaymentVoucherId = voucher.Id;
         }
 
         db.PayrollEntries.Add(entry);
@@ -259,6 +273,7 @@ public sealed class PayrollService(
         if (entry.CarriedFromSettlementId is not null) throw new BusinessRuleException("هذا باقي سلف من مخالصة؛ يُلغى بإلغاء تلك المخالصة");
 
         var reason = request.Reason.Trim();
+        if (entry.PaymentVoucherId is { } voucherId) await vouchers.VoidPaymentCoreAsync(voucherId, reason, ct);
         if (entry.ExpenseId is { } expenseId) await vouchers.VoidExpenseCoreAsync(expenseId, reason, ct);
         entry.Status = VoucherStatus.Voided;
         entry.VoidedAt = clock.UtcNow;
@@ -285,6 +300,17 @@ public sealed class PayrollService(
                 && s.PeriodFrom <= request.PeriodTo && s.PeriodTo >= request.PeriodFrom, ct))
             throw new BusinessRuleException("يوجد مخالصة لهذا العامل تشمل جزءًا من هذه الفترة");
 
+        // Never more days, weeks or months than the period holds (a month counts as at least 28 days).
+        var days = request.PeriodTo.DayNumber - request.PeriodFrom.DayNumber + 1;
+        var (most, unit) = employee.PayPeriod switch
+        {
+            PayPeriod.Daily => ((decimal)days, "الأيام"),
+            PayPeriod.Weekly => (Math.Ceiling(days / 7m * 100) / 100, "الأسابيع"),
+            _ => (Math.Ceiling(days / 28m * 100) / 100, "الأشهر"),
+        };
+        if (request.Units > most + 0.001m)
+            throw new ValidationFailedException("units", $"عدد {unit} ({request.Units:0.##}) أكبر مما في الفترة ({most:0.##})");
+
         var open = await db.PayrollEntries.Where(e => e.EmployeeId == employee.Id && e.SettlementId == null && e.Status == VoucherStatus.Posted).ToListAsync(ct);
         var gross = CostMath.RoundMoney(request.Units * employee.Rate);
         var bonuses = open.Where(e => e.Type == PayrollEntryType.Bonus).Sum(e => e.Amount);
@@ -293,6 +319,9 @@ public sealed class PayrollService(
         var due = gross + bonuses - deductions - advances;
         var net = Math.Max(0, due);
         var carried = due < 0 ? -due : 0;
+        // Advances were paid earlier and owed by the employee; the part this salary covers becomes a salary expense now.
+        // (Advances recorded before this rule were already counted as an expense when paid.)
+        var advanceExpense = Math.Max(0, open.Where(e => e.Type == PayrollEntryType.Advance && e.ExpenseId == null).Sum(e => e.Amount) - carried);
         if (net > 0 && request.FinancialAccountId is null)
             throw new ValidationFailedException("financialAccountId", "اختر الحساب الذي يُصرف منه الراتب");
 
@@ -313,6 +342,7 @@ public sealed class PayrollService(
             Advances = advances,
             Net = net,
             CarriedAdvance = carried,
+            AdvanceExpense = advanceExpense,
             FinancialAccountId = net > 0 ? request.FinancialAccountId : null,
             Notes = Clean(request.Notes),
         };

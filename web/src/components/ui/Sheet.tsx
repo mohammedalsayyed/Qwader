@@ -44,7 +44,8 @@ export function Sheet({ open, onClose, title, children, footer, size = 'md', dir
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
-    panelRef.current?.focus();
+    // A field that asked for focus (a search box) keeps it; otherwise the sheet itself takes it.
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     return () => {
       openSheets.splice(openSheets.indexOf(id), 1);
       document.removeEventListener('keydown', onKey);

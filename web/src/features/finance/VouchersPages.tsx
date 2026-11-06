@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Ban, HandCoins, Paperclip, Plus, Printer, ReceiptText } from 'lucide-react';
@@ -115,6 +115,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const [attachment, setAttachment] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   useUnsavedChangesWarning(amount !== '');
+  // A message about the form goes away as soon as the user changes what it was about.
+  useEffect(() => setErrors({}), [purpose, customer, supplier, name, phone, amount, accountId, reference]);
 
   // Preselect the customer/supplier when opened from their page.
   useQuery({
@@ -271,7 +273,7 @@ export function VoucherDetailPage({ kind }: { kind: Kind }) {
   if (query.isPending) return <Spinner />;
   if (query.isError) return <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
   const v = query.data;
-  const canVoid = can(P.VouchersVoid) && v.status === 'Posted' && !v.incomingTransferId && v.purpose !== 'Expense';
+  const canVoid = can(P.VouchersVoid) && v.status === 'Posted' && !v.incomingTransferId && v.purpose !== 'Expense' && v.purpose !== 'EmployeeAdvance';
 
   return (
     <div className="mx-auto max-w-2xl">

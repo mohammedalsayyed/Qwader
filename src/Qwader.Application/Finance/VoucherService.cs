@@ -30,6 +30,10 @@ public interface IVoucherService
         Guid? attachmentFileId = null);
     /// <summary>Voids an expense and gives its money back to the account, inside the caller's transaction.</summary>
     Task VoidExpenseCoreAsync(int expenseId, string reason, CancellationToken ct = default);
+    /// <summary>Pays an employee advance from an account inside the caller's transaction (not an expense).</summary>
+    Task<PaymentVoucher> PostAdvanceAsync(string beneficiary, decimal amount, int accountId, DateTime date, string? notes, CancellationToken ct = default);
+    /// <summary>Voids a payment voucher and gives its money back, inside the caller's transaction.</summary>
+    Task VoidPaymentCoreAsync(int voucherId, string reason, CancellationToken ct = default);
     Task<IReadOnlyList<ExpenseCategoryDto>> CategoriesAsync(CancellationToken ct = default);
     Task<ExpenseCategoryDto> SaveCategoryAsync(int? id, SaveExpenseCategoryRequest request, CancellationToken ct = default);
 
@@ -331,6 +335,7 @@ public sealed class VoucherService(
             PaymentPurpose.SupplierPayment => AccountTransactionCategory.SupplierPayment,
             PaymentPurpose.Expense => AccountTransactionCategory.Expense,
             PaymentPurpose.CustomerRefund => AccountTransactionCategory.SaleRefund,
+            PaymentPurpose.EmployeeAdvance => AccountTransactionCategory.EmployeeAdvance,
             _ => AccountTransactionCategory.OtherPayment,
         };
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, category, source, voucher.Date, ct, requireFunds: true);
@@ -352,6 +357,7 @@ public sealed class VoucherService(
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var voucher = await db.PaymentVouchers.FirstOrDefaultAsync(v => v.Id == id, ct) ?? throw new NotFoundException("السند غير موجود");
         if (voucher.Purpose == PaymentPurpose.Expense) throw new BusinessRuleException("هذا السند لمصروف؛ ألغِ المصروف من شاشة المصروفات");
+        if (voucher.Purpose == PaymentPurpose.EmployeeAdvance) throw new BusinessRuleException("هذا السند لسلفة موظف؛ ألغِ السلفة من شاشة الرواتب");
         await VoidPaymentCoreAsync(voucher, request.Reason.Trim(), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -383,7 +389,8 @@ public sealed class VoucherService(
         return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.BeneficiaryName, null, v.CustomerId, v.SupplierId, v.Amount,
             v.FinancialAccountId, v.FinancialAccount.Name, v.Purpose.ToString(),
             v.Purpose == PaymentPurpose.SupplierPayment ? "دفعة لمورد" : v.Purpose == PaymentPurpose.Expense ? "مصروف"
-                : v.Purpose == PaymentPurpose.CustomerRefund ? "إعادة رصيد لعميل" : "صرف آخر",
+                : v.Purpose == PaymentPurpose.CustomerRefund ? "إعادة رصيد لعميل"
+                : v.Purpose == PaymentPurpose.EmployeeAdvance ? "سلفة موظف" : "صرف آخر",
             v.Reference, v.Notes, v.AttachmentFileId, v.Status, users.Where(u => u.Id == v.CreatedById).Select(u => u.FullName).FirstOrDefault(),
             v.VoidedAt, v.VoidReason, null, null,
             expenses.Where(e => e.PaymentVoucherId == v.Id).Select(e => e.Category.Name).FirstOrDefault()));
@@ -472,6 +479,23 @@ public sealed class VoucherService(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await ProjectExpenses(db.Expenses.AsNoTracking().Where(e => e.Id == id)).FirstAsync(ct);
+    }
+
+    public Task<PaymentVoucher> PostAdvanceAsync(string beneficiary, decimal amount, int accountId, DateTime date, string? notes, CancellationToken ct = default) =>
+        PostPaymentAsync(new PaymentVoucher
+        {
+            Date = date,
+            Purpose = PaymentPurpose.EmployeeAdvance,
+            BeneficiaryName = beneficiary,
+            Amount = amount,
+            FinancialAccountId = accountId,
+            Notes = notes,
+        }, ct);
+
+    public async Task VoidPaymentCoreAsync(int voucherId, string reason, CancellationToken ct = default)
+    {
+        var voucher = await db.PaymentVouchers.FirstOrDefaultAsync(v => v.Id == voucherId, ct) ?? throw new NotFoundException("السند غير موجود");
+        await VoidPaymentCoreAsync(voucher, reason, ct);
     }
 
     public async Task VoidExpenseCoreAsync(int expenseId, string reason, CancellationToken ct = default)

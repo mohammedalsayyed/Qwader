@@ -70,6 +70,9 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   const gross = subtotal + lineDiscounts;
   const discountPercent = gross > 0 ? round2(((gross - total) / gross) * 100) : 0;
   const maxDiscount = settings.data?.maxDiscountPercent ?? 0;
+  // Over the store's limit: refused for sellers; allowed (but said out loud) for those who may sell under the limits.
+  const overLimit = maxDiscount > 0 && discountPercent > maxDiscount + 0.001;
+  const mayExceed = can(P.SalesPriceOverride);
   // Store setting: a transfer taken at the till either waits for verification (stays debt) or counts at once.
   const transfersPending = settings.data?.saleTransfersPending ?? true;
   const isTransfer = (accountId: string) => accounts.find((a) => String(a.id) === accountId)?.type !== 'Cash';
@@ -135,7 +138,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     setError(undefined);
     if (offline && !canSellOffline) return setError('لا يمكن البيع بدون إنترنت: بيانات المنتجات على هذا الجهاز قديمة أو غير موجودة');
     if (Number.isNaN(discountN) || discountN < 0 || discountN > subtotal) return setError('الخصم غير صحيح');
-    if (offline && maxDiscount && !can(P.SalesPriceOverride) && discountPercent > maxDiscount + 0.001) return setError(`الخصم (${discountPercent}%) يتجاوز الحد المسموح (${maxDiscount}%)`);
+    if (overLimit && !mayExceed) return setError(`الخصم (${discountPercent}%) يتجاوز الحد المسموح (${maxDiscount}%)`);
     if (payments.some((p) => Number.isNaN(p.amount))) return setError('أحد المبالغ غير صحيح');
     if (payments.some((p) => !p.accountId)) return setError('اختر الحساب لكل دفعة');
     if (pendingPaid > 0 && !hasCustomer) return setError('الحوالة بانتظار التحقق تبقى دينًا حتى تأكيدها: اختر العميل أو اكتب اسمه وجواله');
@@ -220,8 +223,16 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
         {canDiscount && (
           <section>
             <Field label="خصم على الفاتورة (₪)" hint={maxDiscount ? `الحد المسموح ${maxDiscount}% — الخصم الحالي ${discountPercent}%` : undefined}>
-              {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />}
+              {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr" value={discount} invalid={overLimit && !mayExceed}
+                onChange={(e) => { setDiscount(e.target.value); setError(undefined); }} />}
             </Field>
+            {overLimit && (mayExceed ? (
+              <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
+                الخصم ({discountPercent}%) أكبر من الحد المسموح ({maxDiscount}%). مسموح لك بصلاحيتك، ويُسجَّل في سجل التدقيق.
+              </p>
+            ) : (
+              <p className="mt-2 rounded-lg bg-red-50 p-2.5 text-xs leading-5 text-danger">الخصم ({discountPercent}%) أكبر من الحد المسموح ({maxDiscount}%) — لن تُقبل الفاتورة.</p>
+            ))}
           </section>
         )}
 

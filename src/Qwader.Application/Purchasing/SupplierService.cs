@@ -42,7 +42,7 @@ public sealed class SaveSupplierRequestValidator : AbstractValidator<SaveSupplie
     public SaveSupplierRequestValidator()
     {
         RuleFor(x => x.Name).NotEmpty().WithMessage("اسم المورد مطلوب").MaximumLength(150);
-        RuleFor(x => x.Phone).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا");
+        RuleFor(x => x.Phone).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا").Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Address).MaximumLength(200);
         RuleFor(x => x.Notes).MaximumLength(500);
         RuleFor(x => x.OpeningBalance).GreaterThanOrEqualTo(0).WithMessage("الرصيد الافتتاحي لا يمكن أن يكون سالبًا");
@@ -152,7 +152,7 @@ public sealed class SupplierService(
     {
         supplier.Name = r.Name.Trim();
         supplier.NormalizedName = ArabicText.Normalize(r.Name);
-        supplier.Phone = string.IsNullOrWhiteSpace(r.Phone) ? null : r.Phone.Trim();
+        supplier.Phone = Customers.PhoneNumbers.Normalize(r.Phone);
         supplier.Address = string.IsNullOrWhiteSpace(r.Address) ? null : r.Address.Trim();
         supplier.Notes = string.IsNullOrWhiteSpace(r.Notes) ? null : r.Notes.Trim();
         supplier.IsActive = r.IsActive;

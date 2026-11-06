@@ -43,7 +43,10 @@ public class PayrollEntry : AuditableEntity
     public DateTime Date { get; set; }
     public decimal Amount { get; set; }
     public string? Notes { get; set; }
-    /// <summary>An advance paid out: the salary expense (and payment voucher) that took the money from the account.</summary>
+    /// <summary>An advance paid out: the payment voucher that took the money from the account. The advance is owed by the
+    /// employee (not an expense) until a settlement takes it off the salary.</summary>
+    public int? PaymentVoucherId { get; set; }
+    /// <summary>Advances recorded before 2026-11-07 were paid as a salary expense at once; kept so they can still be voided.</summary>
     public int? ExpenseId { get; set; }
     /// <summary>Left over from a settlement whose advances were larger than the salary; no money moved for it.</summary>
     public int? CarriedFromSettlementId { get; set; }
@@ -79,6 +82,8 @@ public class PayrollSettlement : AuditableEntity
     public decimal Net { get; set; }
     /// <summary>Advances the salary did not cover: carried to the next settlement.</summary>
     public decimal CarriedAdvance { get; set; }
+    /// <summary>The part of the salary already paid as advances: becomes a salary expense with this settlement (no money moves now).</summary>
+    public decimal AdvanceExpense { get; set; }
     public int? FinancialAccountId { get; set; }
     public int? ExpenseId { get; set; }
     public string? Notes { get; set; }

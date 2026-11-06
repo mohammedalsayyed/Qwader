@@ -242,6 +242,11 @@ public sealed class SaleService(
                 p.AccountId, p.Amount, p.Reference, confirmed: !pending, ct);
 
         idempotency.Record(request.IdempotencyKey, CreateOperation, "SaleInvoice", invoice.Id.ToString());
+        audit.Log("Sale.Create", "SaleInvoice", invoice.Id.ToString(), null, new
+        {
+            invoice.Number, invoice.CustomerName, invoice.Total, Paid = invoice.PaidAmount, Discounts = invoice.LineDiscountTotal + invoice.InvoiceDiscount,
+            Payments = payments.Select(p => new { p.Input.AccountId, p.Input.Amount, p.Pending }), invoice.SoldOffline,
+        });
         if (overridden.Count > 0)
             audit.Log("Sale.PriceOverride", "SaleInvoice", invoice.Id.ToString(), null, new { invoice.Number, Products = overridden });
         await db.SaveChangesAsync(ct);

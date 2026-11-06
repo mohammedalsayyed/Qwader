@@ -46,6 +46,21 @@ public static class PhoneNumbers
         var digits = new string(ArabicText.Normalize(phone).Where(c => char.IsAsciiDigit(c) || c == '+').ToArray());
         return digits.Length == 0 ? null : digits;
     }
+
+    /// <summary>
+    /// Blank, or a phone number as people type it: digits (Latin or Arabic), spaces, dashes, brackets and a leading +,
+    /// 7 to 15 digits. Letters are refused, not silently dropped.
+    /// </summary>
+    public static bool IsValid(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return true;
+        var text = ArabicText.Normalize(phone);
+        if (!text.All(c => char.IsAsciiDigit(c) || c is ' ' or '-' or '(' or ')' or '+')) return false;
+        if (text.IndexOf('+') > 0) return false;
+        return Normalize(phone)?.TrimStart('+').Length is >= 7 and <= 15;
+    }
+
+    public const string Invalid = "رقم الجوال غير صحيح: أرقام فقط (7 إلى 15 رقمًا)";
 }
 
 public sealed class SaveCustomerRequestValidator : AbstractValidator<SaveCustomerRequest>
@@ -54,7 +69,7 @@ public sealed class SaveCustomerRequestValidator : AbstractValidator<SaveCustome
     {
         RuleFor(x => x.Name).NotEmpty().WithMessage("اسم العميل مطلوب").MaximumLength(150);
         RuleFor(x => x.Phone).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا")
-            .Must(p => p is null || PhoneNumbers.Normalize(p)?.Length is >= 7).WithMessage("رقم الجوال غير صحيح");
+            .Must(PhoneNumbers.IsValid).WithMessage(PhoneNumbers.Invalid);
         RuleFor(x => x.Address).MaximumLength(200);
         RuleFor(x => x.Notes).MaximumLength(500);
         RuleFor(x => x.OpeningBalance).GreaterThanOrEqualTo(0).WithMessage("الرصيد الافتتاحي لا يمكن أن يكون سالبًا");

@@ -28,6 +28,13 @@ public sealed class PayrollController(IPayrollService payroll) : ControllerBase
     [HttpPut("employees/{id:int}")]
     public Task<EmployeeDto> Update(int id, SaveEmployeeRequest request, CancellationToken ct) => payroll.UpdateAsync(id, request, ct);
 
+    [HttpDelete("employees/{id:int}")]
+    public async Task<IActionResult> Remove(int id, CancellationToken ct)
+    {
+        await payroll.RemoveAsync(id, ct);
+        return NoContent();
+    }
+
     /// <summary>An advance (paid from an account now), a deduction or a bonus for the next settlement.</summary>
     [HttpPost("employees/{id:int}/entries")]
     public Task<EmployeeDto> AddEntry(int id, CreatePayrollEntryRequest request, CancellationToken ct) => payroll.AddEntryAsync(id, request, ct);

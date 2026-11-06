@@ -81,6 +81,13 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
     private static readonly AccountTransactionCategory[] NotCashFlow =
         [AccountTransactionCategory.OpeningBalance, AccountTransactionCategory.TransferIn, AccountTransactionCategory.TransferOut];
 
+    private const string SalaryCategory = "الرواتب";
+
+    /// <summary>Settled salaries' advance part: an expense on the settlement's day (the money left earlier, as an advance).</summary>
+    private IQueryable<Domain.Payroll.PayrollSettlement> SettledAdvancesQuery(DateTime start, DateTime end) =>
+        db.PayrollSettlements.AsNoTracking()
+            .Where(s => s.Date >= start && s.Date < end && s.Status == VoucherStatus.Posted && s.AdvanceExpense > 0);
+
     private bool Profit => currentUser.HasPermission(Permissions.ReportsProfit);
     private bool Financial => currentUser.HasPermission(Permissions.ReportsFinancial);
 
@@ -144,6 +151,14 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         {
             var expenseRows = await db.Expenses.AsNoTracking().Where(e => e.Date >= start && e.Date < end && e.Status == VoucherStatus.Posted)
                 .GroupBy(e => e.Category.Name).Select(g => new NamedAmount(g.Key, g.Sum(e => e.Amount))).ToListAsync(ct);
+            // Advances are owed by the employee until a settlement takes them: then they are salary, on that day.
+            var settledAdvances = await SettledAdvancesQuery(start, end).SumAsync(s => (decimal?)s.AdvanceExpense, ct) ?? 0;
+            if (settledAdvances > 0)
+            {
+                var salaries = expenseRows.FirstOrDefault(e => e.Name == SalaryCategory);
+                expenseRows = expenseRows.Where(e => e != salaries)
+                    .Append(new NamedAmount(SalaryCategory, (salaries?.Amount ?? 0) + settledAdvances)).ToList();
+            }
             expensesByCategory = expenseRows.OrderByDescending(e => e.Amount).ToList();
             expenses = expenseRows.Sum(e => e.Amount);
             if (Profit)
@@ -159,8 +174,11 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var pendingCount = 0;
         if (Financial)
         {
+            // A voided document and its reversing entry cancel out: neither is money that came in or went out.
+            var reversals = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
             var flows = await db.AccountTransactions.AsNoTracking()
-                .Where(t => t.Date >= start && t.Date < end && !NotCashFlow.Contains(t.Category))
+                .Where(t => t.Date >= start && t.Date < end && !NotCashFlow.Contains(t.Category) && t.Category != AccountTransactionCategory.Reversal
+                    && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
                 .GroupBy(t => new { t.Direction, t.Category })
                 .Select(g => new { g.Key.Direction, g.Key.Category, Amount = g.Sum(t => t.Amount) })
                 .ToListAsync(ct);
@@ -203,7 +221,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             ? CostMath.RoundMoney(await db.StockBalances.AsNoTracking().SumAsync(b => (decimal?)(b.Quantity * b.Product.AverageCost), ct) ?? 0)
             : null;
 
-        return new PeriodReportDto(from, to, count, gross, discounts, returns, netSales, count == 0 ? 0 : CostMath.RoundMoney((s?.Net ?? 0) / count),
+        return new PeriodReportDto(from, to, count, gross, discounts, returns, netSales, count == 0 ? 0 : CostMath.RoundMoney(netSales / count), // after returns, like the sales figure beside it
             cogs, damaged, grossProfit, losses, expenses, netProfit, expensesByCategory,
             cashIn, cashOut, cashIn - cashOut, inByCategory, outByCategory, accounts,
             newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue, gains, totalExpenses);
@@ -221,7 +239,8 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var returns = await db.SaleReturnLines.AsNoTracking().Where(l => l.SaleReturn.Date >= start && l.SaleReturn.Date < end)
             .Select(l => new { l.SaleReturn.Date, l.LineTotal, SellableCost = l.Condition == ReturnCondition.Sellable ? l.Quantity * l.UnitCost : 0 }).ToListAsync(ct);
         var expenses = Profit || Financial
-            ? await db.Expenses.AsNoTracking().Where(e => e.Date >= start && e.Date < end && e.Status == VoucherStatus.Posted).Select(e => new { e.Date, e.Amount }).ToListAsync(ct)
+            ? (await db.Expenses.AsNoTracking().Where(e => e.Date >= start && e.Date < end && e.Status == VoucherStatus.Posted).Select(e => new { e.Date, e.Amount }).ToListAsync(ct))
+                .Concat(await SettledAdvancesQuery(start, end).Select(s => new { s.Date, Amount = s.AdvanceExpense }).ToListAsync(ct)).ToList()
             : [];
         var received = Financial
             ? await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end && t.Direction == MoneyDirection.In

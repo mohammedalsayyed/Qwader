@@ -16,6 +16,8 @@ public enum AccountTransactionCategory
     Expense = 12,
     SaleRefund = 13,
     OtherPayment = 14,
+    /// <summary>An advance to an employee: not an expense until a salary settlement takes it.</summary>
+    EmployeeAdvance = 15,
     TransferIn = 20,
     TransferOut = 21,
     Reversal = 30,

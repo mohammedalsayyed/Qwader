@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Camera, ImageOff, ImagePlus, Loader2, Package, Plus, Trash2 } from 'lucide-react';
 import { categoriesApi, filesApi, productsApi, type ProductListItem, type StockStatus } from '@/api/catalog';
-import type { LookupItem } from '@/api/endpoints';
+import { lookupsApi, type LookupItem } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button } from '@/components/ui/Button';
+import { Input, Select } from '@/components/ui/Field';
 import { normalizeArabic } from '@/lib/arabic';
 import { useLookups } from '@/lib/queries';
 import { suppliersApi, type SupplierListItem } from '@/api/stock';
@@ -278,5 +279,60 @@ export function CategoryPicker({
           : undefined
       }
     />
+  );
+}
+
+const NEW_UNIT = '__new';
+
+/**
+ * Unit of measure: the store's units, plus «+ وحدة جديدة» for whoever manages products — typed in place, added to the
+ * store's list and chosen at once (an existing unit with that name is chosen instead of a duplicate).
+ */
+export function UnitSelect({ id, describedBy, value, onChange, invalid }: {
+  id?: string;
+  describedBy?: string;
+  value: number | string | null | undefined;
+  onChange: (unitId: number) => void;
+  invalid?: boolean;
+}) {
+  const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const units = useLookups().data?.units ?? [];
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string>();
+  const add = useMutation({
+    mutationFn: () => lookupsApi.addUnit(name.trim()),
+    onSuccess: async (unit) => {
+      await queryClient.invalidateQueries({ queryKey: ['lookups'] });
+      onChange(unit.id);
+      setAdding(false);
+      setName('');
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const submit = () => {
+    if (!name.trim()) return setError('اكتب اسم الوحدة');
+    setError(undefined);
+    add.mutate();
+  };
+
+  return (
+    <div className="space-y-2">
+      <Select id={id} aria-describedby={describedBy} aria-invalid={invalid || undefined} value={value ?? ''}
+        onChange={(e) => (e.target.value === NEW_UNIT ? setAdding(true) : onChange(Number(e.target.value)))}>
+        {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        {can(P.ProductsManage) && <option value={NEW_UNIT}>+ وحدة جديدة…</option>}
+      </Select>
+      {adding && (
+        <div className="flex gap-2" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}>
+          <Input aria-label="اسم الوحدة الجديدة" placeholder="مثل: كرتونة، دزينة، متر" autoFocus maxLength={30} value={name}
+            onChange={(e) => { setName(e.target.value); setError(undefined); }} />
+          <Button loading={add.isPending} onClick={submit}><Plus className="size-4" /> إضافة</Button>
+          <Button variant="ghost" onClick={() => { setAdding(false); setName(''); setError(undefined); }}>إلغاء</Button>
+        </div>
+      )}
+      {error && <p className="text-sm text-danger">{error}</p>}
+    </div>
   );
 }

@@ -93,7 +93,7 @@ export interface IncomingTransfer {
 }
 
 export type ReceiptPurpose = 'DebtCollection' | 'OtherIncome';
-export type PaymentPurpose = 'SupplierPayment' | 'Expense' | 'Other' | 'CustomerRefund';
+export type PaymentPurpose = 'SupplierPayment' | 'Expense' | 'Other' | 'CustomerRefund' | 'EmployeeAdvance';
 export type VoucherStatus = 'Posted' | 'Voided';
 
 export interface Voucher {

@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Field, Input } from '@/components/ui/Field';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
-import { CategoryPicker } from '@/components/catalog/CatalogBits';
+import { CategoryPicker, UnitSelect } from '@/components/catalog/CatalogBits';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 import { applyServerErrors } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
@@ -23,6 +23,7 @@ import { useLookups, useStoreSettings } from '@/lib/queries';
 const schema = z.object({
   name: z.string().trim().min(1, 'اكتب اسم المنتج').max(150, 'اسم المنتج طويل جدًا'),
   retailPrice: zPositive('اكتب سعر البيع'),
+  wholesalePrice: zOptionalAmount(),
   purchasePrice: zOptionalAmount(),
   quantity: zOptionalAmount(),
   barcode: z.string().trim().max(50).regex(/^\S*$/, 'الباركود يجب ألا يحتوي على مسافات').optional(),
@@ -40,7 +41,7 @@ export interface QuickProductDraft {
   barcode?: string;
 }
 
-const EMPTY = { name: '', retailPrice: '', purchasePrice: '', quantity: '', barcode: '' };
+const EMPTY = { name: '', retailPrice: '', wholesalePrice: '', purchasePrice: '', quantity: '', barcode: '' };
 
 /**
  * The everyday way to add products: five fields, sensible defaults for the rest
@@ -58,6 +59,9 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
   const [addedCount, setAddedCount] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  // Kept between products of a batch (often the same unit); «قطعة» until another is chosen.
+  const [pickedUnit, setPickedUnit] = useState<number | null>(null);
+  const unitId = pickedUnit ?? lookups.data?.units.find((u) => u.name === 'قطعة')?.id ?? lookups.data?.units[0]?.id ?? 0;
 
   const canSeeCost = can(P.ProductsViewCost);
   const canOpenStock = can(P.InventoryAdjust, P.PurchasesManage);
@@ -74,14 +78,13 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
 
   const save = useMutation({
     mutationFn: ({ v }: { v: FormValues; another: boolean }) => {
-      const unitId = lookups.data?.units.find((u) => u.name === 'قطعة')?.id ?? lookups.data?.units[0]?.id ?? 0;
       return productsApi.create({
         name: v.name,
         barcode: v.barcode?.trim() || null,
         categoryId: category!.id,
         unitId,
         retailPrice: v.retailPrice,
-        wholesalePrice: v.retailPrice,
+        wholesalePrice: v.wholesalePrice ?? v.retailPrice, // blank = the retail price
         minSalePrice: 0,
         purchasePrice: v.purchasePrice ?? 0,
         reorderLevel: settings.data?.defaultReorderLevel ?? 5,
@@ -104,7 +107,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       }
     },
     onError: (e) => {
-      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'purchasePrice', 'barcode']);
+      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'wholesalePrice', 'purchasePrice', 'barcode']);
       if (msg) toast.error(msg);
     },
   });
@@ -165,6 +168,10 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
           )}
         </Field>
 
+        <Field label="وحدة القياس">
+          {(id) => <UnitSelect id={id} value={unitId} onChange={setPickedUnit} />}
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
           {canSeeCost && (
             <Field label="سعر الشراء" error={errors.purchasePrice?.message}>
@@ -173,6 +180,9 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
           )}
           <Field label="سعر البيع" required error={errors.retailPrice?.message}>
             {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.retailPrice} {...register('retailPrice')} />}
+          </Field>
+          <Field label="سعر الجملة" error={errors.wholesalePrice?.message} hint="فارغ = نفس سعر البيع">
+            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder={String(retailRaw ?? '') || '0'} invalid={!!errors.wholesalePrice} {...register('wholesalePrice')} />}
           </Field>
         </div>
 

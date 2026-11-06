@@ -67,7 +67,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .Length(3, 50).WithMessage("اسم المستخدم يجب أن يكون بين 3 و50 حرفًا")
             .Matches(@"^\S+$").WithMessage("اسم المستخدم يجب ألا يحتوي على مسافات");
         RuleFor(x => x.FullName).NotEmpty().WithMessage("الاسم الكامل مطلوب").MaximumLength(100);
-        RuleFor(x => x.PhoneNumber).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا");
+        RuleFor(x => x.PhoneNumber).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا").Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Password).StrongPassword();
         RuleFor(x => x.Roles).NotEmpty().WithMessage("اختر دورًا واحدًا على الأقل");
     }
@@ -78,7 +78,7 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
     public UpdateUserRequestValidator()
     {
         RuleFor(x => x.FullName).NotEmpty().WithMessage("الاسم الكامل مطلوب").MaximumLength(100);
-        RuleFor(x => x.PhoneNumber).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا");
+        RuleFor(x => x.PhoneNumber).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا").Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Roles).NotEmpty().WithMessage("اختر دورًا واحدًا على الأقل");
     }
 }
