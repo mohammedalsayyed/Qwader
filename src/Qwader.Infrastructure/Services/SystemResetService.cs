@@ -69,6 +69,8 @@ public sealed class SystemResetService(
 
             if (everything)
             {
+                // Off the payroll too (their users stay and can be added again).
+                deleted += await db.Employees.ExecuteDeleteAsync(ct);
                 deleted += await db.Products.ExecuteDeleteAsync(ct);
                 deleted += await db.Brands.ExecuteDeleteAsync(ct);
                 deleted += await db.Categories.ExecuteDeleteAsync(ct);

@@ -61,6 +61,8 @@ public sealed class SystemResetTests(ApiFactory factory)
 
         (await CountAsync(admin, "/api/products")).Should().Be(0);
         (await CountAsync(admin, "/api/suppliers")).Should().Be(0);
+        (await admin.GetFromJsonAsync<List<Application.Payroll.EmployeeListItemDto>>("/api/payroll/employees", TestJson.Options))
+            .Should().BeEmpty("nobody stays on the payroll after clearing everything");
         var lookups = await admin.LookupsAsync();
         lookups.Accounts.Should().Contain(a => a.Name == "الصندوق النقدي", "default accounts are seeded again");
         lookups.Units.Should().NotBeEmpty();
@@ -84,6 +86,15 @@ public sealed class SystemResetTests(ApiFactory factory)
             [new(product.Id, 2, 100)], [new(cash, 50), new(wallet, 100)], null))).ReadAsync<SaleDetailDto>();
         await (await admin.PostAsJsonAsync("/api/expenses", new CreateExpenseRequest(Guid.NewGuid(), lookups.ExpenseCategories[0].Id, "اختبار تصفير", 10, cash, null, null)))
             .ReadAsync<ExpenseDto>();
+        // Someone on the payroll with an advance.
+        var candidate = (await admin.GetFromJsonAsync<List<Application.Payroll.PayrollCandidateDto>>("/api/payroll/candidates", TestJson.Options))!.FirstOrDefault();
+        if (candidate is not null)
+        {
+            var employee = await (await admin.PostAsJsonAsync("/api/payroll/employees",
+                new Application.Payroll.SaveEmployeeRequest(candidate.UserId, null, Domain.Payroll.PayPeriod.Daily, 50, null, null))).ReadAsync<Application.Payroll.EmployeeDto>();
+            await (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/entries",
+                new Application.Payroll.CreatePayrollEntryRequest(Guid.NewGuid(), Domain.Payroll.PayrollEntryType.Advance, 10, null, cash, null))).ReadAsync<Application.Payroll.EmployeeDto>();
+        }
     }
 
     private static async Task ResetAsync(HttpClient admin, SystemResetMode mode) =>
