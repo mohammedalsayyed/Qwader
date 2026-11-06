@@ -447,5 +447,11 @@ public sealed class SalesTests(ApiFactory factory)
         sale.Total.Should().Be(40);
         sale.ReviewNote.Should().Contain("يتجاوز الحد المسموح");
         sale.SoldOffline.Should().BeFalse();
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entry = await db.AuditLogs.SingleAsync(a => a.Action == "Sale.DiscountOverLimit" && a.EntityId == sale.Id.ToString());
+        entry.NewValues.Should().Contain("20").And.Contain(sale.Number);
+        (await db.AuditLogs.AnyAsync(a => a.Action == "Sale.PriceOverride" && a.EntityId == sale.Id.ToString())).Should().BeFalse("it was not sold under cost");
     }
 }

@@ -72,6 +72,7 @@ public sealed class SaleService(
         // becomes part of its line discount, so invoices and reports show it as «خصم». Only the floor (minimum sale price)
         // limits it; the store's discount limit applies to the discounts the seller types (line + invoice).
         decimal typedLineDiscounts = 0;
+        (decimal Percent, decimal Limit, decimal Amount)? discountOverLimit = null;
         var lines = request.Lines.Select(l =>
         {
             var p = products[l.ProductId];
@@ -121,7 +122,11 @@ public sealed class SaleService(
             var overText = over ? $"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)" : "";
             if (over && !canOverride) Breach(overText);
             // Allowed for whoever may sell under the limits, but marked on the invoice for the owner to see.
-            else if (over) review.Add($"{overText} — اعتُمد بصلاحية {currentUser.UserName}");
+            else if (over)
+            {
+                review.Add($"{overText} — اعتُمد بصلاحية {currentUser.UserName}");
+                discountOverLimit = (Math.Round(discountGiven / chargedGross * 100, 1), maxPercent, discountGiven);
+            }
         }
 
         var overridden = new List<string>();
@@ -250,6 +255,10 @@ public sealed class SaleService(
             invoice.Number, invoice.CustomerName, invoice.Total, Paid = invoice.PaidAmount, Discounts = invoice.LineDiscountTotal + invoice.InvoiceDiscount,
             Payments = payments.Select(p => new { p.Input.AccountId, p.Input.Amount, p.Pending }), invoice.SoldOffline,
         });
+        // Its own line in the audit log, so an over-limit discount is found without opening every invoice.
+        if (discountOverLimit is { } d)
+            audit.Log("Sale.DiscountOverLimit", "SaleInvoice", invoice.Id.ToString(), null,
+                new { invoice.Number, DiscountPercent = d.Percent, LimitPercent = d.Limit, Discount = d.Amount, invoice.Total });
         if (overridden.Count > 0)
             audit.Log("Sale.PriceOverride", "SaleInvoice", invoice.Id.ToString(), null, new { invoice.Number, Products = overridden });
         await db.SaveChangesAsync(ct);
