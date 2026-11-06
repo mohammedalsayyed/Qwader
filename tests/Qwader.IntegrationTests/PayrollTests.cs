@@ -62,6 +62,13 @@ public sealed class PayrollTests(ApiFactory factory)
         before.OpenAdvances.Should().Be(500);
         (await BalanceAsync(cash)).Should().Be(start - 500, "the advance is paid at once");
 
+        // The worker hears about each, on the phone and in their notifications list — even with no topic chosen.
+        (await factory.Push.WaitForAsync(workerPhone, "تم صرف سلفة لك — 500 ₪")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(workerPhone, "خصم من راتبك — 100 ₪")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(workerPhone, "مكافأة لك — 50 ₪")).Should().BeTrue();
+        (await worker.GetFromJsonAsync<FeedPageDto>("/api/notification-feed", TestJson.Options))!.Items
+            .Should().Contain(n => n.Title == "تم صرف سلفة لك — 500 ₪" && n.Url == "/account/payroll");
+
         // The advance is a salary expense: it cannot be voided from the expenses screen.
         var expenseId = await ExpenseIdAsync(before.Entries.First(e => e.Type == PayrollEntryType.Advance).Id);
         (await admin.PostAsJsonAsync($"/api/expenses/{expenseId}/void", new VoidDocumentRequest("خطأ"))).StatusCode.Should().Be((HttpStatusCode)422);

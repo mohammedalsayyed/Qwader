@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellOff, BellRing, Send, Share } from 'lucide-react';
+import { Banknote, BellOff, BellRing, Send, Share } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button } from '@/components/ui/Button';
@@ -84,8 +84,6 @@ export function NotificationsPage() {
           <Spinner />
         ) : status.isError ? (
           <ErrorState message={errorMessage(status.error)} onRetry={() => void status.refetch()} />
-        ) : allowed.length === 0 ? (
-          <Card className="p-5 text-sm text-muted">صلاحياتك الحالية لا تشمل أي نوع من الإشعارات.</Card>
         ) : (
           <>
             <Card className="space-y-1 p-5">
@@ -96,6 +94,14 @@ export function NotificationsPage() {
               {allowed.map((t) => (
                 <Switch key={t.key} label={t.label} description={t.description} checked={topics[t.key]} onChange={(v) => toggle(t.key, v)} />
               ))}
+              {/* Personal notifications go to every device of the user, whatever their permissions or the switches above. */}
+              <div className="flex items-start gap-3 py-2">
+                <Banknote className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
+                <span>
+                  <span className="block font-medium">إشعاراتك الشخصية</span>
+                  <span className="block text-sm text-muted">صرف راتبك، والسلف والخصومات والمكافآت المسجّلة لك — تصل دائمًا عند تفعيل الإشعارات</span>
+                </span>
+              </div>
             </Card>
 
             {denied && (
@@ -114,7 +120,7 @@ export function NotificationsPage() {
                 </Button>
               </div>
             ) : (
-              <Button block size="lg" loading={save.isPending} disabled={denied || !allowed.some((t) => topics[t.key])}
+              <Button block size="lg" loading={save.isPending} disabled={denied}
                 onClick={() => save.mutate(topics)}>
                 <BellRing className="size-5" aria-hidden /> تفعيل الإشعارات على هذا الجهاز
               </Button>

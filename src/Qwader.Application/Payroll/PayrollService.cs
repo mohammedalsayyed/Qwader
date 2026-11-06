@@ -233,6 +233,20 @@ public sealed class PayrollService(
         idempotency.Record(request.IdempotencyKey, operation, "PayrollEntry", entry.Id.ToString());
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        // The employee hears about anything recorded against their salary (no account names).
+        var title = request.Type switch
+        {
+            PayrollEntryType.Advance => $"تم صرف سلفة لك — {PushMessage.Money(entry.Amount)}",
+            PayrollEntryType.Deduction => $"خصم من راتبك — {PushMessage.Money(entry.Amount)}",
+            _ => $"مكافأة لك — {PushMessage.Money(entry.Amount)}",
+        };
+        var body = new List<string>
+        {
+            request.Type == PayrollEntryType.Bonus ? "تُضاف إلى مخالصتك القادمة" : "تُخصم من مخالصتك القادمة",
+        };
+        if (entry.Notes is not null) body.Insert(0, request.Type == PayrollEntryType.Deduction ? $"السبب: {entry.Notes}" : entry.Notes);
+        push.NotifyUser(employee.UserId, new PushMessage(title, string.Join('\n', body), "/account/payroll", $"payroll-entry-{entry.Id}"));
         return await GetAsync(employee.Id, ct);
     }
 
