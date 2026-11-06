@@ -84,7 +84,23 @@ cd web && npx vitest run          # اختبارات الواجهة والـ Wor
 
 ## النشر
 
-### الخادم (MonsterASP — `qwader.runasp.net`)
+### النسخة الإنتاجية (فرع `production` — https://qwader.premiumasp.net)
+الخادم نفسه يعرض التطبيق (بدون Cloudflare)، وقاعدة بياناته `db78301`.
+1. إعدادات الخادم في `deploy/premium/appsettings.Production.json` (مستثنى من Git): سلسلة الاتصال، و`Jwt:SigningKey`، و`Seed:AdminPassword`، و`Push:Subject`.
+2. من فرع `production`:
+
+```powershell
+cd web; npm run build; cd ..
+dotnet publish src/Qwader.Api -c Release -o publish-out-prod
+Copy-Item deploy\premium\appsettings.Production.json publish-out-prod\appsettings.Production.json -Force
+& 'C:\Program Files\IIS\Microsoft Web Deploy V3\msdeploy.exe' -verb:sync -source:contentPath=D:\Qwader\publish-out-prod `
+  "-dest:contentPath=site105411,computerName=https://site105411.siteasp.net:8172/msdeploy.axd?site=site105411,userName=site105411,password=<كلمة مرور النشر>,authType=Basic" `
+  -allowUntrusted -enableRule:AppOffline -enableRule:DoNotDeleteRule
+```
+
+كلمة مرور النشر في ملف `qwader.premiumasp.net-WebDeploy.publishSettings` من لوحة MonsterASP.
+
+### نسخة التجربة — الخادم (MonsterASP — `qwader.runasp.net`)
 1. أنشئ الملف `src/Qwader.Api/appsettings.Production.json` (مستثنى من Git)، وفيه: سلسلة الاتصال، و`Jwt:SigningKey`، و`Seed:AdminPassword` (لأول تشغيل فقط).
 2. ابنِ الواجهة ثم انشر:
 

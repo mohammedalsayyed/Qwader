@@ -20,3 +20,7 @@ publish-out/
 web/functions/**/node_modules/
 .wrangler/
 *.tsbuildinfo
+
+# Production (premiumasp) deploy: server config and first admin password. Never commit.
+deploy/
+publish-out*/
