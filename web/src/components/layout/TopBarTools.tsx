@@ -8,6 +8,7 @@ import { IconButton } from '@/components/ui/Button';
 import { EmptyState, ErrorState, SearchInput, Spinner } from '@/components/ui/Feedback';
 import { Sheet } from '@/components/ui/Sheet';
 import { ProductThumb } from '@/components/catalog/CatalogBits';
+import { useFeed } from '@/features/notifications/NotificationFeed';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatMoney, formatQuantity } from '@/lib/format';
@@ -170,7 +171,8 @@ export function NotificationsButton() {
     refetchInterval: 120_000,
   });
   const n = query.data;
-  const total = n ? n.lowStock + n.outOfStock + n.draftPurchases + n.pendingTransfers : 0;
+  const unread = useFeed(1, 1).data?.unreadCount ?? 0;
+  const total = (n ? n.lowStock + n.outOfStock + n.draftPurchases + n.pendingTransfers : 0) + unread;
 
   const items = n
     ? [
@@ -192,6 +194,12 @@ export function NotificationsButton() {
         )}
       </IconButton>
       <Sheet open={open} onClose={() => setOpen(false)} title="الإشعارات">
+        <button type="button" onClick={() => { setOpen(false); navigate('/notifications'); }}
+          className="mb-3 flex min-h-14 w-full items-center gap-3 rounded-xl bg-brand-50 px-3 text-start font-semibold text-brand-800 hover:bg-brand-100">
+          <Bell className="size-6 shrink-0" />
+          <span className="flex-1">كل الإشعارات</span>
+          {unread > 0 && <span className="rounded-full bg-accent-600 px-2 py-0.5 text-xs text-white">{unread} جديد</span>}
+        </button>
         {items.length === 0 ? (
           <EmptyState icon={<Bell className="size-8" />} title="لا توجد تنبيهات حاليًا" />
         ) : (

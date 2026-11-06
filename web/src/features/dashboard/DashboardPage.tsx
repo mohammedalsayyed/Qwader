@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
+import { LatestNotifications } from '@/features/notifications/NotificationFeed';
 import { P, type Permission } from '@/auth/permissions';
 import { formatDate, formatMoney } from '@/lib/format';
 
@@ -86,6 +87,8 @@ export function DashboardPage() {
           ))}
         </div>
       </section>
+
+      <LatestNotifications />
 
       {stockAlerts && notifications.data && (
         <div className="grid grid-cols-2 gap-2">

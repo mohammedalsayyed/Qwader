@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<Finance.ITransferService, Finance.TransferService>();
         services.AddScoped<Reports.IReportService, Reports.ReportService>();
         services.AddScoped<Payroll.IPayrollService, Payroll.PayrollService>();
+        services.AddScoped<Notifications.INotificationFeedService, Notifications.NotificationFeedService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         return services;
     }

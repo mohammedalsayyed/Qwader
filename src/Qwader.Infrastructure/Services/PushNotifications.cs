@@ -137,6 +137,24 @@ public sealed class PushDispatcher(PushQueue queue, IServiceScopeFactory scopes,
         var sender = scope.ServiceProvider.GetRequiredService<IPushSender>();
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
+        // Everyone the notification is for keeps a copy in their list, phone notifications on or not («send a test» excepted).
+        var permissions = job.Permissions ?? [];
+        var readers = job.UserId is { } one
+            ? db.Users.Where(u => u.Id == one && u.IsActive).Select(u => u.Id)
+            : db.Users.Where(u => u.IsActive && u.UserRoles.Any(ur => ur.Role.Permissions.Any(p => permissions.Contains(p.PermissionCode)))).Select(u => u.Id);
+        if (job.Message.Tag != "test")
+        {
+            var now = clock.UtcNow;
+            foreach (var reader in await readers.ToListAsync(ct))
+                db.UserNotifications.Add(new UserNotification
+                {
+                    UserId = reader, Topic = job.Topic, CreatedAt = now, Url = Cut(job.Message.Url, 300),
+                    Title = Cut(job.Message.Title, 200), Body = Cut(job.Message.Body, 1000),
+                });
+            await db.SaveChangesAsync(ct);
+            await ForgetOldAsync(db, now, ct);
+        }
+
         var query = db.PushSubscriptions.Where(s => s.User.IsActive);
         if (job.UserId is { } userId)
         {
@@ -144,7 +162,6 @@ public sealed class PushDispatcher(PushQueue queue, IServiceScopeFactory scopes,
         }
         else
         {
-            var permissions = job.Permissions ?? [];
             query = query.Where(s => (s.Topics & job.Topic) != 0
                 && s.User.UserRoles.Any(ur => ur.Role.Permissions.Any(p => permissions.Contains(p.PermissionCode))));
         }
@@ -162,6 +179,19 @@ public sealed class PushDispatcher(PushQueue queue, IServiceScopeFactory scopes,
         }
         await db.SaveChangesAsync(ct);
     }
+
+    private DateTime nextCleanup;
+
+    /// <summary>Notifications older than 90 days leave the lists (once a day at most).</summary>
+    private async Task ForgetOldAsync(AppDbContext db, DateTime now, CancellationToken ct)
+    {
+        if (now < nextCleanup) return;
+        nextCleanup = now.AddDays(1);
+        var cutoff = now.AddDays(-90);
+        await db.UserNotifications.Where(n => n.CreatedAt < cutoff).ExecuteDeleteAsync(ct);
+    }
+
+    private static string Cut(string s, int max) => s.Length <= max ? s : s[..max];
 }
 
 public sealed class PushSubscriptionService(AppDbContext db, VapidKeys keys, ICurrentUser currentUser, IClock clock, IPushNotifier notifier)

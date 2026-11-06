@@ -30,3 +30,19 @@ public class PushSubscription
 
     public AppUser User { get; set; } = null!;
 }
+
+/// <summary>
+/// One notification as a user received it: kept so the app can list them (the dashboard's latest, the notifications screen)
+/// whether or not the user turned on phone notifications.
+/// </summary>
+public class UserNotification
+{
+    public long Id { get; set; }
+    public int UserId { get; set; }
+    public PushTopics Topic { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ReadAt { get; set; }
+}

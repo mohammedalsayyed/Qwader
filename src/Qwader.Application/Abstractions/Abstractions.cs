@@ -55,6 +55,7 @@ public interface IAppDbContext
     DbSet<Expense> Expenses { get; }
     DbSet<ReceiptAllocation> ReceiptAllocations { get; }
     DbSet<Employee> Employees { get; }
+    DbSet<Domain.Notifications.UserNotification> UserNotifications { get; }
     DbSet<PayrollEntry> PayrollEntries { get; }
     DbSet<PayrollSettlement> PayrollSettlements { get; }
 

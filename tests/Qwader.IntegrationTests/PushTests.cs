@@ -79,6 +79,38 @@ public sealed class PushTests(ApiFactory factory)
         status.PublicKey.Should().NotBeNullOrEmpty();
     }
 
+    [Fact]
+    public async Task Each_user_keeps_their_own_notifications_list_even_without_phone_notifications()
+    {
+        var admin = await factory.LoginAsync();
+        var seller = await CreateUserAsync(admin, SystemRoles.Sales);
+        var product = await admin.CreateProductAsync(retail: 77, openingQuantity: 5, openingCost: 10);
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash);
+        var sale = await (await seller.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 1, 77)], [new(cash.Id, 77)], null))).ReadAsync<SaleDetailDto>();
+
+        FeedPageDto? feed = null;
+        for (var i = 0; i < 60; i++) // written by the background sender
+        {
+            feed = await admin.GetFromJsonAsync<FeedPageDto>("/api/notification-feed?pageSize=50", TestJson.Options);
+            if (feed!.Items.Any(n => n.Body.Contains(sale.Number))) break;
+            await Task.Delay(50);
+        }
+        var item = feed!.Items.First(n => n.Body.Contains(sale.Number));
+        item.Title.Should().Be("بيع جديد — 77 ₪");
+        item.Url.Should().Be($"/sales/{sale.Id}");
+        item.Read.Should().BeFalse();
+        feed.UnreadCount.Should().BeGreaterThan(0);
+
+        var sellerFeed = await seller.GetFromJsonAsync<FeedPageDto>("/api/notification-feed?pageSize=50", TestJson.Options);
+        sellerFeed!.Items.Should().NotContain(n => n.Body.Contains(sale.Number), "sales staff do not see every invoice");
+
+        (await admin.PostAsync($"/api/notification-feed/{item.Id}/read", null)).EnsureSuccessStatusCode();
+        (await admin.GetFromJsonAsync<FeedPageDto>("/api/notification-feed?pageSize=50", TestJson.Options))!.Items.First(n => n.Id == item.Id).Read.Should().BeTrue();
+        (await admin.PostAsync("/api/notification-feed/read-all", null)).EnsureSuccessStatusCode();
+        (await admin.GetFromJsonAsync<FeedPageDto>("/api/notification-feed", TestJson.Options))!.UnreadCount.Should().Be(0);
+    }
+
     private async Task<HttpClient> CreateUserAsync(HttpClient admin, string role)
     {
         var userName = $"push_{Guid.NewGuid():N}"[..20];

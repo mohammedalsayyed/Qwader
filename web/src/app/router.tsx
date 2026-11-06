@@ -42,6 +42,7 @@ const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'Expe
 const PayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'PayrollPage');
 const EmployeePayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'EmployeePayrollPage');
 const MyPayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'MyPayrollPage');
+const NotificationFeedPage = page(() => import('@/features/notifications/NotificationFeed'), 'NotificationFeedPage');
 const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
 const AuditLogPage = page(() => import('@/features/settings/AuditLogPage'), 'AuditLogPage');
 
@@ -143,6 +144,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: 'account/change-password', element: <ChangePasswordPage /> },
           { path: 'account/notifications', element: <NotificationsPage /> },
+          { path: 'notifications', element: <Suspense fallback={<Spinner />}><NotificationFeedPage /></Suspense> },
           { path: 'account/payroll', element: <Suspense fallback={<Spinner />}><MyPayrollPage /></Suspense> },
           {
             path: 'users',
