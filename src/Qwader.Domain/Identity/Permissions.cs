@@ -34,6 +34,7 @@ public static class Permissions
     public const string VouchersCreate = "Vouchers.Create";
     public const string VouchersVoid = "Vouchers.Void";
     public const string ExpensesManage = "Expenses.Manage";
+    public const string PayrollManage = "Payroll.Manage";
     public const string AccountsView = "Accounts.View";
     public const string AccountsManage = "Accounts.Manage";
     public const string AccountsViewNumbers = "Accounts.ViewNumbers";
@@ -75,6 +76,7 @@ public static class Permissions
         new(VouchersCreate, "إنشاء سندات القبض والصرف", "المالية"),
         new(VouchersVoid, "إلغاء السندات", "المالية"),
         new(ExpensesManage, "إدارة المصروفات", "المالية"),
+        new(PayrollManage, "الرواتب والسلف والمخالصات", "المالية"),
         new(AccountsView, "عرض الحسابات المالية وأرصدتها", "المالية"),
         new(AccountsManage, "إدارة الحسابات المالية والتحويل بينها", "المالية"),
         new(AccountsViewNumbers, "عرض أرقام الحسابات والمحافظ كاملة", "المالية"),
@@ -128,7 +130,7 @@ public static class SystemRoles
             Identity.Permissions.ProductsView, Identity.Permissions.ProductsViewCost, Identity.Permissions.InventoryView,
             Identity.Permissions.PurchasesView, Identity.Permissions.SalesViewAll, Identity.Permissions.CustomersManage,
             Identity.Permissions.SuppliersManage, Identity.Permissions.TransfersCreate, Identity.Permissions.TransfersReview,
-            Identity.Permissions.VouchersCreate, Identity.Permissions.VouchersVoid, Identity.Permissions.ExpensesManage,
+            Identity.Permissions.VouchersCreate, Identity.Permissions.VouchersVoid, Identity.Permissions.ExpensesManage, Identity.Permissions.PayrollManage,
             Identity.Permissions.AccountsView, Identity.Permissions.AccountsManage, Identity.Permissions.AccountsViewNumbers,
             Identity.Permissions.ReportsSales, Identity.Permissions.ReportsProfit, Identity.Permissions.ReportsFinancial,
         ]),

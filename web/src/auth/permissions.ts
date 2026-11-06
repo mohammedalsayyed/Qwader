@@ -23,6 +23,7 @@ export const P = {
   VouchersCreate: 'Vouchers.Create',
   VouchersVoid: 'Vouchers.Void',
   ExpensesManage: 'Expenses.Manage',
+  PayrollManage: 'Payroll.Manage',
   AccountsView: 'Accounts.View',
   AccountsManage: 'Accounts.Manage',
   AccountsViewNumbers: 'Accounts.ViewNumbers',

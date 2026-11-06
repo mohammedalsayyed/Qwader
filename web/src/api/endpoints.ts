@@ -93,6 +93,8 @@ export interface Settings {
   saleTransfersPending: boolean;
   /** How long a till may sell without internet on the data it last downloaded. */
   offlineSaleMaxHours: number;
+  /** Pay period suggested for a new employee. */
+  defaultPayPeriod: import('./payroll').PayPeriod;
 }
 
 export interface LookupItem {

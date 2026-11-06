@@ -17,6 +17,7 @@ public static class DocumentNumbers
         DocumentType.Expense => "EXP",
         DocumentType.StockCount => "SC",
         DocumentType.StockAdjustment => "ADJ",
+        DocumentType.PayrollSettlement => "SAL",
         DocumentType.Customer => "C",
         DocumentType.Supplier => "S",
         DocumentType.Product => "P",

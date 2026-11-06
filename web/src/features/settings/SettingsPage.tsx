@@ -3,6 +3,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { PAY_PERIOD } from '@/api/payroll';
 import { settingsApi, type Settings } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { Field, Input, TextArea } from '@/components/ui/Field';
@@ -27,6 +28,7 @@ const schema = z.object({
   maxDiscountPercent: num(0, 100, 'نسبة الخصم يجب أن تكون بين 0 و100'),
   defaultReorderLevel: num(0, 1_000_000, 'حد التنبيه لا يمكن أن يكون سالبًا'),
   saleTransfersPending: z.boolean(),
+  defaultPayPeriod: z.enum(['Daily', 'Weekly', 'Monthly']),
   offlineSaleMaxHours: num(1, 168, 'المدة يجب أن تكون بين 1 و168 ساعة').pipe(z.number().int('أدخل عدد ساعات صحيحًا')),
 });
 type FormInput = z.input<typeof schema>;
@@ -149,6 +151,22 @@ export function SettingsPage() {
                     <span className="block text-xs leading-5 text-muted">
                       {v ? 'تبقى دينًا على العميل حتى يؤكدها المحاسب بعد رؤيتها في الحساب (الأكثر أمانًا).' : 'تُحسب مدفوعة فورًا عند البيع، وتظهر في قائمة الحوالات كمؤكدة.'}
                     </span>
+                  </button>
+                ))}
+              </div>
+            )} />
+        </Card>
+
+        <Card className="space-y-2 p-5">
+          <h2 className="font-bold">الرواتب</h2>
+          <p className="text-sm text-muted">نوع الراتب الذي يُقترح لكل عامل جديد. يمكن تغييره لكل عامل من شاشة «الرواتب».</p>
+          <Controller control={control} name="defaultPayPeriod"
+            render={({ field }) => (
+              <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="نوع الراتب الافتراضي">
+                {(['Daily', 'Weekly', 'Monthly'] as const).map((p) => (
+                  <button key={p} type="button" role="radio" aria-checked={field.value === p} onClick={() => field.onChange(p)}
+                    className={cn('h-11 rounded-xl border text-sm font-semibold', field.value === p ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-line')}>
+                    {PAY_PERIOD[p].label}
                   </button>
                 ))}
               </div>

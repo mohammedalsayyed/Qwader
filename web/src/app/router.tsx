@@ -39,6 +39,9 @@ const VouchersPage = page(() => import('@/features/finance/VouchersPages'), 'Vou
 const NewVoucherPage = page(() => import('@/features/finance/VouchersPages'), 'NewVoucherPage');
 const VoucherDetailPage = page(() => import('@/features/finance/VouchersPages'), 'VoucherDetailPage');
 const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'ExpensesPage');
+const PayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'PayrollPage');
+const EmployeePayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'EmployeePayrollPage');
+const MyPayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'MyPayrollPage');
 const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
 const AuditLogPage = page(() => import('@/features/settings/AuditLogPage'), 'AuditLogPage');
 
@@ -140,6 +143,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           { path: 'account/change-password', element: <ChangePasswordPage /> },
           { path: 'account/notifications', element: <NotificationsPage /> },
+          { path: 'account/payroll', element: <Suspense fallback={<Spinner />}><MyPayrollPage /></Suspense> },
           {
             path: 'users',
             element: (
@@ -185,6 +189,8 @@ export const router = createBrowserRouter([
           guarded('payments/new', <NewVoucherPage kind="payment" />, [P.VouchersCreate]),
           guarded('payments/:id', <VoucherDetailPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
           guarded('expenses', <ExpensesPage />, [P.ExpensesManage]),
+          guarded('payroll', <PayrollPage />, [P.PayrollManage]),
+          guarded('payroll/:id', <EmployeePayrollPage />, [P.PayrollManage]),
           guarded('audit', <AuditLogPage />, [P.AuditView]),
           guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           { path: '*', element: <NotFoundPage /> },

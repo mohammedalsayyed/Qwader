@@ -21,6 +21,8 @@ public static class SettingKeys
     public const string SaleTransfersPending = "Sales.TransfersPending";
     /// <summary>How long a device may keep selling without internet on the product data it last downloaded.</summary>
     public const string OfflineSaleMaxHours = "Sales.OfflineMaxHours";
+    /// <summary>Pay period suggested for a new employee: Daily, Weekly or Monthly.</summary>
+    public const string DefaultPayPeriod = "Payroll.DefaultPayPeriod";
 }
 
 public enum DocumentType
@@ -36,6 +38,7 @@ public enum DocumentType
     Expense = 9,
     StockCount = 10,
     StockAdjustment = 11,
+    PayrollSettlement = 12,
     Customer = 20,
     Supplier = 21,
     Product = 22,

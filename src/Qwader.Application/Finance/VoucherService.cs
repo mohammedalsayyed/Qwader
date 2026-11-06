@@ -25,6 +25,11 @@ public interface IVoucherService
     Task<PagedResult<ExpenseDto>> ExpensesAsync(VoucherListRequest request, CancellationToken ct = default);
     Task<ExpenseDto> CreateExpenseAsync(CreateExpenseRequest request, CancellationToken ct = default);
     Task<ExpenseDto> VoidExpenseAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
+    /// <summary>Records a paid expense inside the caller's transaction (salaries and advances use it).</summary>
+    Task<Expense> PostExpenseAsync(int categoryId, string description, decimal amount, int accountId, DateTime date, CancellationToken ct = default,
+        Guid? attachmentFileId = null);
+    /// <summary>Voids an expense and gives its money back to the account, inside the caller's transaction.</summary>
+    Task VoidExpenseCoreAsync(int expenseId, string reason, CancellationToken ct = default);
     Task<IReadOnlyList<ExpenseCategoryDto>> CategoriesAsync(CancellationToken ct = default);
     Task<ExpenseCategoryDto> SaveCategoryAsync(int? id, SaveExpenseCategoryRequest request, CancellationToken ct = default);
 
@@ -415,34 +420,8 @@ public sealed class VoucherService(
             ?? throw new ValidationFailedException("expenseCategoryId", "نوع المصروف غير موجود");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var date = DocumentDates.ToUtc(request.Date, clock);
-        var description = request.Description.Trim();
-
-        // The expense is paid through its own voucher: cash flow reads the voucher, profit reads the expense — never both.
-        var voucher = await PostPaymentAsync(new PaymentVoucher
-        {
-            Date = date,
-            Purpose = PaymentPurpose.Expense,
-            BeneficiaryName = category.Name,
-            Amount = request.Amount,
-            FinancialAccountId = request.FinancialAccountId,
-            Notes = description,
-            AttachmentFileId = request.AttachmentFileId,
-        }, ct);
-
-        var expense = new Expense
-        {
-            Number = await numbers.NextAsync(DocumentType.Expense, ct),
-            Date = date,
-            ExpenseCategoryId = category.Id,
-            Description = description,
-            Amount = request.Amount,
-            FinancialAccountId = request.FinancialAccountId,
-            AttachmentFileId = request.AttachmentFileId,
-            PaymentVoucherId = voucher.Id,
-        };
-        db.Expenses.Add(expense);
-        await db.SaveChangesAsync(ct);
+        var expense = await PostExpenseAsync(category.Id, request.Description.Trim(), request.Amount, request.FinancialAccountId,
+            DocumentDates.ToUtc(request.Date, clock), ct, request.AttachmentFileId);
 
         idempotency.Record(request.IdempotencyKey, operation, "Expense", expense.Id.ToString());
         await db.SaveChangesAsync(ct);
@@ -450,16 +429,57 @@ public sealed class VoucherService(
         return await ProjectExpenses(db.Expenses.AsNoTracking().Where(e => e.Id == expense.Id)).FirstAsync(ct);
     }
 
+    public async Task<Expense> PostExpenseAsync(int categoryId, string description, decimal amount, int accountId, DateTime date,
+        CancellationToken ct = default, Guid? attachmentFileId = null)
+    {
+        var categoryName = await db.ExpenseCategories.Where(c => c.Id == categoryId).Select(c => c.Name).FirstAsync(ct);
+
+        // The expense is paid through its own voucher: cash flow reads the voucher, profit reads the expense — never both.
+        var voucher = await PostPaymentAsync(new PaymentVoucher
+        {
+            Date = date,
+            Purpose = PaymentPurpose.Expense,
+            BeneficiaryName = categoryName,
+            Amount = amount,
+            FinancialAccountId = accountId,
+            Notes = description,
+            AttachmentFileId = attachmentFileId,
+        }, ct);
+
+        var expense = new Expense
+        {
+            Number = await numbers.NextAsync(DocumentType.Expense, ct),
+            Date = date,
+            ExpenseCategoryId = categoryId,
+            Description = description,
+            Amount = amount,
+            FinancialAccountId = accountId,
+            AttachmentFileId = attachmentFileId,
+            PaymentVoucherId = voucher.Id,
+        };
+        db.Expenses.Add(expense);
+        await db.SaveChangesAsync(ct);
+        return expense;
+    }
+
     public async Task<ExpenseDto> VoidExpenseAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
     {
+        // A salary or an advance is undone where it was made, so the employee's record stays right.
+        if (await db.PayrollEntries.AnyAsync(e => e.ExpenseId == id, ct) || await db.PayrollSettlements.AnyAsync(s => s.ExpenseId == id, ct))
+            throw new BusinessRuleException("هذا المصروف من الرواتب؛ ألغِ السلفة أو المخالصة من شاشة الرواتب");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var expense = await db.Expenses.Include(e => e.PaymentVoucher).FirstOrDefaultAsync(e => e.Id == id, ct) ?? throw new NotFoundException("المصروف غير موجود");
-        if (expense.Status == VoucherStatus.Voided) throw new BusinessRuleException("المصروف ملغى من قبل");
-        await VoidPaymentCoreAsync(expense.PaymentVoucher, request.Reason.Trim(), ct);
-        expense.Status = VoucherStatus.Voided;
+        await VoidExpenseCoreAsync(id, request.Reason.Trim(), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await ProjectExpenses(db.Expenses.AsNoTracking().Where(e => e.Id == id)).FirstAsync(ct);
+    }
+
+    public async Task VoidExpenseCoreAsync(int expenseId, string reason, CancellationToken ct = default)
+    {
+        var expense = await db.Expenses.Include(e => e.PaymentVoucher).FirstOrDefaultAsync(e => e.Id == expenseId, ct) ?? throw new NotFoundException("المصروف غير موجود");
+        if (expense.Status == VoucherStatus.Voided) throw new BusinessRuleException("المصروف ملغى من قبل");
+        await VoidPaymentCoreAsync(expense.PaymentVoucher, reason, ct);
+        expense.Status = VoucherStatus.Voided;
     }
 
     private IQueryable<ExpenseDto> ProjectExpenses(IQueryable<Expense> query)

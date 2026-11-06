@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  Banknote,
   BarChart3,
   Boxes,
   FileText,
@@ -55,6 +56,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/receipts', label: 'سندات القبض', icon: HandCoins, anyOf: [P.VouchersCreate], group: 'finance' },
   { to: '/payments', label: 'سندات الصرف', icon: ReceiptText, anyOf: [P.VouchersCreate], group: 'finance' },
   { to: '/expenses', label: 'المصروفات', icon: Wallet, anyOf: [P.ExpensesManage], group: 'finance' },
+  { to: '/payroll', label: 'الرواتب', icon: Banknote, anyOf: [P.PayrollManage], group: 'finance' },
   { to: '/reports', label: 'التقارير', icon: BarChart3, anyOf: [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial], group: 'finance' },
 
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },

@@ -5,6 +5,7 @@ using Qwader.Domain.Catalog;
 using Qwader.Domain.Files;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Inventory;
+using Qwader.Domain.Payroll;
 using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 
@@ -53,6 +54,9 @@ public interface IAppDbContext
     DbSet<PaymentVoucher> PaymentVouchers { get; }
     DbSet<Expense> Expenses { get; }
     DbSet<ReceiptAllocation> ReceiptAllocations { get; }
+    DbSet<Employee> Employees { get; }
+    DbSet<PayrollEntry> PayrollEntries { get; }
+    DbSet<PayrollSettlement> PayrollSettlements { get; }
 
     /// <summary>Read-only use (names for history lists); user management goes through UserManager.</summary>
     DbSet<Domain.Identity.AppUser> Users { get; }
