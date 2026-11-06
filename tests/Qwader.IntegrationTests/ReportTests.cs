@@ -131,4 +131,20 @@ public sealed class ReportTests(ApiFactory factory)
         export.StatusCode.Should().Be(HttpStatusCode.OK);
         export.Content.Headers.ContentType!.MediaType.Should().Contain("spreadsheetml");
     }
+
+    [Fact]
+    public async Task Best_sellers_can_be_narrowed_to_one_category()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        var kettle = await admin.CreateProductAsync(retail: 30, openingQuantity: 10, openingCost: 10);
+        var iron = await admin.CreateProductAsync(retail: 50, openingQuantity: 10, openingCost: 20);
+        foreach (var (id, qty, price) in new[] { (kettle.Id, 4, 30m), (iron.Id, 1, 50m) })
+            await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+                [new(id, qty, price)], [new(cash, qty * price)], null))).ReadAsync<SaleDetailDto>();
+
+        var rows = await admin.GetFromJsonAsync<List<ProductReportRow>>($"/api/reports/products?sort=Quantity&take=500&categoryId={iron.CategoryId}", TestJson.Options);
+        rows!.Select(r => r.ProductId).Should().Equal(iron.Id);
+        rows![0].Quantity.Should().Be(1);
+    }
 }

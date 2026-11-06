@@ -41,7 +41,8 @@ export function OfflineSync() {
     if (!ready || !loaded) return;
     const refresh = () => void refreshOfflineData(user).catch(() => undefined);
     const update = () => { if (document.visibilityState === 'visible') void applyOfflineChanges(user).catch(() => undefined); };
-    if (!snapshot || snapshot.user.id !== user.id || !snapshot.cursor || Date.now() - Date.parse(snapshot.generatedAt) > REFRESH_EVERY) refresh();
+    const fullAge = snapshot?.fullAt ? Date.now() - Date.parse(snapshot.fullAt) : Infinity;
+    if (!snapshot || snapshot.user.id !== user.id || !snapshot.cursor || fullAge > REFRESH_EVERY) refresh();
     else update();
     const full = setInterval(refresh, REFRESH_EVERY);
     const changes = setInterval(update, CHANGES_EVERY);
@@ -68,12 +69,14 @@ export function OfflineSync() {
     return () => clearInterval(timer);
   }, [ready, loaded, user, queryClient]);
 
-  // Offline: checkout reads accounts and settings through the usual queries.
+  // Offline only: checkout reads accounts and settings through the usual queries. Marked as old (updatedAt 0) so the
+  // live lists replace them as soon as the connection returns; online, the server's lists are always used.
+  const offline = useIsOffline();
   useEffect(() => {
-    if (!snapshot) return;
-    if (!queryClient.getQueryData(['lookups'])) queryClient.setQueryData(['lookups'], snapshot.lookups);
-    if (!queryClient.getQueryData(['settings'])) queryClient.setQueryData(['settings'], snapshot.settings);
-  }, [snapshot, queryClient]);
+    if (!snapshot || !offline) return;
+    if (!queryClient.getQueryData(['lookups'])) queryClient.setQueryData(['lookups'], snapshot.lookups, { updatedAt: 0 });
+    if (!queryClient.getQueryData(['settings'])) queryClient.setQueryData(['settings'], snapshot.settings, { updatedAt: 0 });
+  }, [snapshot, offline, queryClient]);
 
   return null;
 }

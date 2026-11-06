@@ -9,11 +9,13 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { BarChart } from '@/components/ui/BarChart';
 import { Card, ErrorState, FilterChips, PageHeader, Spinner } from '@/components/ui/Feedback';
 import { DateRangeFilter, resolveRange, type DateRangeValue } from '@/components/ui/DateRange';
+import { Select } from '@/components/ui/Field';
 import { Stat } from '@/components/ui/Layout';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, formatQuantity } from '@/lib/format';
+import { useLookups } from '@/lib/queries';
 
 const WEEKDAY = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 const SHORT = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', timeZone: 'UTC' });
@@ -23,6 +25,9 @@ export function ReportsPage() {
   const toast = useToast();
   const [range, setRange] = useState<DateRangeValue>({ preset: 'today', ...resolveRange('today') });
   const [sort, setSort] = useState<ProductSort>('Revenue');
+  const [take, setTake] = useState(10);
+  const [categoryId, setCategoryId] = useState('');
+  const categoryOptions = useLookups().data?.categories ?? [];
   const r = { from: range.from, to: range.to };
   const profit = can(P.ReportsProfit);
   const financial = can(P.ReportsFinancial);
@@ -30,7 +35,11 @@ export function ReportsPage() {
 
   const period = useQuery({ queryKey: ['report', 'period', r], queryFn: () => reportsApi.period(r), placeholderData: keepPreviousData });
   const daily = useQuery({ queryKey: ['report', 'daily', r], queryFn: () => reportsApi.daily(r), enabled: multiDay, placeholderData: keepPreviousData });
-  const products = useQuery({ queryKey: ['report', 'products', r, sort], queryFn: () => reportsApi.products(r, sort), placeholderData: keepPreviousData });
+  const products = useQuery({
+    queryKey: ['report', 'products', r, sort, take, categoryId],
+    queryFn: () => reportsApi.products(r, sort, take, categoryId ? Number(categoryId) : undefined),
+    placeholderData: keepPreviousData,
+  });
   const categories = useQuery({ queryKey: ['report', 'categories', r], queryFn: () => reportsApi.categories(r), placeholderData: keepPreviousData });
   const people = useQuery({ queryKey: ['report', 'people', r], queryFn: () => reportsApi.salespeople(r), placeholderData: keepPreviousData });
   const receivables = useQuery({ queryKey: ['report', 'receivables'], queryFn: reportsApi.receivables, enabled: financial });
@@ -148,10 +157,19 @@ export function ReportsPage() {
 
       {/* ---------- products & groups ---------- */}
       <Section title="المنتجات الأكثر مبيعًا" exportKey="products" onExport={exportExcel}>
-        <div className="px-4 pt-3 print:hidden">
+        <div className="space-y-2 px-4 pt-3 print:hidden">
           <FilterChips value={sort} onChange={setSort} options={[
             { value: 'Revenue', label: 'حسب المبيعات' }, { value: 'Quantity', label: 'حسب الكمية' }, ...(profit ? [{ value: 'Profit' as const, label: 'حسب الربح' }] : []),
           ]} />
+          <div className="grid grid-cols-2 gap-2">
+            <Select aria-label="الصنف" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <option value="">كل الأصناف</option>
+              {categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+            <Select aria-label="عدد المنتجات" value={take} onChange={(e) => setTake(Number(e.target.value))}>
+              {[10, 25, 50, 100].map((n) => <option key={n} value={n}>أعلى {n}</option>)}
+            </Select>
+          </div>
         </div>
         <QueryList query={products} empty="لا توجد مبيعات في هذه الفترة">
           {(rows) => rows.map((x, i) => (

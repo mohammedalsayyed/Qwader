@@ -94,7 +94,7 @@ type Range = { from?: string; to?: string };
 export const reportsApi = {
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
   daily: (r: Range) => api<DailyRow[]>('/reports/daily', { query: r }),
-  products: (r: Range, sort: ProductSort, take = 15) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take } }),
+  products: (r: Range, sort: ProductSort, take = 15, categoryId?: number) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take, categoryId } }),
   categories: (r: Range) => api<GroupRow[]>('/reports/categories', { query: r }),
   salespeople: (r: Range) => api<GroupRow[]>('/reports/salespeople', { query: r }),
   receivables: () => api<BalanceRow[]>('/reports/receivables'),

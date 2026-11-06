@@ -25,7 +25,7 @@ const schema = z.object({
   retailPrice: zPositive('اكتب سعر البيع'),
   purchasePrice: zOptionalAmount(),
   quantity: zOptionalAmount(),
-  barcode: z.string().trim().max(50).regex(/^S*$/, 'الباركود يجب ألا يحتوي على مسافات').optional(),
+  barcode: z.string().trim().max(50).regex(/^\S*$/, 'الباركود يجب ألا يحتوي على مسافات').optional(),
 });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;

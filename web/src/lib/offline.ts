@@ -13,6 +13,8 @@ export interface OfflineSnapshot extends OfflineData {
   user: CurrentUser;
   lookups: Lookups;
   settings: Settings;
+  /** When the whole copy (accounts and settings included) was last downloaded; the 5-second changes do not move it. */
+  fullAt?: string;
 }
 
 export interface QueuedSale {
@@ -86,7 +88,7 @@ async function saveQueue(queue: QueuedSale[]) {
 /** Downloads a fresh copy for this user. Sales still queued are taken off the stock again, since the server has not seen them. */
 export async function refreshOfflineData(user: CurrentUser) {
   const [data, lookups, settings] = await Promise.all([salesApi.offlineData(), lookupsApi.get(), settingsApi.get()]);
-  await saveSnapshot(withQueuedSales({ ...data, user, lookups, settings }, state.queue.filter((q) => q.userId === user.id)));
+  await saveSnapshot(withQueuedSales({ ...data, user, lookups, settings, fullAt: data.generatedAt }, state.queue.filter((q) => q.userId === user.id)));
 }
 
 /**

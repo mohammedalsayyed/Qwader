@@ -59,7 +59,7 @@ public interface IReportService
 {
     Task<PeriodReportDto> PeriodAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
     Task<IReadOnlyList<DailyRowDto>> DailyAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
-    Task<IReadOnlyList<ProductReportRow>> ProductsAsync(DateOnly from, DateOnly to, ProductSort sort, int take, CancellationToken ct = default);
+    Task<IReadOnlyList<ProductReportRow>> ProductsAsync(DateOnly from, DateOnly to, ProductSort sort, int take, CancellationToken ct = default, int? categoryId = null);
     Task<IReadOnlyList<GroupReportRow>> CategoriesAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
     Task<IReadOnlyList<GroupReportRow>> SalespeopleAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
     Task<IReadOnlyList<BalanceRow>> ReceivablesAsync(CancellationToken ct = default);
@@ -265,10 +265,15 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             .ToList();
     }
 
-    public async Task<IReadOnlyList<ProductReportRow>> ProductsAsync(DateOnly from, DateOnly to, ProductSort sort, int take, CancellationToken ct = default)
+    public async Task<IReadOnlyList<ProductReportRow>> ProductsAsync(DateOnly from, DateOnly to, ProductSort sort, int take, CancellationToken ct = default, int? categoryId = null)
     {
         var (start, end) = Range(from, to);
         var facts = await LineFactsAsync(start, end, ct);
+        if (categoryId is { } category)
+        {
+            var inCategory = (await db.Products.AsNoTracking().Where(p => p.CategoryId == category).Select(p => p.Id).ToListAsync(ct)).ToHashSet();
+            facts = facts.Where(f => inCategory.Contains(f.ProductId)).ToList();
+        }
         var grouped = facts.GroupBy(f => f.ProductId)
             .Select(g => new { ProductId = g.Key, Qty = g.Sum(f => f.Qty), Revenue = g.Sum(f => f.Revenue), Cost = g.Sum(f => f.Cost) })
             .Where(g => g.Qty != 0 || g.Revenue != 0)

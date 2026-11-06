@@ -36,10 +36,10 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
 
     [HttpGet("products")]
     public Task<IReadOnlyList<ProductReportRow>> Products([FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] ProductSort sort = ProductSort.Revenue, [FromQuery] int take = 20, CancellationToken ct = default)
+        [FromQuery] ProductSort sort = ProductSort.Revenue, [FromQuery] int take = 20, [FromQuery] int? categoryId = null, CancellationToken ct = default)
     {
         var (f, t) = Period(from, to);
-        return reports.ProductsAsync(f, t, sort, take, ct);
+        return reports.ProductsAsync(f, t, sort, take, ct, categoryId);
     }
 
     [HttpGet("categories")]
