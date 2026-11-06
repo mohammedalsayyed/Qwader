@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { CloudOff, CloudUpload, RotateCcw, Trash2 } from 'lucide-react';
 import { useOnline } from '@/app/pwa';
@@ -13,9 +13,11 @@ import { cn } from '@/lib/cn';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { applyOfflineChanges, discardQueued, refreshOfflineData, retryQueued, snapshotAge, syncQueue, useOfflineState } from '@/lib/offline';
 
-// Full copy now and then; changes (stock, prices, balances) every few seconds so the copy is current when the connection drops.
+// Full copy now and then; changes (stock, prices, balances) every few seconds at the till, so the copy is current when
+// the connection drops there; elsewhere in the app once a minute is enough (and keeps the server's load low).
 const REFRESH_EVERY = 30 * 60_000;
-const CHANGES_EVERY = 5_000;
+const CHANGES_AT_TILL = 5_000;
+const CHANGES_ELSEWHERE = 60_000;
 const SYNC_EVERY = 15_000;
 
 /** True when the till must work from the device's copy: no connection, or the server could not be reached at start. */
@@ -35,6 +37,7 @@ export function OfflineSync() {
   const { loaded, snapshot } = useOfflineState();
   const canSell = can(P.SalesCreate);
   const ready = status === 'authenticated' && online && canSell && !!user;
+  const atTill = useLocation().pathname.startsWith('/pos');
 
   // A fresh copy now if missing, old or someone else's; then only the changes every few seconds.
   useEffect(() => {
@@ -45,7 +48,7 @@ export function OfflineSync() {
     if (!snapshot || snapshot.user.id !== user.id || !snapshot.cursor || fullAge > REFRESH_EVERY) refresh();
     else update();
     const full = setInterval(refresh, REFRESH_EVERY);
-    const changes = setInterval(update, CHANGES_EVERY);
+    const changes = setInterval(update, atTill ? CHANGES_AT_TILL : CHANGES_ELSEWHERE);
     document.addEventListener('visibilitychange', update);
     return () => {
       clearInterval(full);
@@ -53,7 +56,7 @@ export function OfflineSync() {
       document.removeEventListener('visibilitychange', update);
     };
     // Re-run only on session/connection changes, not every time the copy is refreshed.
-  }, [ready, loaded, user?.id]);
+  }, [ready, loaded, user?.id, atTill]);
 
   // Send queued sales the moment the connection returns, then every few seconds while any wait.
   useEffect(() => {
