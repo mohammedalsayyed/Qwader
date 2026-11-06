@@ -99,8 +99,8 @@ export const payrollApi = {
   list: () => api<EmployeeListItem[]>('/payroll/employees'),
   candidates: () => api<PayrollCandidate[]>('/payroll/candidates'),
   get: (id: number) => api<Employee>(`/payroll/employees/${id}`),
-  /** The signed-in user's own record; undefined when they are not on the payroll. */
-  mine: () => api<Employee | undefined>('/payroll/me'),
+  /** The signed-in user's own record; null when they are not on the payroll (the server answers 204 with no body). */
+  mine: async () => (await api<Employee | undefined>('/payroll/me')) ?? null,
   create: (input: SaveEmployeeInput) => api<Employee>('/payroll/employees', { method: 'POST', body: input }),
   update: (id: number, input: SaveEmployeeInput) => api<Employee>(`/payroll/employees/${id}`, { method: 'PUT', body: input }),
   addEntry: (id: number, input: { idempotencyKey: string; type: PayrollEntryType; amount: number; date?: string | null; financialAccountId?: number | null; notes?: string | null }) =>
