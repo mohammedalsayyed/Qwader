@@ -5,6 +5,8 @@ import { Banknote, BellRing, Download, KeyRound, LogOut, Menu, UserCircle2 } fro
 import { IosInstallSheet, OfflineBanner, useInstall } from '@/app/pwa';
 import { Credit } from './Credit';
 import { useAuth } from '@/auth/AuthProvider';
+import { useQuery } from '@tanstack/react-query';
+import { payrollApi } from '@/api/payroll';
 import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
 import { BOTTOM_TABS, NAV_GROUP_LABELS, NAV_ITEMS, type NavItem } from './navigation';
@@ -147,6 +149,8 @@ function SideLink({ item }: { item: NavItem }) {
 
 function TopBar() {
   const { user, logout } = useAuth();
+  // «بياناتي المالية» is offered only to someone on the payroll (not, say, the system administrator).
+  const myPayroll = useQuery({ queryKey: ['payroll', 'me'], queryFn: payrollApi.mine, staleTime: 5 * 60_000, enabled: !!user });
   const [menuOpen, setMenuOpen] = useState(false);
   const [iosHelp, setIosHelp] = useState(false);
   const install = useInstall();
@@ -200,16 +204,18 @@ function TopBar() {
         >
           <BellRing className="size-5 text-muted" /> الإشعارات على هذا الجهاز
         </button>
-        <button
-          type="button"
-          className="flex h-12 w-full items-center gap-3 rounded-xl px-3 text-start hover:bg-canvas"
-          onClick={() => {
-            setMenuOpen(false);
-            navigate('/account/payroll');
-          }}
-        >
-          <Banknote className="size-5 text-muted" /> بياناتي المالية
-        </button>
+        {myPayroll.data && (
+          <button
+            type="button"
+            className="flex h-12 w-full items-center gap-3 rounded-xl px-3 text-start hover:bg-canvas"
+            onClick={() => {
+              setMenuOpen(false);
+              navigate('/account/payroll');
+            }}
+          >
+            <Banknote className="size-5 text-muted" /> بياناتي المالية
+          </button>
+        )}
         {install.available && (
           <button
             type="button"

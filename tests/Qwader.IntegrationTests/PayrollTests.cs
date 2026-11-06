@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Qwader.Application.Auth;
 using Qwader.Application.Finance;
+using Qwader.Application.Notifications;
 using Qwader.Application.Payroll;
 using Qwader.Application.Users;
 using Qwader.Domain.Finance;
@@ -39,6 +40,9 @@ public sealed class PayrollTests(ApiFactory factory)
     {
         var admin = await factory.LoginAsync();
         var (userId, worker) = await NewUserAsync(admin);
+        var workerPhone = $"https://push.example/worker-{Guid.NewGuid():N}";
+        (await worker.PutAsJsonAsync("/api/push/subscription", new SavePushSubscriptionRequest(workerPhone, "p256dh-key", "auth-key", new PushTopicsDto(false, false, false), "اختبار")))
+            .EnsureSuccessStatusCode();
         var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
         await admin.FundAsync(cash, 10_000);
         var start = await BalanceAsync(cash);
@@ -73,8 +77,15 @@ public sealed class PayrollTests(ApiFactory factory)
         (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/settlements",
             new CreateSettlementRequest(Guid.NewGuid(), new DateOnly(2026, 10, 15), new DateOnly(2026, 11, 14), 1, cash, null))).StatusCode.Should().Be((HttpStatusCode)422);
 
-        // The worker sees their own record; not the payroll screens.
-        (await worker.GetFromJsonAsync<EmployeeDto>("/api/payroll/me", TestJson.Options))!.Settlements.Should().ContainSingle(x => x.Net == 2450);
+        // The worker's phone is told what was paid, without the store's account.
+        (await factory.Push.WaitForAsync(workerPhone, "تم صرف راتبك — 2,450 ₪")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(workerPhone, "سلف: − 500 ₪")).Should().BeTrue();
+        factory.Push.Received(workerPhone, "الصندوق").Should().BeFalse();
+
+        // The worker sees their own record, without which account paid it; not the payroll screens.
+        var mine = (await worker.GetFromJsonAsync<EmployeeDto>("/api/payroll/me", TestJson.Options))!;
+        mine.Settlements.Should().ContainSingle(x => x.Net == 2450 && x.AccountName == null);
+        mine.Entries.Should().OnlyContain(x => x.AccountName == null && x.ExpenseNumber == null);
         (await worker.GetAsync("/api/payroll/employees")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await admin.GetAsync("/api/payroll/me")).StatusCode.Should().Be(HttpStatusCode.NoContent);
 

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Finance;
+using Qwader.Application.Notifications;
 using Qwader.Domain.Administration;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Inventory;
@@ -95,7 +96,8 @@ public sealed class PayrollService(
     IIdempotencyService idempotency,
     ICurrentUser currentUser,
     IClock clock,
-    IAuditService audit) : IPayrollService
+    IAuditService audit,
+    IPushNotifier push) : IPayrollService
 {
     private const string SalaryCategory = "الرواتب";
 
@@ -126,7 +128,13 @@ public sealed class PayrollService(
     public async Task<EmployeeDto?> MineAsync(CancellationToken ct = default)
     {
         var me = currentUser.RequiredUserId;
-        return await LoadAsync(e => e.UserId == me, ct);
+        var mine = await LoadAsync(e => e.UserId == me, ct);
+        // The employee sees what they were paid, not which of the store's accounts paid it.
+        return mine is null ? null : mine with
+        {
+            Entries = mine.Entries.Select(x => x with { AccountName = null, ExpenseNumber = null }).ToList(),
+            Settlements = mine.Settlements.Select(x => x with { AccountName = null, ExpenseNumber = null }).ToList(),
+        };
     }
 
     private async Task<EmployeeDto?> LoadAsync(System.Linq.Expressions.Expression<Func<Employee, bool>> which, CancellationToken ct)
@@ -318,6 +326,16 @@ public sealed class PayrollService(
         idempotency.Record(request.IdempotencyKey, operation, "PayrollSettlement", settlement.Id.ToString());
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        // The employee's own phone: what was paid and how it was worked out (no account names).
+        var lines = new List<string> { $"الفترة: {request.PeriodFrom:yyyy/MM/dd} — {request.PeriodTo:yyyy/MM/dd}", $"الراتب: {PushMessage.Money(gross)}" };
+        if (bonuses > 0) lines.Add($"مكافآت: + {PushMessage.Money(bonuses)}");
+        if (deductions > 0) lines.Add($"خصومات: − {PushMessage.Money(deductions)}");
+        if (advances > 0) lines.Add($"سلف: − {PushMessage.Money(advances)}");
+        if (carried > 0) lines.Add($"باقي سلف تُخصم من المخالصة القادمة: {PushMessage.Money(carried)}");
+        push.NotifyUser(employee.UserId, new PushMessage(
+            net > 0 ? $"تم صرف راتبك — {PushMessage.Money(net)}" : "تمت مخالصة راتبك",
+            string.Join('\n', lines), "/account/payroll", $"salary-{settlement.Id}"));
         return await GetAsync(employee.Id, ct);
     }
 
