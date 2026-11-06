@@ -50,13 +50,13 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
             MERGE StockBalances WITH (HOLDLOCK) AS t
             USING (SELECT {entry.ProductId} AS ProductId, {entry.WarehouseId} AS WarehouseId) AS s
                 ON t.ProductId = s.ProductId AND t.WarehouseId = s.WarehouseId
-            WHEN MATCHED THEN UPDATE SET Quantity = t.Quantity + {entry.Quantity}
-            WHEN NOT MATCHED THEN INSERT (ProductId, WarehouseId, Quantity) VALUES (s.ProductId, s.WarehouseId, {entry.Quantity})
+            WHEN MATCHED THEN UPDATE SET Quantity = t.Quantity + {db.Database.Exact(entry.Quantity)}
+            WHEN NOT MATCHED THEN INSERT (ProductId, WarehouseId, Quantity) VALUES (s.ProductId, s.WarehouseId, {db.Database.Exact(entry.Quantity)})
             OUTPUT inserted.Quantity AS Value;
             """).ToListAsync(ct)).Single();
 
         if (newAverage != average)
-            await db.Database.ExecuteSqlAsync($"UPDATE Products SET AverageCost = {newAverage} WHERE Id = {entry.ProductId}", ct);
+            await db.Database.ExecuteSqlAsync($"UPDATE Products SET AverageCost = {db.Database.Exact(newAverage)} WHERE Id = {entry.ProductId}", ct);
 
         AddMovement(entry, entry.Quantity, unitCost, balance, newAverage);
         return new StockPosting(unitCost, balance, newAverage);
@@ -70,14 +70,14 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
         var (average, onHand) = await LockProductAsync(entry.ProductId, ct);
 
         var balances = await db.Database.SqlQuery<decimal>($"""
-            UPDATE StockBalances SET Quantity = Quantity - {entry.Quantity}
+            UPDATE StockBalances SET Quantity = Quantity - {db.Database.Exact(entry.Quantity)}
             OUTPUT inserted.Quantity AS Value
-            WHERE ProductId = {entry.ProductId} AND WarehouseId = {entry.WarehouseId} AND (Quantity >= {entry.Quantity} OR {allowNegative} = 1);
+            WHERE ProductId = {entry.ProductId} AND WarehouseId = {entry.WarehouseId} AND (Quantity >= {db.Database.Exact(entry.Quantity)} OR {allowNegative} = 1);
             """).ToListAsync(ct);
         if (balances.Count == 0 && allowNegative)
             balances = await db.Database.SqlQuery<decimal>($"""
                 INSERT INTO StockBalances (ProductId, WarehouseId, Quantity) OUTPUT inserted.Quantity AS Value
-                VALUES ({entry.ProductId}, {entry.WarehouseId}, {-entry.Quantity});
+                VALUES ({entry.ProductId}, {entry.WarehouseId}, {db.Database.Exact(-entry.Quantity)});
                 """).ToListAsync(ct);
 
         if (balances.Count == 0)
@@ -94,7 +94,7 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
         var unitCost = atCost ?? average;
         var newAverage = atCost is null ? average : CostMath.AverageAfterRemovalAtCost(onHand, average, entry.Quantity, atCost.Value);
         if (newAverage != average)
-            await db.Database.ExecuteSqlAsync($"UPDATE Products SET AverageCost = {newAverage} WHERE Id = {entry.ProductId}", ct);
+            await db.Database.ExecuteSqlAsync($"UPDATE Products SET AverageCost = {db.Database.Exact(newAverage)} WHERE Id = {entry.ProductId}", ct);
 
         AddMovement(entry, -entry.Quantity, unitCost, balances[0], newAverage);
         return new StockPosting(unitCost, balances[0], newAverage);

@@ -117,8 +117,11 @@ public sealed class SaleService(
                 review.Add($"خصم {discountGiven:0.##} ₪ بدون صلاحية خصم");
             }
             var maxPercent = (await settings.GetAsync(ct)).MaxDiscountPercent;
-            if (!canOverride && chargedGross > 0 && discountGiven / chargedGross * 100 > maxPercent + 0.001m)
-                Breach($"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)");
+            var over = chargedGross > 0 && discountGiven / chargedGross * 100 > maxPercent + 0.001m;
+            var overText = over ? $"الخصم ({Math.Round(discountGiven / chargedGross * 100, 1)}%) يتجاوز الحد المسموح ({maxPercent}%)" : "";
+            if (over && !canOverride) Breach(overText);
+            // Allowed for whoever may sell under the limits, but marked on the invoice for the owner to see.
+            else if (over) review.Add($"{overText} — اعتُمد بصلاحية {currentUser.UserName}");
         }
 
         var overridden = new List<string>();

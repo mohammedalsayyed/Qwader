@@ -183,7 +183,6 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
     <div className="mx-auto max-w-2xl space-y-4 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
       <button type="button" onClick={() => navigate(-1)} className="flex h-10 items-center gap-1 text-sm text-muted"><ArrowRight className="size-4" /> رجوع</button>
       <PageHeader title={`${meta.one} جديد`} />
-      {errors.form && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{errors.form}</p>}
 
       <Card className="space-y-4 p-5">
         <div className="grid grid-cols-2 rounded-xl bg-black/5 p-1">
@@ -240,6 +239,10 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
       </Card>
 
       <StickyActions>
+        {/* Beside the button that was pressed, so it is seen without scrolling up. */}
+        {(errors.form ?? Object.values(errors)[0]) && (
+          <p role="alert" className="mb-2 rounded-xl bg-red-50 p-3 text-sm text-danger">{errors.form ?? Object.values(errors)[0]}</p>
+        )}
         <Button block size="lg" loading={save.isPending} onClick={submit}>حفظ {meta.one}</Button>
       </StickyActions>
     </div>

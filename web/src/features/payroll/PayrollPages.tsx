@@ -343,7 +343,9 @@ function EmployeeSheet({ employee, onClose }: { employee: Employee | null; onClo
             )}
           </Field>
         )}
-        <Field label="رقم الجوال">{(id) => <Input id={id} type="tel" inputMode="tel" className="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />}</Field>
+        <Field label="رقم الجوال" hint="هو جوال حساب المستخدم نفسه: تعديله هنا يعدّله في «المستخدمون» أيضًا">
+          {(id, d) => <Input id={id} aria-describedby={d} type="tel" inputMode="tel" className="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />}
+        </Field>
         <fieldset>
           <legend className="mb-2 text-sm font-medium">نوع الراتب <span className="text-danger">*</span></legend>
           <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="نوع الراتب">

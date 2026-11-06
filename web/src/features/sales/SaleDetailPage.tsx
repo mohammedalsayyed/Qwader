@@ -36,7 +36,7 @@ function ReviewNote({ sale: s }: { sale: Sale }) {
   });
   return (
     <div className={cn('rounded-xl p-3 text-sm', s.reviewedAt ? 'bg-black/5' : 'bg-amber-50 text-amber-900')}>
-      <p className="font-semibold">{s.reviewedAt ? 'بيعت بدون إنترنت — تمت مراجعتها' : 'بيعت بدون إنترنت وتحتاج مراجعة'}</p>
+      <p className="font-semibold">{s.soldOffline ? 'بيعت بدون إنترنت' : 'فاتورة خارج القواعد'} — {s.reviewedAt ? 'تمت مراجعتها' : 'تحتاج مراجعة'}</p>
       <ul className="mt-1 list-disc space-y-0.5 ps-5">
         {s.reviewNote!.split('\n').map((line) => <li key={line}>{line}</li>)}
       </ul>

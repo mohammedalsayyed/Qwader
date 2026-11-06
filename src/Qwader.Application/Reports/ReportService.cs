@@ -192,15 +192,29 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             newDebt = (s?.Net ?? 0) - (s?.Paid ?? 0);
 
             // Per account: money in/out during the period (all movements) and the balance at the end of the period.
-            var perAccount = await db.AccountTransactions.AsNoTracking().Where(t => t.Date < end)
+            // In and out over the period, like the cash flow above: a voided document and its reversal are left out.
+            // The closing balance counts every movement, so it always matches the account.
+            var moves = await db.AccountTransactions.AsNoTracking()
+                .Where(t => t.Date >= start && t.Date < end && t.Category != AccountTransactionCategory.Reversal
+                    && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
                 .GroupBy(t => t.FinancialAccountId)
                 .Select(g => new
                 {
                     AccountId = g.Key,
-                    In = g.Where(t => t.Date >= start && t.Direction == MoneyDirection.In).Sum(t => (decimal?)t.Amount) ?? 0,
-                    Out = g.Where(t => t.Date >= start && t.Direction == MoneyDirection.Out).Sum(t => (decimal?)t.Amount) ?? 0,
-                    Closing = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount),
+                    In = g.Where(t => t.Direction == MoneyDirection.In).Sum(t => (decimal?)t.Amount) ?? 0,
+                    Out = g.Where(t => t.Direction == MoneyDirection.Out).Sum(t => (decimal?)t.Amount) ?? 0,
                 }).ToListAsync(ct);
+            var closings = await db.AccountTransactions.AsNoTracking().Where(t => t.Date < end)
+                .GroupBy(t => t.FinancialAccountId)
+                .Select(g => new { AccountId = g.Key, Closing = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) })
+                .ToListAsync(ct);
+            var perAccount = closings.Select(c => new
+            {
+                c.AccountId,
+                In = moves.FirstOrDefault(m => m.AccountId == c.AccountId)?.In ?? 0,
+                Out = moves.FirstOrDefault(m => m.AccountId == c.AccountId)?.Out ?? 0,
+                c.Closing,
+            }).ToList();
             var accountNames = await db.FinancialAccounts.AsNoTracking().Where(a => a.IsActive || perAccount.Select(p => p.AccountId).Contains(a.Id))
                 .OrderBy(a => a.Type).ThenBy(a => a.Id).Select(a => new { a.Id, a.Name }).ToListAsync(ct);
             accounts = accountNames.Select(a =>

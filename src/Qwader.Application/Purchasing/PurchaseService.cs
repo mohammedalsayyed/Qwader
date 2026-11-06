@@ -292,7 +292,7 @@ public sealed class PurchaseService(
         {
             await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.Purchase,
                 "PurchaseInvoice", invoice.Id, invoice.Number), line.NetUnitCost, ct);
-            await db.Database.ExecuteSqlAsync($"UPDATE Products SET PurchasePrice = {line.UnitCost} WHERE Id = {line.ProductId}", ct);
+            await db.Database.ExecuteSqlAsync($"UPDATE Products SET PurchasePrice = {db.Database.Exact(line.UnitCost)} WHERE Id = {line.ProductId}", ct);
         }
 
         var source = new LedgerSource("PurchaseInvoice", invoice.Id, invoice.Number, invoice.SupplierInvoiceNo is null ? null : $"فاتورة المورد {invoice.SupplierInvoiceNo}");

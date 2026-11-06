@@ -425,4 +425,27 @@ public sealed class SalesTests(ApiFactory factory)
         var after = await admin.GetFromJsonAsync<Application.Reports.PeriodReportDto>("/api/reports/period", TestJson.Options);
         (after!.CashIn, after.CashOut).Should().Be((before!.CashIn, before.CashOut));
     }
+
+    [Fact]
+    public async Task The_average_cost_keeps_four_places_so_stock_value_is_exact()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 25, openingQuantity: 9, openingCost: 20);
+        await admin.PurchaseAsync((await admin.CreateSupplierAsync()).Id, [new PurchaseLineInput(product.Id, 5, 22)]);
+        var after = await admin.GetProductAsync(product.Id);
+        after.AverageCost.Should().Be(20.7143m, "290 / 14, not rounded to 20.71");
+        after.StockValue.Should().Be(290m);
+    }
+
+    [Fact]
+    public async Task A_discount_over_the_limit_by_someone_allowed_is_kept_but_marked_for_review()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 25, openingQuantity: 5, openingCost: 10);
+        var cash = await AccountAsync(admin, "الصندوق النقدي");
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 2, 25)], [new(cash, 40)], invoiceDiscount: 10))).ReadAsync<SaleDetailDto>();
+        sale.Total.Should().Be(40);
+        sale.ReviewNote.Should().Contain("يتجاوز الحد المسموح");
+        sale.SoldOffline.Should().BeFalse();
+    }
 }

@@ -147,4 +147,17 @@ public sealed class ReportTests(ApiFactory factory)
         rows!.Select(r => r.ProductId).Should().Equal(iron.Id);
         rows![0].Quantity.Should().Be(1);
     }
+
+    [Fact]
+    public async Task An_accounts_in_and_out_leave_out_a_voided_voucher_but_its_balance_counts_everything()
+    {
+        var admin = await factory.LoginAsync();
+        var bank = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Bank).Id;
+        var before = (await admin.GetFromJsonAsync<PeriodReportDto>("/api/reports/period", TestJson.Options))!.Accounts!.First(a => a.AccountId == bank);
+        var voucher = await (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null, "تمويل", null,
+            80, bank, null, null, null))).ReadAsync<VoucherDto>();
+        (await admin.PostAsJsonAsync($"/api/receipt-vouchers/{voucher.Id}/void", new VoidDocumentRequest("خطأ"))).EnsureSuccessStatusCode();
+        var after = (await admin.GetFromJsonAsync<PeriodReportDto>("/api/reports/period", TestJson.Options))!.Accounts!.First(a => a.AccountId == bank);
+        (after.In, after.Out, after.ClosingBalance).Should().Be((before.In, before.Out, before.ClosingBalance));
+    }
 }
