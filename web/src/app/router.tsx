@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { OfflineBanner } from '@/app/pwa';
 import { P, type Permission } from '@/auth/permissions';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { TestBanner } from '@/components/layout/TestBanner';
 import { ErrorState, Spinner } from '@/components/ui/Feedback';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { ChangePasswordPage } from '@/features/auth/ChangePasswordPage';
@@ -75,6 +76,7 @@ function OfflineShell() {
   return (
     <div className="min-h-dvh">
       <OfflineSync />
+      <TestBanner />
       <OfflineBanner force />
       <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-line bg-surface/95 px-4 backdrop-blur print:hidden">
         <span className="flex min-w-0 items-center gap-2">

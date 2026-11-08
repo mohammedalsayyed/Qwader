@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Banknote, BellRing, Download, KeyRound, LogOut, Menu, UserCircle2 } from 'lucide-react';
 import { IosInstallSheet, OfflineBanner, useInstall } from '@/app/pwa';
 import { Credit } from './Credit';
+import { TestBanner } from './TestBanner';
 import { useAuth } from '@/auth/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { payrollApi } from '@/api/payroll';
@@ -65,6 +66,7 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineSync />
+        <TestBanner />
         <OfflineBanner />
         <TopBar />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-page lg:px-8 lg:pb-10 print:p-0">

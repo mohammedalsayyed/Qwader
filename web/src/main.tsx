@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { isTestCopy } from '@/components/layout/TestBanner';
 import { RouterProvider } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
@@ -24,6 +25,9 @@ const queryClient = new QueryClient({
     mutations: { retry: false, networkMode: 'always' },
   },
 });
+
+// The trial copy says so in the browser tab too.
+if (isTestCopy()) document.title = `تجريبي — ${document.title}`;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

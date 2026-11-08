@@ -8,6 +8,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { Button } from '@/components/ui/Button';
 import { Field, Input } from '@/components/ui/Field';
 import { errorMessage } from '@/lib/forms';
+import { TestBanner } from '@/components/layout/TestBanner';
 import { Credit } from '@/components/layout/Credit';
 
 const schema = z.object({
@@ -41,6 +42,8 @@ export function LoginPage() {
   });
 
   return (
+    <>
+    <TestBanner />
     <div className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-canvas px-4 py-10">
       {/* The logo carries the store's name and line of business. */}
       <h1 className="mb-6">
@@ -93,5 +96,6 @@ export function LoginPage() {
 
       <Credit className="mt-8 text-muted" />
     </div>
+    </>
   );
 }
