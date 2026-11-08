@@ -276,6 +276,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
           )}
         </Field>
         <ProductUnitsEditor rows={unitRows} onChange={changeUnits} baseUnitId={Number(unitIdRaw) || 0} disabled={!canEditPrices}
+          baseCost={canSeeCost || isNew ? cost : 0}
           baseRetail={parseNumber(retailRaw) ?? 0} baseWholesale={parseNumber(wholesaleRaw) ?? parseNumber(retailRaw) ?? 0} />
       </Card>
 

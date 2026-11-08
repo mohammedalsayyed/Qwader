@@ -52,12 +52,14 @@ export function validateUnitRows(rows: UnitRow[], baseUnitId: number): { rows: U
  * «يُباع أيضًا بـ»: the same product sold (and bought) in a bigger unit — a dozen of 12 pieces. Stock stays in the base unit;
  * the dozen's price is typed, with a suggestion of 12 × the piece's price.
  */
-export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, baseWholesale, disabled }: {
+export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, baseWholesale, baseCost, disabled }: {
   rows: UnitRow[];
   onChange: (rows: UnitRow[]) => void;
   baseUnitId: number;
   baseRetail: number;
   baseWholesale: number;
+  /** Cost of one base unit; 0 when unknown or hidden from this user. */
+  baseCost: number;
   disabled?: boolean;
 }) {
   const units = useLookups().data?.units ?? [];
@@ -111,6 +113,24 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
                   placeholder="0" onChange={(e) => set(i, { minSalePrice: e.target.value })} />}
               </Field>
             </div>
+            {(() => {
+              // The unit's cost is factor × the piece's cost; its profit is measured against that.
+              const price = parseNumber(row.retailPrice);
+              if (!(baseCost > 0) || !factor || Number.isNaN(factor) || factor <= 1) return null;
+              const unitCost = round2(factor * baseCost);
+              if (price == null || Number.isNaN(price) || price <= 0)
+                return <p className="text-sm text-muted">تكلفة {unitName}: <b className="tabular">{formatMoney(unitCost)}</b></p>;
+              const profit = round2(price - unitCost);
+              return (
+                <p className={profit < 0 ? 'rounded-lg bg-red-50 p-2 text-sm text-danger' : 'text-sm'}>
+                  تكلفة {unitName}: <b className="tabular">{formatMoney(unitCost)}</b>
+                  {' · '}
+                  {profit < 0
+                    ? <>سعر {unitName} أقل من تكلفتها بـ <b className="tabular">{formatMoney(-profit)}</b></>
+                    : <>الربح: <b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</>}
+                </p>
+              );
+            })()}
             {suggestRetail != null && !disabled && parseNumber(row.retailPrice) !== suggestRetail && (
               <Button size="sm" variant="secondary"
                 onClick={() => set(i, { retailPrice: String(suggestRetail), wholesalePrice: row.wholesalePrice || (suggestWholesale && suggestWholesale !== suggestRetail ? String(suggestWholesale) : '') })}>

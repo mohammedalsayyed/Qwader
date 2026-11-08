@@ -158,7 +158,20 @@ export function ProductDetailPage() {
               { label: 'وحدة القياس', value: p.unitName },
               ...(p.units ?? []).map((u) => ({
                 label: `${u.unitName} (${formatQuantity(u.factor)} ${p.unitName})`,
-                value: <span className="tabular">{formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}</span>,
+                value: (() => {
+                  const unitCost = costVisible ? (p.averageCost || p.purchasePrice || 0) * u.factor : 0;
+                  const profit = u.retailPrice - unitCost;
+                  return (
+                    <span className="tabular">
+                      {formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}
+                      {unitCost > 0 && (
+                        <span className={`block text-sm ${profit < 0 ? 'text-danger' : 'text-muted'}`}>
+                          التكلفة {formatMoney(unitCost)} · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })(),
               })),
               p.brandName && { label: 'الماركة', value: p.brandName },
               p.model && { label: 'الموديل', value: p.model },
