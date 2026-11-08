@@ -42,9 +42,20 @@ public sealed class MovementListRequest : PagedRequest
 {
     public int? ProductId { get; set; }
     public StockMovementType? Type { get; set; }
+    public MovementGroup? Group { get; set; }
     public DateOnly? From { get; set; }
     public DateOnly? To { get; set; }
 }
+
+public enum MovementGroup
+{
+    /// <summary>Found + count increase: the «زيادة بالجرد» line of the profit report.</summary>
+    Gains = 1,
+    /// <summary>Damaged + lost + count decrease: the «نقص بالتالف والمفقود» line.</summary>
+    Losses = 2,
+}
+
+public sealed record MovementTotalDto(int Count, decimal Quantity, decimal? Value);
 
 public sealed record InventorySummaryDto(int ProductCount, decimal TotalQuantity, decimal? StockValue, int LowCount, int OutCount);
 
@@ -65,6 +76,8 @@ public interface IInventoryService
     Task<InventorySummaryDto> SummaryAsync(CancellationToken ct = default);
     Task<StockAdjustmentResult> AdjustAsync(StockAdjustmentRequest request, CancellationToken ct = default);
     Task<PagedResult<StockMovementDto>> MovementsAsync(MovementListRequest request, CancellationToken ct = default);
+    /// <summary>How many movements match the filter, their quantity and their value at cost (null without cost permission).</summary>
+    Task<MovementTotalDto> MovementTotalAsync(MovementListRequest request, CancellationToken ct = default);
     Task<PagedResult<StockCountListItemDto>> CountsAsync(PagedRequest request, CancellationToken ct = default);
     Task<StockCountDto> GetCountAsync(int id, CancellationToken ct = default);
     Task<StockCountDto> CreateCountAsync(CreateStockCountRequest request, CancellationToken ct = default);
@@ -150,11 +163,17 @@ public sealed class InventoryService(
         return new StockAdjustmentResult(number, posting.BalanceAfter);
     }
 
-    public async Task<PagedResult<StockMovementDto>> MovementsAsync(MovementListRequest request, CancellationToken ct = default)
+    /// <summary>The shrinkage groups the profit report shows: gains (found + count increase) and losses (damaged, lost, count decrease).</summary>
+    private static readonly StockMovementType[] GainTypes = [StockMovementType.Found, StockMovementType.CountIncrease];
+    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease];
+
+    private IQueryable<StockMovement> FilterMovements(MovementListRequest request)
     {
         var query = db.StockMovements.AsNoTracking();
         if (request.ProductId is { } productId) query = query.Where(m => m.ProductId == productId);
         if (request.Type is { } type) query = query.Where(m => m.Type == type);
+        if (request.Group == MovementGroup.Gains) query = query.Where(m => GainTypes.Contains(m.Type));
+        if (request.Group == MovementGroup.Losses) query = query.Where(m => LossTypes.Contains(m.Type));
         if (request.From is not null || request.To is not null)
         {
             var (start, end) = clock.LocalDaysToUtcRange(request.From ?? DateOnly.MinValue.AddYears(2000), request.To ?? clock.LocalToday);
@@ -165,7 +184,21 @@ public sealed class InventoryService(
             var s = request.Search.Trim();
             query = query.Where(m => m.SourceNumber == s || m.Product.Sku == s);
         }
+        return query;
+    }
 
+    public async Task<MovementTotalDto> MovementTotalAsync(MovementListRequest request, CancellationToken ct = default)
+    {
+        var totals = await FilterMovements(request).GroupBy(_ => 1)
+            .Select(g => new { Count = g.Count(), Quantity = g.Sum(m => m.Quantity), Value = g.Sum(m => m.Quantity * m.UnitCost) })
+            .FirstOrDefaultAsync(ct);
+        return new MovementTotalDto(totals?.Count ?? 0, totals?.Quantity ?? 0,
+            currentUser.HasPermission(Permissions.ProductsViewCost) ? CostMath.RoundMoney(totals?.Value ?? 0) : null);
+    }
+
+    public async Task<PagedResult<StockMovementDto>> MovementsAsync(MovementListRequest request, CancellationToken ct = default)
+    {
+        var query = FilterMovements(request);
         var canViewCost = currentUser.HasPermission(Permissions.ProductsViewCost);
         var users = db.Users;
         return await query.OrderByDescending(m => m.Id)

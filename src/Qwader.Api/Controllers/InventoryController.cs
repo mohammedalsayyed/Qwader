@@ -18,6 +18,10 @@ public sealed class InventoryController(IInventoryService inventory) : Controlle
     public Task<PagedResult<StockMovementDto>> Movements([FromQuery] MovementListRequest request, CancellationToken ct) =>
         inventory.MovementsAsync(request, ct);
 
+    [HttpGet("movements/total")]
+    public Task<MovementTotalDto> MovementTotal([FromQuery] MovementListRequest request, CancellationToken ct) =>
+        inventory.MovementTotalAsync(request, ct);
+
     [HttpPost("adjustments")]
     [HasPermission(Permissions.InventoryAdjust)]
     public Task<StockAdjustmentResult> Adjust(StockAdjustmentRequest request, CancellationToken ct) => inventory.AdjustAsync(request, ct);

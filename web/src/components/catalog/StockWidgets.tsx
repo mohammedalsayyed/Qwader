@@ -9,6 +9,7 @@ import { inventoryApi, MOVEMENT_LABELS, type AdjustmentKind, type MovementType }
 import { Button } from '@/components/ui/Button';
 import { Field, Input, TextArea } from '@/components/ui/Field';
 import { EmptyState, ErrorState, FilterChips, Pagination, Spinner } from '@/components/ui/Feedback';
+import { DateRangeFilter, type DateRangeValue } from '@/components/ui/DateRange';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
@@ -21,7 +22,7 @@ import { ProductPicker } from './CatalogBits';
 const KIND_OPTIONS: { value: AdjustmentKind; label: string; hint: string }[] = [
   { value: 'Damaged', label: 'تالف', hint: 'بضاعة تلفت أو انكسرت' },
   { value: 'Lost', label: 'مفقود', hint: 'نقص غير مفسَّر' },
-  { value: 'Found', label: 'زيادة', hint: 'بضاعة وُجدت ولم تكن مسجلة' },
+  { value: 'Found', label: 'زيادة', hint: 'بضاعة ضائعة وُجدت (للبضاعة الجديدة استخدم فاتورة شراء)' },
 ];
 
 const schema = z
@@ -119,22 +120,32 @@ export function AdjustmentSheet({
   );
 }
 
-const TYPE_FILTERS: { value: MovementType | 'all'; label: string }[] = [
+const TYPE_FILTERS: { value: MovementFilter; label: string }[] = [
   { value: 'all', label: 'الكل' },
   { value: 'Purchase', label: 'شراء' },
   { value: 'Sale', label: 'بيع' },
+  { value: 'OpeningBalance', label: 'افتتاحي' },
+  { value: 'gains', label: 'زيادة (جرد + عثور)' },
+  { value: 'losses', label: 'نقص (تالف + مفقود + جرد)' },
+  { value: 'Found', label: 'زيادة / عثور' },
   { value: 'Damaged', label: 'تالف' },
   { value: 'Lost', label: 'مفقود' },
-  { value: 'CountDecrease', label: 'نقص جرد' },
   { value: 'CountIncrease', label: 'زيادة جرد' },
+  { value: 'CountDecrease', label: 'نقص جرد' },
+  { value: 'SaleReturn', label: 'مرتجع بيع' },
   { value: 'PurchaseReturn', label: 'مردود' },
 ];
+
+/** A movement type, or one of the report's groups (the «زيادة بالجرد» and «نقص بالتالف والمفقود» lines). */
+export type MovementFilter = MovementType | 'all' | 'gains' | 'losses';
 
 function sourceLink(m: { sourceType: string; sourceId: number | null }): string | null {
   if (!m.sourceId) return null;
   switch (m.sourceType) {
     case 'PurchaseInvoice':
       return `/purchases/${m.sourceId}`;
+    case 'SaleInvoice':
+      return `/sales/${m.sourceId}`;
     case 'StockCount':
       return `/inventory/counts/${m.sourceId}`;
     default:
@@ -142,21 +153,49 @@ function sourceLink(m: { sourceType: string; sourceId: number | null }): string 
   }
 }
 
-/** Stock movement history; scoped to one product when productId is given. */
-export function MovementList({ productId, showProduct }: { productId?: number; showProduct?: boolean }) {
-  const [type, setType] = useState<MovementType | 'all'>('all');
+const toParams = (filter: MovementFilter) =>
+  filter === 'all' ? {} : filter === 'gains' ? { group: 'Gains' as const } : filter === 'losses' ? { group: 'Losses' as const } : { type: filter };
+
+/**
+ * Stock movement history; scoped to one product when productId is given. On a wide screen it is a table with each
+ * movement's value at cost and a total for the filter (what the report's lines add up).
+ */
+export function MovementList({ productId, showProduct, initialFilter = 'all', initialRange }: {
+  productId?: number;
+  showProduct?: boolean;
+  initialFilter?: MovementFilter;
+  initialRange?: { from?: string; to?: string };
+}) {
+  const [filter, setFilter] = useState<MovementFilter>(initialFilter);
+  const [range, setRange] = useState<DateRangeValue>(
+    initialRange?.from || initialRange?.to ? { preset: 'custom', ...initialRange } : { preset: 'all' });
   const [page, setPage] = useState(1);
+  const params = { productId, ...toParams(filter), from: range.from, to: range.to };
   const query = useQuery({
-    queryKey: ['movements', { productId, type, page }],
-    queryFn: () => inventoryApi.movements({ productId, type: type === 'all' ? undefined : type, page, pageSize: 25 }),
+    queryKey: ['movements', { ...params, page }],
+    queryFn: () => inventoryApi.movements({ ...params, page, pageSize: 25 }),
     placeholderData: keepPreviousData,
   });
+  const total = useQuery({
+    queryKey: ['movements-total', params],
+    queryFn: () => inventoryApi.movementTotal(params),
+    enabled: filter !== 'all' || !!range.from || !!range.to,
+  });
+  const showCost = query.data?.items.some((m) => m.unitCost != null) ?? false;
 
   return (
     <div>
-      <div className="mb-3">
-        <FilterChips value={type} onChange={(v) => { setType(v); setPage(1); }} options={TYPE_FILTERS} />
+      <div className="mb-3 space-y-2">
+        <FilterChips value={filter} onChange={(v) => { setFilter(v); setPage(1); }} options={TYPE_FILTERS} />
+        {showProduct && <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} />}
       </div>
+      {total.data && (
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-brand-50 px-4 py-3 text-sm">
+          <span>عدد الحركات: <b className="tabular">{total.data.count}</b></span>
+          <span>مجموع الكمية: <b className="tabular ltr inline-block">{formatQuantity(total.data.quantity)}</b></span>
+          {total.data.value != null && <span>القيمة بالتكلفة: <b className="tabular">{formatMoney(Math.abs(total.data.value))}</b></span>}
+        </div>
+      )}
       {query.isPending ? (
         <Spinner />
       ) : query.isError ? (
@@ -165,7 +204,62 @@ export function MovementList({ productId, showProduct }: { productId?: number; s
         <EmptyState icon={<History className="size-10" />} title="لا توجد حركات" />
       ) : (
         <>
-          <ul className="divide-y divide-line rounded-card border border-line bg-surface">
+          {/* Wide screens: a table */}
+          <div className="hidden overflow-x-auto rounded-card border border-line bg-surface md:block">
+            <table className="w-full text-sm">
+              <thead className="bg-canvas text-xs text-muted">
+                <tr className="text-start">
+                  <th className="px-3 py-2 text-start font-medium">التاريخ</th>
+                  <th className="px-3 py-2 text-start font-medium">الحركة</th>
+                  {showProduct && <th className="px-3 py-2 text-start font-medium">المنتج</th>}
+                  <th className="px-3 py-2 text-start font-medium">الكمية</th>
+                  {showCost && <th className="px-3 py-2 text-start font-medium">التكلفة</th>}
+                  {showCost && <th className="px-3 py-2 text-start font-medium">القيمة</th>}
+                  <th className="px-3 py-2 text-start font-medium">الرصيد بعدها</th>
+                  <th className="px-3 py-2 text-start font-medium">المستند</th>
+                  <th className="px-3 py-2 text-start font-medium">سجّلها</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {query.data.items.map((m) => {
+                  const incoming = m.quantity > 0;
+                  const link = sourceLink(m);
+                  return (
+                    <tr key={m.id} className="align-top">
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">{formatDateTime(m.occurredAt)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold">{MOVEMENT_LABELS[m.type]}</td>
+                      {showProduct && (
+                        <td className="px-3 py-2.5">
+                          <Link to={`/products/${m.productId}`} className="text-brand-700">{m.productName}</Link>
+                          <span className="ltr block text-xs text-muted">{m.sku}</span>
+                        </td>
+                      )}
+                      <td className={cn('tabular ltr whitespace-nowrap px-3 py-2.5 text-end font-bold', incoming ? 'text-success' : 'text-danger')}>
+                        {incoming ? '+' : ''}{formatQuantity(m.quantity)}
+                      </td>
+                      {showCost && <td className="tabular whitespace-nowrap px-3 py-2.5">{m.unitCost != null ? formatMoney(m.unitCost) : '—'}</td>}
+                      {showCost && (
+                        <td className="tabular whitespace-nowrap px-3 py-2.5 font-semibold">
+                          {m.unitCost != null ? formatMoney(Math.abs(m.quantity * m.unitCost)) : '—'}
+                        </td>
+                      )}
+                      <td className="tabular whitespace-nowrap px-3 py-2.5">{formatQuantity(m.balanceAfter)}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        {m.sourceNumber ? (link ? <Link to={link} className="ltr inline-block text-brand-700 underline">{m.sourceNumber}</Link> : <span className="ltr inline-block">{m.sourceNumber}</span>) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {m.userName ?? '—'}
+                        {m.notes && <span className="block text-xs text-muted">{m.notes}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Phones: one card per movement */}
+          <ul className="divide-y divide-line rounded-card border border-line bg-surface md:hidden">
             {query.data.items.map((m) => {
               const incoming = m.quantity > 0;
               const link = sourceLink(m);
@@ -193,7 +287,8 @@ export function MovementList({ productId, showProduct }: { productId?: number; s
                     </p>
                     <p className="text-xs text-muted">
                       الرصيد بعدها: <span className="tabular">{formatQuantity(m.balanceAfter)}</span>
-                      {m.unitCost != null && <> · التكلفة: <span className="tabular">{formatMoney(m.unitCost)}</span></>}
+                      {m.unitCost != null && <> · التكلفة: <span className="tabular">{formatMoney(m.unitCost)}</span>
+                        {' '}· القيمة: <span className="tabular font-semibold text-gray-700">{formatMoney(Math.abs(m.quantity * m.unitCost))}</span></>}
                     </p>
                     {m.notes && <p className="mt-1 text-sm">{m.notes}</p>}
                   </div>

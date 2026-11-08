@@ -47,6 +47,16 @@ export interface StockMovement {
   warehouseName: string;
 }
 
+export interface MovementParams {
+  productId?: number;
+  type?: MovementType;
+  /** The report's groups: Gains = found + count increase, Losses = damaged + lost + count decrease. */
+  group?: 'Gains' | 'Losses';
+  from?: string;
+  to?: string;
+  search?: string;
+}
+
 export interface InventorySummary {
   productCount: number;
   totalQuantity: number;
@@ -96,8 +106,11 @@ export interface StockCount {
 
 export const inventoryApi = {
   summary: () => api<InventorySummary>('/inventory/summary'),
-  movements: (params: { page?: number; pageSize?: number; productId?: number; type?: MovementType; from?: string; to?: string; search?: string }) =>
-    api<PagedResult<StockMovement>>('/inventory/movements', { query: params }),
+  movements: (params: MovementParams & { page?: number; pageSize?: number }) =>
+    api<PagedResult<StockMovement>>('/inventory/movements', { query: { ...params } }),
+  /** Count, quantity and value at cost of the movements matching the filter (value null without cost permission). */
+  movementTotal: (params: MovementParams) =>
+    api<{ count: number; quantity: number; value: number | null }>('/inventory/movements/total', { query: { ...params } }),
   adjust: (input: { idempotencyKey: string; productId: number; kind: AdjustmentKind; quantity: number; notes?: string | null }) =>
     api<{ number: string; balanceAfter: number }>('/inventory/adjustments', { method: 'POST', body: input }),
   counts: (params: { page?: number }) => api<PagedResult<StockCountListItem>>('/inventory/counts', { query: params }),

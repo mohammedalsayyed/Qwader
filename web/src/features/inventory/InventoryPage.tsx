@@ -13,7 +13,7 @@ import { Stat, Tabs } from '@/components/ui/Layout';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { CategoryPicker, ProductThumb, StockBadge } from '@/components/catalog/CatalogBits';
-import { AdjustmentSheet, MovementList } from '@/components/catalog/StockWidgets';
+import { AdjustmentSheet, MovementList, type MovementFilter } from '@/components/catalog/StockWidgets';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, formatQuantity } from '@/lib/format';
 
@@ -43,7 +43,10 @@ export function InventoryPage() {
       </div>
       <Tabs tabs={tabs} value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })} />
       {tab === 'overview' && <Overview />}
-      {tab === 'movements' && <MovementList showProduct />}
+      {tab === 'movements' && (
+        <MovementList showProduct initialFilter={(params.get('filter') as MovementFilter | null) ?? 'all'}
+          initialRange={{ from: params.get('from') ?? undefined, to: params.get('to') ?? undefined }} />
+      )}
       {tab === 'counts' && <Counts />}
       {adjusting && <AdjustmentSheet onClose={() => setAdjusting(false)} />}
     </>

@@ -221,4 +221,20 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var db = await DbAsync();
         (await db.StockMovements.AnyAsync(m => m.ProductId == product.Id && m.Type == StockMovementType.CountDecrease && m.Quantity == -3)).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Gains_and_losses_groups_list_the_movements_behind_the_report_with_their_value()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 5, openingQuantity: 10, openingCost: 3);
+        (await admin.AdjustAsync(product.Id, AdjustmentKind.Found, 4)).EnsureSuccessStatusCode();
+        (await admin.AdjustAsync(product.Id, AdjustmentKind.Damaged, 2)).EnsureSuccessStatusCode();
+
+        var gains = await (await admin.GetAsync($"/api/inventory/movements?productId={product.Id}&group=Gains")).ReadAsync<Application.Common.PagedResult<StockMovementDto>>();
+        gains.Items.Should().ContainSingle(m => m.Type == StockMovementType.Found && m.Quantity == 4);
+        var gainTotal = await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Gains")).ReadAsync<MovementTotalDto>();
+        gainTotal.Should().Be(new MovementTotalDto(1, 4, 12));
+        var lossTotal = await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Losses")).ReadAsync<MovementTotalDto>();
+        lossTotal.Should().Be(new MovementTotalDto(1, -2, -6));
+    }
 }

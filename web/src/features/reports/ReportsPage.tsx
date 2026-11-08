@@ -32,6 +32,9 @@ export function ReportsPage() {
   const profit = can(P.ReportsProfit);
   const financial = can(P.ReportsFinancial);
   const multiDay = range.from !== range.to;
+  // The inventory gains/losses lines open the movements behind them, for the same days.
+  const movementsLink = (filter: 'gains' | 'losses') =>
+    `/inventory?tab=movements&filter=${filter}${range.from ? `&from=${range.from}` : ''}${range.to ? `&to=${range.to}` : ''}`;
 
   const period = useQuery({ queryKey: ['report', 'period', r], queryFn: () => reportsApi.period(r), placeholderData: keepPreviousData });
   const daily = useQuery({ queryKey: ['report', 'daily', r], queryFn: () => reportsApi.daily(r), enabled: multiDay, placeholderData: keepPreviousData });
@@ -111,8 +114,8 @@ export function ReportsPage() {
             <Section title="رأس المال في البضاعة" hint="التالف والمفقود يُنقص قيمة البضاعة (رأس المال) ولا يُحسب من المصروفات أو الربح">
               <Lines rows={[
                 ['قيمة المخزون الآن (بسعر التكلفة)', p.inventoryValue, 'strong'],
-                ...(p.inventoryLosses != null ? [['− نقص بالتالف والمفقود خلال الفترة', p.inventoryLosses] as Row] : []),
-                ...(p.inventoryGains != null && p.inventoryGains > 0 ? [['+ زيادة بالجرد خلال الفترة', p.inventoryGains] as Row] : []),
+                ...(p.inventoryLosses != null ? [['− نقص بالتالف والمفقود خلال الفترة', p.inventoryLosses, null, movementsLink('losses')] as Row] : []),
+                ...(p.inventoryGains != null && p.inventoryGains > 0 ? [['+ زيادة بالجرد خلال الفترة', p.inventoryGains, null, movementsLink('gains')] as Row] : []),
               ]} />
             </Section>
           )}
@@ -259,14 +262,17 @@ export function ReportsPage() {
   );
 }
 
-type Row = [label: string, value: number, emphasis?: 'strong' | 'total'];
+type Row = [label: string, value: number, emphasis?: 'strong' | 'total' | null, link?: string];
 
 function Lines({ rows }: { rows: Row[] }) {
   return (
     <dl className="divide-y divide-line">
-      {rows.map(([label, value, emphasis]) => (
+      {rows.map(([label, value, emphasis, link]) => (
         <div key={label} className={cn('flex items-center justify-between gap-4 px-4 py-2.5', emphasis === 'total' && 'bg-brand-50')}>
-          <dt className={cn('text-sm', emphasis ? 'font-bold' : 'text-muted')}>{label}</dt>
+          <dt className={cn('text-sm', emphasis ? 'font-bold' : 'text-muted')}>
+            {label}
+            {link && <Link to={link} className="ms-2 text-xs font-medium text-brand-700 underline print:hidden">التفاصيل</Link>}
+          </dt>
           <dd className={cn('tabular', emphasis === 'total' ? 'text-lg font-bold' : emphasis ? 'font-bold' : 'font-medium', value < 0 && 'text-danger')}>{formatMoney(value)}</dd>
         </div>
       ))}
