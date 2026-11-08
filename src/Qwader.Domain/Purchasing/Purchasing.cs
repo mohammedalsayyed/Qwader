@@ -69,6 +69,10 @@ public class PurchaseInvoiceLine : Entity
     /// <summary>Unit cost after this line's share of the invoice discount — the cost that enters stock.</summary>
     public decimal NetUnitCost { get; set; }
     public decimal ReturnedQuantity { get; set; }
+    /// <summary>The unit bought in; null = the base unit. Quantity and costs are per this unit; stock moves Quantity × UnitFactor.</summary>
+    public int? ProductUnitId { get; set; }
+    public string? UnitName { get; set; }
+    public decimal UnitFactor { get; set; } = 1;
 
     public PurchaseInvoice PurchaseInvoice { get; set; } = null!;
     public Product Product { get; set; } = null!;

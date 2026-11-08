@@ -285,11 +285,11 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
     {
         var sold = await db.SaleInvoiceLines.AsNoTracking()
             .Where(l => l.SaleInvoice.Date >= start && l.SaleInvoice.Date < end && l.SaleInvoice.Status != SaleStatus.Voided)
-            .Select(l => new { l.ProductId, l.Product.CategoryId, l.SaleInvoice.SalespersonId, l.Quantity, l.NetTotal, Cost = l.Quantity * l.UnitCost, l.SaleInvoiceId })
+            .Select(l => new { l.ProductId, l.Product.CategoryId, l.SaleInvoice.SalespersonId, Quantity = l.Quantity * l.UnitFactor, l.NetTotal, Cost = l.Quantity * l.UnitCost, l.SaleInvoiceId })
             .ToListAsync(ct);
         var returned = await db.SaleReturnLines.AsNoTracking()
             .Where(l => l.SaleReturn.Date >= start && l.SaleReturn.Date < end)
-            .Select(l => new { l.ProductId, l.SaleInvoiceLine.Product.CategoryId, l.SaleReturn.SaleInvoice.SalespersonId, l.Quantity, l.LineTotal,
+            .Select(l => new { l.ProductId, l.SaleInvoiceLine.Product.CategoryId, l.SaleReturn.SaleInvoice.SalespersonId, Quantity = l.Quantity * l.SaleInvoiceLine.UnitFactor, l.LineTotal,
                 Cost = l.Condition == ReturnCondition.Sellable ? l.Quantity * l.UnitCost : 0 })
             .ToListAsync(ct);
 

@@ -18,6 +18,7 @@ import { Controller } from 'react-hook-form';
 import { CategoryPicker } from '@/components/catalog/CatalogBits';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 import type { QuickProductDraft } from './QuickProductSheet';
+import { ProductUnitsEditor, toUnitRows, validateUnitRows, type UnitRow } from './ProductUnitsEditor';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
@@ -129,17 +130,22 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
       description: base?.description ?? '',
     },
   });
-  useUnsavedChangesWarning(isDirty);
+  // Extra units (dozen…): kept apart from the form fields; a variant starts with its parent's.
+  const [unitRows, setUnitRows] = useState<UnitRow[]>(() => toUnitRows(base?.units));
+  const [unitsTouched, setUnitsTouched] = useState(false);
+  const changeUnits = (rows: UnitRow[]) => { setUnitRows(rows); setUnitsTouched(true); };
+  useUnsavedChangesWarning(isDirty || unitsTouched);
 
-  const [purchaseRaw, retailRaw] = useWatch({ control, name: ['purchasePrice', 'retailPrice'] });
+  const [purchaseRaw, retailRaw, wholesaleRaw, unitIdRaw] = useWatch({ control, name: ['purchasePrice', 'retailPrice', 'wholesalePrice', 'unitId'] });
   const cost = parseNumber(purchaseRaw) || (existing?.averageCost ?? 0);
   const retail = parseNumber(retailRaw) ?? 0;
   const suggested = suggestPrice(cost, margin);
   const profit = cost > 0 && retail > 0 ? retail - cost : null;
 
   const save = useMutation({
-    mutationFn: (v: FormValues) => {
+    mutationFn: ({ v, units }: { v: FormValues; units: SaveProductInput['units'] }) => {
       const input: SaveProductInput = {
+        units,
         name: v.name,
         sku: blankToNull(v.sku),
         barcode: blankToNull(v.barcode),
@@ -182,7 +188,15 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
     if (cost != null && !Number.isNaN(cost)) setValue('openingUnitCost', String(cost));
   }, [purchaseRaw, setValue]);
 
-  const onSubmit = handleSubmit((v) => save.mutate(v));
+  const onSubmit = handleSubmit((v) => {
+    const checked = validateUnitRows(unitRows, v.unitId);
+    if (!checked.units) {
+      setUnitRows(checked.rows);
+      toast.error('راجع وحدات البيع الإضافية');
+      return;
+    }
+    save.mutate({ v, units: checked.units });
+  });
   const title = existing ? 'تعديل المنتج' : variantParent ? 'متغير جديد' : 'منتج جديد';
 
   return (
@@ -253,6 +267,19 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
       </Card>
 
       <Card className="space-y-4 p-5">
+        <h2 className="font-bold">الوحدات</h2>
+        <Field label="وحدة القياس الأساسية" required error={errors.unitId?.message} hint="المخزون والتكلفة بهذه الوحدة">
+          {(id, d) => (
+            <Controller control={control} name="unitId"
+              render={({ field }) => <UnitSelect id={id} describedBy={d} value={field.value as number | string} invalid={!!errors.unitId}
+                onChange={(unitId) => field.onChange(String(unitId))} />} />
+          )}
+        </Field>
+        <ProductUnitsEditor rows={unitRows} onChange={changeUnits} baseUnitId={Number(unitIdRaw) || 0} disabled={!canEditPrices}
+          baseRetail={parseNumber(retailRaw) ?? 0} baseWholesale={parseNumber(wholesaleRaw) ?? parseNumber(retailRaw) ?? 0} />
+      </Card>
+
+      <Card className="space-y-4 p-5">
         <h2 className="font-bold">المخزون</h2>
         <div className="grid grid-cols-2 gap-3">
           {canOpenStock && (
@@ -272,7 +299,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
         {!isNew && <p className="text-sm text-muted">لتغيير الكمية استخدم فاتورة شراء أو «حركة مخزون» أو الجرد، ليبقى كل تغيير موثقًا.</p>}
       </Card>
 
-      <Collapsible title="تفاصيل إضافية" hint="الكود، الباركود، الوحدة، الماركة، المورد، الصورة" defaultOpen={!!existing}>
+      <Collapsible title="تفاصيل إضافية" hint="الكود، الباركود، الماركة، المورد، الصورة" defaultOpen={!!existing}>
         <ImagePicker value={imageId} onChange={setImageId} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="كود المنتج" error={errors.sku?.message} hint={isNew ? 'فارغ = كود تلقائي' : undefined}>
@@ -284,13 +311,6 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
                 <Input id={id} aria-describedby={d} inputMode="numeric" className="ltr" invalid={!!errors.barcode} {...register('barcode')} />
                 <ScanButton onClick={() => setScanning(true)} />
               </div>
-            )}
-          </Field>
-          <Field label="وحدة القياس" required error={errors.unitId?.message}>
-            {(id, d) => (
-              <Controller control={control} name="unitId"
-                render={({ field }) => <UnitSelect id={id} describedBy={d} value={field.value as number | string} invalid={!!errors.unitId}
-                  onChange={(unitId) => field.onChange(String(unitId))} />} />
             )}
           </Field>
           <Field label="الماركة" error={errors.brandName?.message}>{(id) => <Input id={id} {...register('brandName')} />}</Field>

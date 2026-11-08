@@ -447,6 +447,49 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Catalog.ProductUnit", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Factor")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<decimal>("MinSalePrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("RetailPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("UnitId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("WholesalePrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UnitId");
+
+                    b.HasIndex("ProductId", "UnitId")
+                        .IsUnique();
+
+                    b.ToTable("ProductUnits", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductUnits_Values", "[Factor] > 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Qwader.Domain.Catalog.Unit", b =>
                 {
                     b.Property<int>("Id")
@@ -1976,6 +2019,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Property<int>("ProductId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ProductUnitId")
+                        .HasColumnType("int");
+
                     b.Property<int>("PurchaseInvoiceId")
                         .HasColumnType("int");
 
@@ -1991,9 +2037,19 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<decimal>("UnitFactor")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("UnitName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductUnitId");
 
                     b.HasIndex("PurchaseInvoiceId");
 
@@ -2521,6 +2577,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<int?>("ProductUnitId")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("Quantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
@@ -2536,6 +2595,14 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
 
+                    b.Property<decimal>("UnitFactor")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("UnitName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<decimal>("UnitPrice")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -2543,6 +2610,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ProductId");
+
+                    b.HasIndex("ProductUnitId");
 
                     b.HasIndex("SaleInvoiceId");
 
@@ -2767,6 +2836,25 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Navigation("DefaultSupplier");
 
                     b.Navigation("ParentProduct");
+
+                    b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("Qwader.Domain.Catalog.ProductUnit", b =>
+                {
+                    b.HasOne("Qwader.Domain.Catalog.Product", "Product")
+                        .WithMany("Units")
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Catalog.Unit", "Unit")
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Product");
 
                     b.Navigation("Unit");
                 });
@@ -3145,6 +3233,11 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Qwader.Domain.Catalog.ProductUnit", null)
+                        .WithMany()
+                        .HasForeignKey("ProductUnitId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Qwader.Domain.Purchasing.PurchaseInvoice", "PurchaseInvoice")
                         .WithMany("Lines")
                         .HasForeignKey("PurchaseInvoiceId")
@@ -3254,6 +3347,11 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Qwader.Domain.Catalog.ProductUnit", null)
+                        .WithMany()
+                        .HasForeignKey("ProductUnitId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Qwader.Domain.Sales.SaleInvoice", "SaleInvoice")
                         .WithMany("Lines")
                         .HasForeignKey("SaleInvoiceId")
@@ -3333,6 +3431,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Qwader.Domain.Catalog.Product", b =>
                 {
                     b.Navigation("StockBalances");
+
+                    b.Navigation("Units");
 
                     b.Navigation("Variants");
                 });

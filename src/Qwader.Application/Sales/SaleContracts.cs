@@ -5,7 +5,8 @@ using Qwader.Domain.Sales;
 
 namespace Qwader.Application.Sales;
 
-public sealed record SaleLineInput(int ProductId, decimal Quantity, decimal UnitPrice, decimal LineDiscount = 0);
+/// <summary>One line. ProductUnitId picks an extra unit (dozen); null = the product's base unit. Quantity and price are per that unit.</summary>
+public sealed record SaleLineInput(int ProductId, decimal Quantity, decimal UnitPrice, decimal LineDiscount = 0, int? ProductUnitId = null);
 
 /// <summary>Pending = a transfer the customer says they sent but nobody has verified yet: it stays as debt until confirmed.</summary>
 public sealed record SalePaymentInput(int AccountId, decimal Amount, string? Reference = null, bool Pending = false);
@@ -43,7 +44,7 @@ public sealed record SaleListItemDto(
 
 public sealed record SaleLineDto(
     int Id, int ProductId, string Sku, string ProductName, string UnitName, decimal Quantity, decimal UnitPrice, decimal LineDiscount,
-    decimal LineTotal, decimal NetTotal, decimal ReturnedQuantity, decimal? UnitCost, bool PriceOverridden);
+    decimal LineTotal, decimal NetTotal, decimal ReturnedQuantity, decimal? UnitCost, bool PriceOverridden, decimal UnitFactor = 1);
 
 public sealed record SalePaymentDto(int Id, int AccountId, string AccountName, decimal Amount, string? Reference);
 
@@ -87,7 +88,8 @@ public sealed record OfflineChangesDto(DateTime GeneratedAt, int MaxHours, Offli
 
 public sealed record OfflineProductDto(
     int Id, string Sku, string? Barcode, string DisplayName, string Search, string UnitName, Guid? ImageFileId,
-    decimal Quantity, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice, decimal? AverageCost);
+    decimal Quantity, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice, decimal? AverageCost,
+    IReadOnlyList<Catalog.ProductUnitDto>? Units = null);
 
 public sealed record OfflineCustomerDto(int Id, string Code, string Name, string? Phone, string Search, decimal Balance);
 

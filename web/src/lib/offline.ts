@@ -125,7 +125,11 @@ function merge<T extends { id: number }>(rows: T[], changed: T[], removed: numbe
 function withQueuedSales(snapshot: OfflineSnapshot, queue: QueuedSale[]): OfflineSnapshot {
   if (queue.length === 0) return snapshot;
   const sold = new Map<number, number>();
-  for (const q of queue) for (const l of q.input.lines) sold.set(l.productId, (sold.get(l.productId) ?? 0) + l.quantity);
+  const factorOf = (productId: number, unitId?: number | null) =>
+    unitId ? snapshot.products.find((p) => p.id === productId)?.units?.find((u) => u.id === unitId)?.factor ?? 1 : 1;
+  // Stock is kept in the base unit: a queued dozen holds 12 pieces.
+  for (const q of queue) for (const l of q.input.lines)
+    sold.set(l.productId, (sold.get(l.productId) ?? 0) + l.quantity * factorOf(l.productId, l.productUnitId));
   return { ...snapshot, products: snapshot.products.map((p) => (sold.has(p.id) ? { ...p, quantity: p.quantity - sold.get(p.id)! } : p)) };
 }
 

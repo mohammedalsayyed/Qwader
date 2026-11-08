@@ -38,7 +38,13 @@ public sealed record ProductListItemDto(
     Guid? ImageFileId,
     bool IsArchived,
     /// <summary>Null unless the caller may view costs.</summary>
-    decimal? AverageCost);
+    decimal? AverageCost,
+    IReadOnlyList<ProductUnitDto>? Units = null);
+
+/// <summary>An extra unit the product is sold/bought in: one of it = <see cref="Factor"/> base units.</summary>
+public sealed record ProductUnitDto(int Id, int UnitId, string UnitName, decimal Factor, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice);
+
+public sealed record SaveProductUnit(int UnitId, decimal Factor, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice);
 
 public sealed class ProductListRequest : PagedRequest
 {
@@ -87,7 +93,8 @@ public sealed record ProductDetailDto(
     bool IsArchived,
     DateTime CreatedAt,
     IReadOnlyList<StockByWarehouseDto> Stock,
-    IReadOnlyList<ProductRefDto> Variants);
+    IReadOnlyList<ProductRefDto> Variants,
+    IReadOnlyList<ProductUnitDto>? Units = null);
 
 public sealed record SaveProductRequest(
     string Name,
@@ -112,7 +119,9 @@ public sealed record SaveProductRequest(
     /// <summary>Create only: opening stock entered with the product.</summary>
     decimal? OpeningQuantity = null,
     decimal? OpeningUnitCost = null,
-    int? WarehouseId = null);
+    int? WarehouseId = null,
+    /// <summary>Extra units (dozen…). Null keeps the stored ones (quick add, Excel); an empty list removes them.</summary>
+    IReadOnlyList<SaveProductUnit>? Units = null);
 
 public sealed class SaveProductRequestValidator : AbstractValidator<SaveProductRequest>
 {
@@ -136,6 +145,20 @@ public sealed class SaveProductRequestValidator : AbstractValidator<SaveProductR
         RuleFor(x => x.ReorderLevel).GreaterThanOrEqualTo(0).WithMessage("حد التنبيه لا يمكن أن يكون سالبًا");
         RuleFor(x => x.OpeningQuantity).GreaterThanOrEqualTo(0).WithMessage("الكمية الافتتاحية لا يمكن أن تكون سالبة");
         RuleFor(x => x.OpeningUnitCost).GreaterThanOrEqualTo(0).WithMessage("التكلفة لا يمكن أن تكون سالبة");
+        RuleForEach(x => x.Units).ChildRules(u =>
+        {
+            u.RuleFor(x => x.UnitId).GreaterThan(0).WithMessage("اختر الوحدة");
+            u.RuleFor(x => x.Factor).GreaterThan(1).WithMessage("عدد القطع في الوحدة يجب أن يكون أكبر من 1")
+                .LessThanOrEqualTo(100000).WithMessage("عدد القطع في الوحدة كبير جدًا");
+            u.RuleFor(x => x.RetailPrice).GreaterThan(0).WithMessage("سعر بيع الوحدة مطلوب");
+            u.RuleFor(x => x.WholesalePrice).GreaterThanOrEqualTo(0).WithMessage("سعر الجملة لا يمكن أن يكون سالبًا");
+            u.RuleFor(x => x.MinSalePrice).GreaterThanOrEqualTo(0).WithMessage("أقل سعر بيع لا يمكن أن يكون سالبًا")
+                .LessThanOrEqualTo(x => x.RetailPrice).WithMessage("أقل سعر بيع للوحدة يجب ألا يتجاوز سعر بيعها");
+        });
+        RuleFor(x => x.Units).Must(u => u is null || u.Select(x => x.UnitId).Distinct().Count() == u.Count)
+            .WithMessage("لا تكرر نفس الوحدة مرتين");
+        RuleFor(x => x).Must(x => x.Units is null || x.Units.All(u => u.UnitId != x.UnitId)).WithName("units")
+            .WithMessage("الوحدة الإضافية يجب أن تختلف عن الوحدة الأساسية");
     }
 }
 
@@ -148,4 +171,6 @@ public interface IProductService
     Task<ProductDetailDto> UpdateAsync(int id, SaveProductRequest request, CancellationToken ct = default);
     Task SetArchivedAsync(int id, bool archived, CancellationToken ct = default);
     Task<bool> IsCodeTakenAsync(string code, int? exceptId, CancellationToken ct = default);
+    /// <summary>Deletes a product that never appeared on any invoice (a mistake): its opening stock and history go with it.</summary>
+    Task DeleteAsync(int id, CancellationToken ct = default);
 }

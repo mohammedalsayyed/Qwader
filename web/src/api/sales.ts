@@ -1,3 +1,4 @@
+import type { ProductUnit } from './catalog';
 import { api, type PagedResult } from './client';
 import type { ReturnSettlement, Statement } from './stock';
 
@@ -39,6 +40,8 @@ export interface SaleLine {
   returnedQuantity: number;
   unitCost: number | null;
   priceOverridden: boolean;
+  /** Base units in one of this line's unit (12 for a dozen). */
+  unitFactor?: number;
 }
 
 export interface Sale {
@@ -82,7 +85,8 @@ export interface CreateSaleInput {
   customerName?: string | null;
   customerPhone?: string | null;
   invoiceDiscount: number;
-  lines: { productId: number; quantity: number; unitPrice: number; lineDiscount: number }[];
+  /** productUnitId: sold in an extra unit (dozen); null/absent = the base unit. Quantity and price are per that unit. */
+  lines: { productId: number; quantity: number; unitPrice: number; lineDiscount: number; productUnitId?: number | null }[];
   payments: { accountId: number; amount: number; reference?: string | null }[];
   notes?: string | null;
   /** Set when the sale was made without internet: when it happened. */
@@ -129,6 +133,7 @@ export interface OfflineProduct {
   wholesalePrice: number;
   minSalePrice: number;
   averageCost: number | null;
+  units?: ProductUnit[] | null;
 }
 
 export interface OfflineCustomer {

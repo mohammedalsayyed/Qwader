@@ -61,8 +61,8 @@ public sealed class PurchaseService(
                 AccountName = x.PaymentAccount != null ? x.PaymentAccount.Name : null,
                 CreatedBy = db.Users.Where(u => u.Id == x.CreatedById).Select(u => u.FullName).FirstOrDefault(),
                 Lines = x.Lines.OrderBy(l => l.Id).Select(l => new PurchaseLineDto(l.Id, l.ProductId, l.Product.Sku,
-                    Product.BuildDisplayName(l.Product.Name, l.Product.Size, l.Product.Color, l.Product.Model), l.Product.Unit.Name,
-                    l.Quantity, l.UnitCost, l.LineDiscount, l.LineTotal, l.NetUnitCost, l.ReturnedQuantity)).ToList(),
+                    Product.BuildDisplayName(l.Product.Name, l.Product.Size, l.Product.Color, l.Product.Model), l.UnitName ?? l.Product.Unit.Name,
+                    l.Quantity, l.UnitCost, l.LineDiscount, l.LineTotal, l.NetUnitCost, l.ReturnedQuantity, l.ProductUnitId, l.UnitFactor)).ToList(),
             })
             .FirstOrDefaultAsync(ct) ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
 
@@ -154,8 +154,8 @@ public sealed class PurchaseService(
         {
             var source = new LedgerSource("PurchaseInvoice", invoice.Id, invoice.Number, $"إلغاء فاتورة الشراء: {request.Reason.Trim()}");
             foreach (var line in invoice.Lines.OrderBy(l => l.ProductId))
-                await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.PurchaseVoid,
-                    "PurchaseInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة شراء"), line.NetUnitCost, ct);
+                await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.PurchaseVoid,
+                    "PurchaseInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة شراء"), line.NetUnitCost / line.UnitFactor, ct);
 
             var now = clock.UtcNow;
             if (invoice.Total > 0) await suppliers.PostAsync(invoice.SupplierId, SupplierEntryType.Reversal, invoice.Total, 0, source, now, ct);
@@ -218,8 +218,11 @@ public sealed class PurchaseService(
         await db.SaveChangesAsync(ct);
 
         foreach (var line in ret.Lines.OrderBy(l => l.ProductId))
-            await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.PurchaseReturn,
-                "PurchaseReturn", ret.Id, ret.Number, ret.Reason), line.UnitCost, ct);
+        {
+            var factor = invoice.Lines.First(l => l.Id == line.PurchaseInvoiceLineId).UnitFactor;
+            await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * factor, StockMovementType.PurchaseReturn,
+                "PurchaseReturn", ret.Id, ret.Number, ret.Reason), line.UnitCost / factor, ct);
+        }
 
         var source = new LedgerSource("PurchaseReturn", ret.Id, ret.Number, $"مردود من الفاتورة {invoice.Number}");
         if (ret.Total > 0)
@@ -247,9 +250,11 @@ public sealed class PurchaseService(
         if (!supplier.IsActive) throw new ValidationFailedException("supplierId", "المورد غير فعّال");
 
         var productIds = r.Lines.Select(l => l.ProductId).Distinct().ToList();
-        var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id)).Select(p => new { p.Id, p.IsArchived }).ToListAsync(ct);
+        var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Name, p.IsArchived, Units = p.Units.Select(u => new { u.Id, u.Unit.Name, u.Factor }).ToList() })
+            .ToDictionaryAsync(p => p.Id, ct);
         if (products.Count != productIds.Count) throw new ValidationFailedException("lines", "أحد المنتجات غير موجود");
-        if (products.Any(p => p.IsArchived)) throw new ValidationFailedException("lines", "لا يمكن شراء منتج مؤرشف؛ ألغِ أرشفته أولًا");
+        if (products.Values.Any(p => p.IsArchived)) throw new ValidationFailedException("lines", "لا يمكن شراء منتج مؤرشف؛ ألغِ أرشفته أولًا");
 
         invoice.SupplierId = r.SupplierId;
         invoice.WarehouseId = r.WarehouseId ?? await db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);
@@ -261,9 +266,14 @@ public sealed class PurchaseService(
         {
             var gross = CostMath.RoundMoney(l.Quantity * l.UnitCost);
             if (l.LineDiscount > gross) throw new ValidationFailedException("lines", "خصم البند أكبر من قيمته");
+            var unit = l.ProductUnitId is { } unitId
+                ? products[l.ProductId].Units.FirstOrDefault(u => u.Id == unitId)
+                    ?? throw new ValidationFailedException("lines", $"الوحدة المختارة لـ«{products[l.ProductId].Name}» لم تعد موجودة؛ أعد اختيارها")
+                : null;
             return new PurchaseInvoiceLine
             {
                 ProductId = l.ProductId, Quantity = l.Quantity, UnitCost = l.UnitCost, LineDiscount = l.LineDiscount, LineTotal = gross - l.LineDiscount,
+                ProductUnitId = unit?.Id, UnitName = unit?.Name, UnitFactor = unit?.Factor ?? 1,
             };
         }).ToList();
 
@@ -290,9 +300,10 @@ public sealed class PurchaseService(
         // Ascending product order keeps lock acquisition consistent across concurrent postings.
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId).ThenBy(l => l.Id))
         {
-            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.Purchase,
-                "PurchaseInvoice", invoice.Id, invoice.Number), line.NetUnitCost, ct);
-            await db.Database.ExecuteSqlAsync($"UPDATE Products SET PurchasePrice = {db.Database.Exact(line.UnitCost)} WHERE Id = {line.ProductId}", ct);
+            // Stock and cost stay in the base unit: a dozen bought at 120 is 12 pieces at 10.
+            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.Purchase,
+                "PurchaseInvoice", invoice.Id, invoice.Number), line.NetUnitCost / line.UnitFactor, ct);
+            await db.Database.ExecuteSqlAsync($"UPDATE Products SET PurchasePrice = {db.Database.Exact(CostMath.RoundCost(line.UnitCost / line.UnitFactor))} WHERE Id = {line.ProductId}", ct);
         }
 
         var source = new LedgerSource("PurchaseInvoice", invoice.Id, invoice.Number, invoice.SupplierInvoiceNo is null ? null : $"فاتورة المورد {invoice.SupplierInvoiceNo}");

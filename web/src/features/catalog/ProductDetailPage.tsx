@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, ArrowRight, Boxes, Copy, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, Boxes, Copy, Pencil, Trash2 } from 'lucide-react';
 import { productsApi } from '@/api/catalog';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -35,6 +35,18 @@ export function ProductDetailPage() {
       toast.success(archived ? 'تمت أرشفة المنتج' : 'تمت إعادة المنتج إلى القائمة');
       void queryClient.invalidateQueries({ queryKey: ['product', id] });
       void queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+
+  // Only for a product that never reached an invoice (entered by mistake); the server refuses the rest.
+  const remove = useMutation({
+    mutationFn: () => productsApi.remove(id),
+    onSuccess: () => {
+      toast.success('تم حذف المنتج نهائيًا');
+      queryClient.removeQueries({ queryKey: ['product', id] });
+      void queryClient.invalidateQueries({ queryKey: ['products'] });
+      navigate('/products', { replace: true });
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -115,6 +127,25 @@ export function ProductDetailPage() {
             {p.isArchived ? <><ArchiveRestore className="size-4" /> إلغاء الأرشفة</> : <><Archive className="size-4" /> أرشفة</>}
           </Button>
         )}
+        {can(P.ProductsManage) && (
+          <Button
+            variant="outline"
+            className="text-danger"
+            loading={remove.isPending}
+            onClick={async () => {
+              const ok = await confirm({
+                title: 'حذف المنتج نهائيًا',
+                message: `سيُحذف «${p.displayName}» وكل حركات مخزونه${p.quantity > 0 ? ` (الرصيد الحالي ${formatQuantity(p.quantity)} ${p.unitName})` : ''} ولا يمكن التراجع. `
+                  + 'يُسمح بالحذف فقط إذا لم يظهر المنتج في أي فاتورة شراء أو بيع؛ وإلا استخدم الأرشفة.',
+                confirmLabel: 'حذف نهائي',
+                danger: true,
+              });
+              if (ok) remove.mutate();
+            }}
+          >
+            <Trash2 className="size-4" /> حذف
+          </Button>
+        )}
       </div>
 
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'info', label: 'التفاصيل' }, { value: 'movements', label: 'سجل الحركات' }]} />
@@ -125,6 +156,10 @@ export function ProductDetailPage() {
             <InfoList items={[
               { label: 'الصنف', value: p.categoryName },
               { label: 'وحدة القياس', value: p.unitName },
+              ...(p.units ?? []).map((u) => ({
+                label: `${u.unitName} (${formatQuantity(u.factor)} ${p.unitName})`,
+                value: <span className="tabular">{formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}</span>,
+              })),
               p.brandName && { label: 'الماركة', value: p.brandName },
               p.model && { label: 'الموديل', value: p.model },
               p.color && { label: 'اللون', value: p.color },

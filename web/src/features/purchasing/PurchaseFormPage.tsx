@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Plus, Trash2 } from 'lucide-react';
-import type { ProductListItem } from '@/api/catalog';
+import type { ProductListItem, ProductUnit } from '@/api/catalog';
 import { purchasesApi, suppliersApi, type Purchase } from '@/api/stock';
 import { ApiError } from '@/api/client';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -15,16 +15,24 @@ import { useToast } from '@/components/ui/Toast';
 import { ProductRow, SupplierPicker } from '@/components/catalog/CatalogBits';
 import { productsApi } from '@/api/catalog';
 import { errorMessage } from '@/lib/forms';
-import { formatMoney, localToday } from '@/lib/format';
+import { formatMoney, formatQuantity, localToday } from '@/lib/format';
 import { useIdempotencyKey, useUnsavedChangesWarning } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
+import { cn } from '@/lib/cn';
 
 interface Line {
   key: string;
   productId: number;
   name: string;
   unitName: string;
+  /** Bought in an extra unit (dozen); null = the base unit. */
+  productUnitId: number | null;
+  factor: number;
+  /** For switching the unit: the base unit's name and cost, and the product's other units (unknown for a saved draft). */
+  baseUnitName: string;
+  baseCost: number | null;
+  units: ProductUnit[];
   quantity: string;
   unitCost: string;
   lineDiscount: string;
@@ -67,6 +75,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   const [lines, setLines] = useState<Line[]>(() =>
     existing?.lines.map((l) => ({
       key: crypto.randomUUID(), productId: l.productId, name: l.productName, unitName: l.unitName,
+      productUnitId: l.productUnitId ?? null, factor: l.unitFactor ?? 1, baseUnitName: (l.unitFactor ?? 1) === 1 ? l.unitName : '', baseCost: null, units: [],
       quantity: String(l.quantity), unitCost: String(l.unitCost), lineDiscount: l.lineDiscount ? String(l.lineDiscount) : '',
     })) ?? []);
   const [picking, setPicking] = useState(false);
@@ -98,9 +107,23 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     setTouched(true);
     setErrors((e) => ({ ...e, lines: '' }));
     setLines((ls) => {
-      const found = ls.find((l) => l.productId === p.id);
+      const found = ls.find((l) => l.productId === p.id && l.productUnitId === null);
       if (found) return ls.map((l) => (l === found ? { ...l, quantity: String((parseNumber(l.quantity) || 0) + 1) } : l));
-      return [...ls, { key: crypto.randomUUID(), productId: p.id, name: p.displayName, unitName: p.unitName, quantity: '1', unitCost: p.averageCost ? String(p.averageCost) : '', lineDiscount: '' }];
+      return [...ls, {
+        key: crypto.randomUUID(), productId: p.id, name: p.displayName, unitName: p.unitName, productUnitId: null, factor: 1,
+        baseUnitName: p.unitName, baseCost: p.averageCost || null, units: p.units ?? [],
+        quantity: '1', unitCost: p.averageCost ? String(p.averageCost) : '', lineDiscount: '',
+      }];
+    });
+  };
+
+  /** Buys the line by another unit: the cost follows (12 × the piece's cost) unless one was typed by hand. */
+  const switchUnit = (l: Line, unit: ProductUnit | null) => {
+    const factor = unit?.factor ?? 1;
+    const autoCost = l.baseCost != null && parseNumber(l.unitCost) === round2(l.baseCost * l.factor);
+    update(l.key, {
+      productUnitId: unit?.id ?? null, factor, unitName: unit?.unitName ?? l.baseUnitName,
+      unitCost: autoCost || !l.unitCost ? (l.baseCost != null ? String(round2(l.baseCost * factor)) : '') : l.unitCost,
     });
   };
 
@@ -138,7 +161,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
         paidAmount: parseNumber(paid) ?? 0,
         paymentAccountId: (parseNumber(paid) ?? 0) > 0 ? Number(accountId) : null,
         notes: notes.trim() || null,
-        lines: lines.map((l) => ({ productId: l.productId, quantity: parseNumber(l.quantity)!, unitCost: parseNumber(l.unitCost)!, lineDiscount: parseNumber(l.lineDiscount) ?? 0 })),
+        lines: lines.map((l) => ({ productId: l.productId, quantity: parseNumber(l.quantity)!, unitCost: parseNumber(l.unitCost)!, lineDiscount: parseNumber(l.lineDiscount) ?? 0, productUnitId: l.productUnitId })),
         post,
       };
       return existing ? purchasesApi.updateDraft(existing.id, input) : purchasesApi.create(input);
@@ -207,11 +230,23 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
                       <Trash2 className="size-5" />
                     </IconButton>
                   </div>
+                  {l.units.length > 0 && (
+                    <div className="mb-2 flex rounded-xl bg-black/5 p-1" role="radiogroup" aria-label={`وحدة الشراء: ${l.name}`}>
+                      {[null, ...l.units].map((u) => (
+                        <button key={u?.id ?? 0} type="button" role="radio" aria-checked={l.productUnitId === (u?.id ?? null)}
+                          onClick={() => switchUnit(l, u)}
+                          className={cn('h-9 flex-1 rounded-lg px-2 text-sm font-semibold', l.productUnitId === (u?.id ?? null) ? 'bg-surface shadow-sm' : 'text-muted')}>
+                          {u ? <>{u.unitName} <span className="text-xs font-normal">({formatQuantity(u.factor)})</span></> : l.baseUnitName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="grid grid-cols-3 gap-2">
-                    <Field label={`الكمية (${l.unitName})`} error={errors[`q${l.key}`]}>
+                    <Field label={`الكمية (${l.unitName})`} error={errors[`q${l.key}`]}
+                      hint={l.factor !== 1 && l.baseUnitName && (parseNumber(l.quantity) ?? 0) > 0 ? `= ${formatQuantity(round2((parseNumber(l.quantity) ?? 0) * l.factor))} ${l.baseUnitName}` : undefined}>
                       {(id) => <Input id={id} inputMode="decimal" className="ltr" invalid={!!errors[`q${l.key}`]} value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} />}
                     </Field>
-                    <Field label="تكلفة الوحدة" error={errors[`c${l.key}`]}>
+                    <Field label={l.factor !== 1 ? `تكلفة ${l.unitName}` : 'تكلفة الوحدة'} error={errors[`c${l.key}`]}>
                       {(id) => <Input id={id} inputMode="decimal" className="ltr" invalid={!!errors[`c${l.key}`]} value={l.unitCost} onChange={(e) => update(l.key, { unitCost: e.target.value })} />}
                     </Field>
                     <Field label="خصم البند" error={errors[`d${l.key}`]}>

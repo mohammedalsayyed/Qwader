@@ -47,6 +47,9 @@ public class Product : AuditableEntity
 
     public ICollection<StockBalance> StockBalances { get; set; } = new List<StockBalance>();
 
+    /// <summary>Larger packs the product is also sold or bought in (a dozen of a piece). Stock stays in the base unit.</summary>
+    public ICollection<ProductUnit> Units { get; set; } = new List<ProductUnit>();
+
     public string DisplayName => BuildDisplayName(Name, Size, Color, Model);
 
     public static string BuildDisplayName(string name, string? size, string? color, string? model)
@@ -54,4 +57,21 @@ public class Product : AuditableEntity
         var attributes = new[] { model, color, size }.Where(a => !string.IsNullOrWhiteSpace(a)).ToArray();
         return attributes.Length == 0 ? name : $"{name} — {string.Join(" / ", attributes)}";
     }
+}
+
+/// <summary>
+/// Another unit the same product is sold or bought in: «دزينة» = 12 of the base unit. Stock, cost and reports stay in
+/// the base unit; a line in this unit moves Quantity × Factor of it. Prices are its own (typed, with a suggestion of Factor × base price).
+/// </summary>
+public class ProductUnit : Entity
+{
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = null!;
+    public int UnitId { get; set; }
+    public Unit Unit { get; set; } = null!;
+    /// <summary>How many base units one of this unit holds (greater than 1).</summary>
+    public decimal Factor { get; set; }
+    public decimal RetailPrice { get; set; }
+    public decimal WholesalePrice { get; set; }
+    public decimal MinSalePrice { get; set; }
 }

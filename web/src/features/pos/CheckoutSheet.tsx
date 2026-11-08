@@ -97,7 +97,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     customerName: mode === 'customer' && !customer ? newName.trim() : null,
     customerPhone: mode === 'customer' && !customer ? newPhone.trim() : null,
     invoiceDiscount: discountN,
-    lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount })),
+    lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount, productUnitId: l.productUnitId })),
     payments,
   });
 
@@ -110,7 +110,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     // Just what the «تم البيع» sheet shows; id 0 marks a sale the server has not seen yet.
     return {
       id: 0, number: q.number, total, invoiceDiscount: discountN, remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
-      lines: cart.lines.map((l) => ({ productName: l.name, quantity: l.quantity, lineTotal: lineTotal(l) })),
+      lines: cart.lines.map((l) => ({ productName: l.name, quantity: l.quantity, unitName: l.unitName, unitFactor: l.factor, lineTotal: lineTotal(l) })),
     } as unknown as Sale;
   };
 
@@ -325,7 +325,7 @@ export function SaleDoneSheet({ sale, change, onClose }: { sale: Sale; change: n
   const text = [
     settings.data?.storeName ?? 'معرض قويدر',
     `فاتورة رقم ${sale.number}`,
-    ...sale.lines.map((l) => `• ${l.productName} × ${l.quantity} = ${formatMoney(l.lineTotal)}`),
+    ...sale.lines.map((l) => `• ${l.productName} × ${l.quantity}${(l.unitFactor ?? 1) !== 1 ? ` ${l.unitName}` : ''} = ${formatMoney(l.lineTotal)}`),
     sale.invoiceDiscount > 0 ? `خصم: ${formatMoney(sale.invoiceDiscount)}` : null,
     `الإجمالي: ${formatMoney(sale.total)}`,
     sale.remaining > 0 ? `المتبقي: ${formatMoney(sale.remaining)}` : null,

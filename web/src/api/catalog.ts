@@ -37,6 +37,26 @@ export interface ProductListItem {
   imageFileId: string | null;
   isArchived: boolean;
   averageCost: number | null;
+  units?: ProductUnit[] | null;
+}
+
+/** Another unit the product is sold/bought in: one of it = `factor` base units (a dozen = 12 pieces). */
+export interface ProductUnit {
+  id: number;
+  unitId: number;
+  unitName: string;
+  factor: number;
+  retailPrice: number;
+  wholesalePrice: number;
+  minSalePrice: number;
+}
+
+export interface SaveProductUnit {
+  unitId: number;
+  factor: number;
+  retailPrice: number;
+  wholesalePrice: number;
+  minSalePrice: number;
 }
 
 export interface ProductRef {
@@ -83,6 +103,7 @@ export interface ProductDetail {
   createdAt: string;
   stock: { warehouseId: number; warehouseName: string; quantity: number }[];
   variants: ProductRef[];
+  units?: ProductUnit[] | null;
 }
 
 export interface SaveProductInput {
@@ -106,6 +127,8 @@ export interface SaveProductInput {
   imageFileId?: string | null;
   openingQuantity?: number | null;
   openingUnitCost?: number | null;
+  /** Extra units; leave out to keep the stored ones. */
+  units?: SaveProductUnit[] | null;
 }
 
 export interface ProductListParams {
@@ -143,6 +166,7 @@ export const productsApi = {
   update: (id: number, input: SaveProductInput) => api<ProductDetail>(`/products/${id}`, { method: 'PUT', body: input }),
   archive: (id: number) => api<void>(`/products/${id}/archive`, { method: 'POST' }),
   unarchive: (id: number) => api<void>(`/products/${id}/unarchive`, { method: 'POST' }),
+  remove: (id: number) => api<void>(`/products/${id}`, { method: 'DELETE' }),
   exportExcel: (params: ProductListParams) => apiDownload('/products/export', { ...params }, 'products.xlsx'),
   template: () => apiDownload('/products/import-template', undefined, 'products-template.xlsx'),
   importExcel: (file: File) => {

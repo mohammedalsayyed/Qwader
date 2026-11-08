@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Qwader.Domain.Catalog;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Purchasing;
 
@@ -61,6 +62,9 @@ public sealed class PurchaseInvoiceLineConfiguration : IEntityTypeConfiguration<
         b.Property(l => l.ReturnedQuantity).AsQuantity();
         b.Property(l => l.UnitCost).AsCost();
         b.Property(l => l.NetUnitCost).AsCost();
+        b.Property(l => l.UnitName).HasMaxLength(50);
+        b.Property(l => l.UnitFactor).AsQuantity();
+        b.HasOne<ProductUnit>().WithMany().HasForeignKey(l => l.ProductUnitId).OnDelete(DeleteBehavior.SetNull);
         b.HasOne(l => l.Product).WithMany().HasForeignKey(l => l.ProductId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(l => l.ProductId);
         b.ToTable(t => t.HasCheckConstraint("CK_PurchaseLines_Quantities", "[Quantity] > 0 AND [ReturnedQuantity] >= 0 AND [ReturnedQuantity] <= [Quantity]"));

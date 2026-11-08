@@ -61,7 +61,11 @@ public sealed class SaleService(
 
         var productIds = request.Lines.Select(l => l.ProductId).Distinct().ToList();
         var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost })
+            .Select(p => new
+            {
+                p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost,
+                Units = p.Units.Select(u => new { u.Id, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice }).ToList(),
+            })
             .ToDictionaryAsync(p => p.Id, ct);
         if (products.Count != productIds.Count) throw new ValidationFailedException("lines", "أحد المنتجات غير موجود");
         foreach (var archived in products.Values.Where(p => p.IsArchived))
@@ -73,12 +77,23 @@ public sealed class SaleService(
         // limits it; the store's discount limit applies to the discounts the seller types (line + invoice).
         decimal typedLineDiscounts = 0;
         (decimal Percent, decimal Limit, decimal Amount)? discountOverLimit = null;
-        var lines = request.Lines.Select(l =>
+        // The unit each line is sold in: its own prices, and how many base units it takes from stock.
+        var unitOf = request.Lines.Select(l =>
         {
             var p = products[l.ProductId];
+            if (l.ProductUnitId is not { } unitId)
+                return (Id: (int?)null, Name: (string?)null, Factor: 1m, p.RetailPrice, p.WholesalePrice, p.MinSalePrice);
+            var u = p.Units.FirstOrDefault(x => x.Id == unitId)
+                ?? throw new ValidationFailedException("lines", $"الوحدة المختارة لـ«{p.Name}» لم تعد موجودة؛ أعد اختيارها");
+            return (Id: (int?)u.Id, Name: (string?)u.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice);
+        }).ToList();
+        var lines = request.Lines.Select((l, index) =>
+        {
+            var p = products[l.ProductId];
+            var unit = unitOf[index];
             if (l.LineDiscount > CostMath.RoundMoney(l.Quantity * l.UnitPrice))
                 throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
-            var listPrice = request.PriceTier == PriceTier.Wholesale ? p.WholesalePrice : p.RetailPrice;
+            var listPrice = request.PriceTier == PriceTier.Wholesale ? unit.WholesalePrice : unit.RetailPrice;
             var lowered = l.UnitPrice < listPrice ? CostMath.RoundMoney(l.Quantity * (listPrice - l.UnitPrice)) : 0;
             var unitPrice = lowered > 0 ? listPrice : l.UnitPrice;
             var gross = CostMath.RoundMoney(l.Quantity * unitPrice);
@@ -91,6 +106,9 @@ public sealed class SaleService(
                 UnitPrice = unitPrice,
                 LineDiscount = l.LineDiscount + lowered,
                 LineTotal = gross - l.LineDiscount - lowered,
+                ProductUnitId = unit.Id,
+                UnitName = unit.Name,
+                UnitFactor = unit.Factor,
             };
         }).ToList();
 
@@ -130,15 +148,17 @@ public sealed class SaleService(
         }
 
         var overridden = new List<string>();
-        foreach (var line in lines)
+        for (var i = 0; i < lines.Count; i++)
         {
+            var line = lines[i];
+            var unit = unitOf[i];
             var p = products[line.ProductId];
             var netUnit = line.NetTotal / line.Quantity;
             // A wholesale price set below the minimum is the floor for wholesale sales.
-            var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(p.MinSalePrice, p.WholesalePrice) : p.MinSalePrice;
+            var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(unit.MinSalePrice, unit.WholesalePrice) : unit.MinSalePrice;
             if (netUnit + 0.0001m < minimum)
                 Breach($"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)");
-            if (netUnit + 0.0001m < p.AverageCost)
+            if (netUnit + 0.0001m < p.AverageCost * unit.Factor)
             {
                 if (!canOverride)
                     Breach($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
@@ -220,11 +240,12 @@ public sealed class SaleService(
         // ---- stock: ascending product order keeps lock order consistent between concurrent sales
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId).ThenBy(l => l.Id))
         {
-            var posting = await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.Sale,
+            // Stock and cost stay in the base unit: a dozen takes 12 pieces and costs 12 × the piece's cost.
+            var posting = await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.Sale,
                 "SaleInvoice", invoice.Id, invoice.Number), ct: ct, allowNegative: offline);
-            line.UnitCost = posting.UnitCost;
+            line.UnitCost = posting.UnitCost * line.UnitFactor;
             if (posting.BalanceAfter < 0)
-                review.Add($"«{line.ProductName}»: بيعت {line.Quantity:0.###} والمخزون لم يكفِ (الرصيد الآن {posting.BalanceAfter:0.###})");
+                review.Add($"«{line.ProductName}»: بيعت {line.Quantity:0.###}{(line.UnitName is null ? "" : " " + line.UnitName)} والمخزون لم يكفِ (الرصيد الآن {posting.BalanceAfter:0.###})");
         }
         if (review.Count > 0)
         {
@@ -305,7 +326,7 @@ public sealed class SaleService(
                 }), "/transfers"), Permissions.TransfersReview);
 
         // Only the sale that crosses the line raises an alert, not every later sale of a product that is already low.
-        var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
+        var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity * l.UnitFactor));
         var ids = sold.Keys.ToList();
         var stock = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
             .Select(p => new { p.Id, p.Name, p.ReorderLevel, Quantity = p.StockBalances.Sum(b => b.Quantity) }).ToListAsync(ct);
@@ -369,8 +390,8 @@ public sealed class SaleService(
                 Reviewer = db.Users.Where(u => u.Id == x.ReviewedById).Select(u => u.FullName).FirstOrDefault(),
                 Lines = x.Lines.OrderBy(l => l.Id).Select(l => new
                 {
-                    l.Id, l.ProductId, l.Product.Sku, l.ProductName, Unit = l.Product.Unit.Name, l.Quantity, l.UnitPrice, l.LineDiscount,
-                    l.LineTotal, l.NetTotal, l.ReturnedQuantity, l.UnitCost, l.PriceOverridden,
+                    l.Id, l.ProductId, l.Product.Sku, l.ProductName, Unit = l.UnitName ?? l.Product.Unit.Name, l.Quantity, l.UnitPrice, l.LineDiscount,
+                    l.LineTotal, l.NetTotal, l.ReturnedQuantity, l.UnitCost, l.PriceOverridden, l.UnitFactor,
                 }).ToList(),
                 Payments = x.Payments.OrderBy(p => p.Id)
                     .Select(p => new SalePaymentDto(p.Id, p.FinancialAccountId, p.FinancialAccount.Name, p.Amount, p.Reference)).ToList(),
@@ -401,7 +422,7 @@ public sealed class SaleService(
             invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount + invoice.CollectedAmount, remaining,
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
-                l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden)).ToList(),
+                l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden, l.UnitFactor)).ToList(),
             s.Payments, returns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer);
     }
 
@@ -469,10 +490,12 @@ public sealed class SaleService(
                 p.Id, p.Sku, p.Barcode, p.Name, p.Size, p.Color, p.Model, p.NormalizedName, Unit = p.Unit.Name, p.ImageFileId,
                 Quantity = p.StockBalances.Sum(b => (decimal?)b.Quantity) ?? 0,
                 p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.AverageCost,
+                Units = p.Units.OrderBy(u => u.Factor)
+                    .Select(u => new Catalog.ProductUnitDto(u.Id, u.UnitId, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)).ToList(),
             }).ToListAsync(ct);
         return products.Select(p => new OfflineProductDto(p.Id, p.Sku, p.Barcode, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
             p.NormalizedName, p.Unit, p.ImageFileId, p.Quantity, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
-            showCost ? p.AverageCost : null)).ToList();
+            showCost ? p.AverageCost : null, p.Units)).ToList();
     }
 
     // ------------------------------------------------------------------ returns
@@ -533,8 +556,11 @@ public sealed class SaleService(
 
         // Sellable goods go back on the shelf at the cost they left with; damaged ones stay out (their cost is a loss).
         foreach (var line in ret.Lines.Where(l => l.Condition == ReturnCondition.Sellable).OrderBy(l => l.ProductId))
-            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.SaleReturn,
-                "SaleReturn", ret.Id, ret.Number, $"مرتجع من {invoice.Number}"), line.UnitCost, ct);
+        {
+            var factor = invoice.Lines.First(l => l.Id == line.SaleInvoiceLineId).UnitFactor;
+            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * factor, StockMovementType.SaleReturn,
+                "SaleReturn", ret.Id, ret.Number, $"مرتجع من {invoice.Number}"), line.UnitCost / factor, ct);
+        }
 
         var source = new LedgerSource("SaleReturn", ret.Id, ret.Number, $"مرتجع من الفاتورة {invoice.Number}");
         if (ret.Total > 0)
@@ -572,8 +598,8 @@ public sealed class SaleService(
         var source = new LedgerSource("SaleInvoice", invoice.Id, invoice.Number, $"إلغاء الفاتورة: {reason}");
 
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId))
-            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity, StockMovementType.SaleVoid,
-                "SaleInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة بيع"), line.UnitCost, ct);
+            await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.SaleVoid,
+                "SaleInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة بيع"), line.UnitCost / line.UnitFactor, ct);
 
         foreach (var payment in invoice.Payments)
             await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, source, now, ct);

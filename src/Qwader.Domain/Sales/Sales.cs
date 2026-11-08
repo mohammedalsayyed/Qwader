@@ -127,6 +127,11 @@ public class SaleInvoiceLine : Entity
     public decimal ReturnedQuantity { get; set; }
     /// <summary>True when the price was below the minimum or the cost and a user with override permission allowed it.</summary>
     public bool PriceOverridden { get; set; }
+    /// <summary>The unit the line was sold in; null = the product's base unit. Quantity, prices and UnitCost are per this unit.</summary>
+    public int? ProductUnitId { get; set; }
+    public string? UnitName { get; set; }
+    /// <summary>Base units per one of this line's unit (1 for the base unit). Stock moves Quantity × UnitFactor.</summary>
+    public decimal UnitFactor { get; set; } = 1;
 
     public SaleInvoice SaleInvoice { get; set; } = null!;
     public Product Product { get; set; } = null!;

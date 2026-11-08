@@ -65,7 +65,8 @@ public sealed class ProductService(
                 x.Qty, x.P.ReorderLevel,
                 x.Qty <= 0 ? StockStatus.Out : x.Qty <= x.P.ReorderLevel ? StockStatus.Low : StockStatus.Available,
                 x.P.ImageFileId, x.P.IsArchived,
-                canViewCost ? x.P.AverageCost : null))
+                canViewCost ? x.P.AverageCost : null,
+                x.P.Units.OrderBy(u => u.Factor).Select(u => new ProductUnitDto(u.Id, u.UnitId, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)).ToList()))
             .ToPagedAsync(request, ct);
     }
 
@@ -90,6 +91,7 @@ public sealed class ProductService(
                 SupplierName = p.DefaultSupplier != null ? p.DefaultSupplier.Name : null,
                 Parent = p.ParentProduct != null ? new { p.ParentProduct.Name, p.ParentProduct.Size, p.ParentProduct.Color, p.ParentProduct.Model } : null,
                 Stock = p.StockBalances.Select(s => new StockByWarehouseDto(s.WarehouseId, s.Warehouse.Name, s.Quantity)).ToList(),
+                Units = p.Units.OrderBy(u => u.Factor).Select(u => new ProductUnitDto(u.Id, u.UnitId, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)).ToList(),
             })
             .FirstOrDefaultAsync(ct);
         if (p is null) return null;
@@ -129,7 +131,7 @@ public sealed class ProductService(
             CanViewCost ? product.PurchasePrice : null, CanViewCost ? product.AverageCost : null,
             product.WholesalePrice, product.RetailPrice, product.MinSalePrice, product.ReorderLevel,
             quantity, status, value, profit, margin, suggested,
-            product.ImageFileId, product.IsArchived, product.CreatedAt, p.Stock, variants);
+            product.ImageFileId, product.IsArchived, product.CreatedAt, p.Stock, variants, p.Units);
     }
 
     public async Task<ProductDetailDto> CreateAsync(SaveProductRequest request, CancellationToken ct = default)
@@ -165,11 +167,13 @@ public sealed class ProductService(
 
     public async Task<ProductDetailDto> UpdateAsync(int id, SaveProductRequest request, CancellationToken ct = default)
     {
-        var product = await db.Products.Include(p => p.Brand).FirstOrDefaultAsync(p => p.Id == id, ct)
+        var product = await db.Products.Include(p => p.Brand).Include(p => p.Units).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("المنتج غير موجود");
 
         var pricesChanged = product.RetailPrice != request.RetailPrice || product.WholesalePrice != request.WholesalePrice
-            || product.MinSalePrice != request.MinSalePrice;
+            || product.MinSalePrice != request.MinSalePrice
+            || (request.Units is not null && UnitsKey(product.Units.Select(u => new SaveProductUnit(u.UnitId, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)))
+                != UnitsKey(request.Units));
         if (pricesChanged && !currentUser.HasPermission(Permissions.ProductsEditPrices))
             throw new ForbiddenException("ليست لديك صلاحية تعديل أسعار البيع");
 
@@ -191,6 +195,29 @@ public sealed class ProductService(
         product.IsArchived = archived;
         audit.Log(archived ? "Product.Archive" : "Product.Unarchive", "Product", id.ToString());
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task DeleteAsync(int id, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var product = await db.Products.Include(p => p.Units).FirstOrDefaultAsync(p => p.Id == id, ct)
+            ?? throw new NotFoundException("المنتج غير موجود");
+        // Anything that sits on an invoice is part of the books: it can only be archived.
+        if (await db.PurchaseInvoiceLines.AnyAsync(l => l.ProductId == id, ct))
+            throw new BusinessRuleException("لا يمكن حذف المنتج لأنه موجود في فواتير شراء؛ يمكنك أرشفته بدلًا من ذلك");
+        if (await db.SaleInvoiceLines.AnyAsync(l => l.ProductId == id, ct))
+            throw new BusinessRuleException("لا يمكن حذف المنتج لأنه موجود في فواتير بيع؛ يمكنك أرشفته بدلًا من ذلك");
+        if (await db.Products.AnyAsync(p => p.ParentProductId == id, ct))
+            throw new BusinessRuleException("لا يمكن حذف المنتج لأن له متغيرات؛ احذف المتغيرات أولًا");
+
+        var stock = await db.StockBalances.Where(b => b.ProductId == id).SumAsync(b => (decimal?)b.Quantity, ct) ?? 0;
+        await db.StockCountLines.Where(l => l.ProductId == id).ExecuteDeleteAsync(ct);
+        await db.StockMovements.Where(m => m.ProductId == id).ExecuteDeleteAsync(ct);
+        await db.StockBalances.Where(b => b.ProductId == id).ExecuteDeleteAsync(ct);
+        db.Products.Remove(product);
+        audit.Log("Product.Delete", "Product", id.ToString(), new { product.Sku, product.Name, Stock = stock }, null);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 
     public Task<bool> IsCodeTakenAsync(string code, int? exceptId, CancellationToken ct = default)
@@ -242,7 +269,30 @@ public sealed class ProductService(
         if (r.PurchasePrice is { } purchasePrice && (isNew || CanViewCost)) product.PurchasePrice = purchasePrice;
 
         product.BrandId = await ResolveBrandAsync(r.BrandName, ct);
+
+        if (r.Units is not null)
+        {
+            var unitIds = r.Units.Select(u => u.UnitId).Distinct().ToList();
+            if (await db.Units.CountAsync(u => unitIds.Contains(u.Id), ct) != unitIds.Count)
+                throw new ValidationFailedException("units", "إحدى الوحدات غير موجودة");
+            if (r.Units.Any(u => u.UnitId == r.UnitId))
+                throw new ValidationFailedException("units", "الوحدة الإضافية يجب أن تختلف عن الوحدة الأساسية");
+            // Updated in place by unit, so invoices that point at a unit keep pointing at it.
+            foreach (var gone in product.Units.Where(u => !unitIds.Contains(u.UnitId)).ToList()) product.Units.Remove(gone);
+            foreach (var u in r.Units)
+            {
+                var unit = product.Units.FirstOrDefault(x => x.UnitId == u.UnitId);
+                if (unit is null) product.Units.Add(unit = new ProductUnit { UnitId = u.UnitId });
+                unit.Factor = u.Factor;
+                unit.RetailPrice = u.RetailPrice;
+                unit.WholesalePrice = u.WholesalePrice;
+                unit.MinSalePrice = u.MinSalePrice;
+            }
+        }
     }
+
+    private static string UnitsKey(IEnumerable<SaveProductUnit> units) =>
+        string.Join('|', units.OrderBy(u => u.UnitId).Select(u => $"{u.UnitId}:{u.Factor:0.###}:{u.RetailPrice:0.##}:{u.WholesalePrice:0.##}:{u.MinSalePrice:0.##}"));
 
     private async Task<int?> ResolveBrandAsync(string? brandName, CancellationToken ct)
     {
@@ -280,6 +330,7 @@ public sealed class ProductService(
     {
         p.Sku, p.Barcode, p.Name, p.CategoryId, p.UnitId, p.BrandId, p.Size, p.Color, p.Model,
         p.PurchasePrice, p.WholesalePrice, p.RetailPrice, p.MinSalePrice, p.ReorderLevel,
+        Units = UnitsKey(p.Units.Select(u => new SaveProductUnit(u.UnitId, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice))),
     };
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

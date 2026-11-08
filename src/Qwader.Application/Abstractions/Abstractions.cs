@@ -26,6 +26,7 @@ public interface IAppDbContext
     DbSet<Category> Categories { get; }
     DbSet<Brand> Brands { get; }
     DbSet<Product> Products { get; }
+    DbSet<ProductUnit> ProductUnits { get; }
     DbSet<StockBalance> StockBalances { get; }
     DbSet<StockMovement> StockMovements { get; }
     DbSet<StockCount> StockCounts { get; }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { CloudOff, Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
-import { productsApi } from '@/api/catalog';
+import { productsApi, type ProductUnit } from '@/api/catalog';
 import { ApiError } from '@/api/client';
 import type { PriceTier, Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
@@ -21,13 +21,13 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
 import { formatDateTime } from '@/lib/format';
-import { cartTotals, lineTotal, tierPrice, toCartProduct, useCart, type CartLine } from './cart';
+import { cartTotals, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine } from './cart';
 import { useIsOffline } from './OfflineSales';
 import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
 export function PosPage() {
-  const { cart, add, update, remove, setTier, reset } = useCart();
+  const { cart, add, update, remove, changeUnit, setTier, reset } = useCart();
   useLookups(); // load accounts early so checkout opens instantly
   const { can } = useAuth();
   const canWholesale = can(P.SalesWholesale);
@@ -39,6 +39,7 @@ export function PosPage() {
   const confirm = useConfirm();
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<CartLine | null>(null);
+  const [flashKey, setFlashKey] = useState<string | null>(null);
   const [checkout, setCheckout] = useState(false);
   const [done, setDone] = useState<{ sale: Sale; change: number } | null>(null);
   const [flash, setFlash] = useState<number | null>(null);
@@ -64,12 +65,13 @@ export function PosPage() {
     ? { data: { items: localItems }, isPending: false, isFetching: false }
     : remote;
 
-  const addProduct = (p: Parameters<typeof add>[0]) => {
-    const error = add(p);
+  const addProduct = (p: Parameters<typeof add>[0], unit: ProductUnit | null = null) => {
+    const error = add(p, 1, unit);
     if (error) toast.error(error);
     else {
       setFlash(p.id);
-      setTimeout(() => setFlash(null), 600);
+      setFlashKey(`${p.id}:${unit?.id ?? 0}`);
+      setTimeout(() => { setFlash(null); setFlashKey(null); }, 600);
     }
     return !error;
   };
@@ -162,7 +164,8 @@ export function PosPage() {
             ) : (
               <ul className={cn('divide-y divide-line', results.isFetching && 'opacity-60')}>
                 {results.data.items.map((p) => {
-                  const inCart = cart.lines.find((l) => l.productId === p.id)?.quantity ?? 0;
+                  // In base units: a dozen on the invoice holds 12 pieces.
+                  const inCart = cart.lines.filter((l) => l.productId === p.id).reduce((s, l) => s + l.quantity * l.factor, 0);
                   const out = p.quantity - inCart <= 0;
                   return (
                     <li key={p.id}>
@@ -183,6 +186,24 @@ export function PosPage() {
                           <Plus className="size-5" />
                         </span>
                       </button>
+                      {/* The same product by the dozen (or any other unit it is sold in). */}
+                      {(p.units?.length ?? 0) > 0 && (
+                        <div className="flex flex-wrap justify-end gap-2 px-3 pb-3">
+                          {p.units!.map((u) => {
+                            const short = p.quantity - inCart < u.factor;
+                            return (
+                              <button key={u.id} type="button" disabled={short} onClick={() => addProduct(p, u)}
+                                className={cn('inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-sm font-semibold',
+                                  short ? 'border-line text-muted opacity-60' : 'border-brand-200 bg-brand-50 text-brand-800 active:bg-brand-100',
+                                  flashKey === `${p.id}:${u.id}` && 'bg-green-50')}>
+                                <Plus className="size-4" aria-hidden /> {u.unitName}
+                                <span className="text-xs font-normal">({formatQuantity(u.factor)} {p.unitName})</span>
+                                <span className="tabular">{formatMoney(cart.tier === 'Wholesale' ? u.wholesalePrice : u.retailPrice)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </li>
                   );
                 })}
@@ -214,15 +235,26 @@ export function PosPage() {
         ) : (
           <ul className="space-y-2">
             {cart.lines.map((l) => (
-              <li key={l.productId} className="rounded-card border border-line bg-surface p-3">
+              <li key={l.key} className="rounded-card border border-line bg-surface p-3">
                 <button type="button" onClick={() => setEditing(l)} className="block w-full text-start font-semibold leading-snug">{l.name}</button>
+                {l.units.length > 0 && (
+                  <div className="mt-1.5 flex rounded-xl bg-black/5 p-1" role="radiogroup" aria-label={`وحدة البيع: ${l.name}`}>
+                    {unitChoices(l).map((u) => (
+                      <button key={u.productUnitId ?? 0} type="button" role="radio" aria-checked={l.productUnitId === u.productUnitId}
+                        onClick={() => { const e = changeUnit(l.key, u.productUnitId); if (e) toast.error(e); }}
+                        className={cn('h-9 flex-1 rounded-lg px-2 text-sm font-semibold', l.productUnitId === u.productUnitId ? 'bg-surface shadow-sm' : 'text-muted')}>
+                        {u.unitName}{u.factor !== 1 && <span className="text-xs font-normal"> ({formatQuantity(u.factor)})</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {/* The price is a visible button: sellers may change it (never under the minimum sale price). */}
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <button type="button" onClick={() => setEditing(l)} aria-label={`تعديل سعر ${l.name}`}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 text-sm text-brand-800 hover:bg-brand-100 active:bg-brand-100">
                     <Pencil className="size-4" aria-hidden />
                     <span className="tabular font-bold">{formatMoney(l.unitPrice)}</span>
-                    <span className="text-xs">تعديل السعر</span>
+                    <span className="text-xs">{l.units.length > 0 ? `لكل ${l.unitName} · تعديل` : 'تعديل السعر'}</span>
                   </button>
                   {l.unitPrice < tierPrice(l, cart.tier) ? (
                     <span className="text-xs font-semibold text-warning">خصم {formatMoney(round2(l.quantity * (tierPrice(l, cart.tier) - l.unitPrice)))}</span>
@@ -235,12 +267,12 @@ export function PosPage() {
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
                     <IconButton label="إنقاص الكمية" className="border border-line"
-                      onClick={() => (l.quantity <= 1 ? remove(l.productId) : update(l.productId, { quantity: l.quantity - 1 }))}>
+                      onClick={() => (l.quantity <= 1 ? remove(l.key) : update(l.key, { quantity: l.quantity - 1 }))}>
                       {l.quantity <= 1 ? <Trash2 className="size-5 text-danger" /> : <Minus className="size-5" />}
                     </IconButton>
-                    <QuantityInput line={l} onChange={(quantity) => update(l.productId, { quantity })} onLimit={(msg) => toast.error(msg)} />
+                    <QuantityInput line={l} onChange={(quantity) => update(l.key, { quantity })} onLimit={(msg) => toast.error(msg)} />
                     <IconButton label="زيادة الكمية" className="border border-line" disabled={l.quantity >= l.available}
-                      onClick={() => update(l.productId, { quantity: l.quantity + 1 })}>
+                      onClick={() => update(l.key, { quantity: l.quantity + 1 })}>
                       <Plus className="size-5" />
                     </IconButton>
                   </div>
@@ -278,8 +310,9 @@ export function PosPage() {
       )}
 
       {editing && (
-        <LineSheet line={cart.lines.find((l) => l.productId === editing.productId) ?? editing} tier={cart.tier} tierPrice={tierPrice(editing, cart.tier)}
-          onSave={(patch) => update(editing.productId, patch)} onRemove={() => remove(editing.productId)} onClose={() => setEditing(null)} />
+        <LineSheet line={cart.lines.find((l) => l.key === editing.key) ?? editing} tier={cart.tier}
+          tierPrice={tierPrice(cart.lines.find((l) => l.key === editing.key) ?? editing, cart.tier)}
+          onSave={(patch) => update(editing.key, patch)} onRemove={() => remove(editing.key)} onClose={() => setEditing(null)} />
       )}
       {checkout && (
         <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} offline={offline} canSellOffline={!!snapshot && age.usable}
@@ -301,7 +334,7 @@ function QuantityInput({ line, onChange, onLimit }: { line: CartLine; onChange: 
     setText(null);
     if (n === undefined || Number.isNaN(n) || n <= 0 || n === line.quantity) return;
     if (n > line.available) {
-      onLimit(`المتوفر من «${line.name}» ${formatQuantity(line.available)} فقط`);
+      onLimit(`المتوفر من «${line.name}» ${formatQuantity(line.available)} ${line.unitName} فقط`);
       onChange(line.available);
       return;
     }

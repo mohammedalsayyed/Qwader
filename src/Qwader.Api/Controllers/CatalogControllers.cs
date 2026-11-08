@@ -64,6 +64,14 @@ public sealed class ProductsController(IProductService products, IProductExcelSe
         return NoContent();
     }
 
+    [HttpDelete("{id:int}")]
+    [HasPermission(Permissions.ProductsManage)]
+    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    {
+        await products.DeleteAsync(id, ct);
+        return NoContent();
+    }
+
     [HttpPost("{id:int}/unarchive")]
     [HasPermission(Permissions.ProductsManage)]
     public async Task<IActionResult> Unarchive(int id, CancellationToken ct)

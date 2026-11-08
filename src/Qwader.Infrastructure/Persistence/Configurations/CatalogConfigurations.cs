@@ -75,6 +75,19 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
     }
 }
 
+public sealed class ProductUnitConfiguration : IEntityTypeConfiguration<ProductUnit>
+{
+    public void Configure(EntityTypeBuilder<ProductUnit> b)
+    {
+        b.Property(u => u.Factor).AsQuantity();
+        b.HasIndex(u => new { u.ProductId, u.UnitId }).IsUnique();
+        b.HasOne(u => u.Product).WithMany(p => p.Units).HasForeignKey(u => u.ProductId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(u => u.Unit).WithMany().HasForeignKey(u => u.UnitId).OnDelete(DeleteBehavior.Restrict);
+        b.ToTable(t => t.HasCheckConstraint("CK_ProductUnits_Values",
+            "[Factor] > 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0"));
+    }
+}
+
 public sealed class StockBalanceConfiguration : IEntityTypeConfiguration<StockBalance>
 {
     public void Configure(EntityTypeBuilder<StockBalance> b)

@@ -4,7 +4,8 @@ using Qwader.Domain.Purchasing;
 
 namespace Qwader.Application.Purchasing;
 
-public sealed record PurchaseLineInput(int ProductId, decimal Quantity, decimal UnitCost, decimal LineDiscount = 0);
+/// <summary>ProductUnitId = bought in an extra unit (dozen); null = the base unit. Quantity and cost are per that unit.</summary>
+public sealed record PurchaseLineInput(int ProductId, decimal Quantity, decimal UnitCost, decimal LineDiscount = 0, int? ProductUnitId = null);
 
 public sealed record SavePurchaseRequest(
     Guid IdempotencyKey,
@@ -40,7 +41,8 @@ public sealed record PurchaseListItemDto(
 
 public sealed record PurchaseLineDto(
     int Id, int ProductId, string Sku, string ProductName, string UnitName,
-    decimal Quantity, decimal UnitCost, decimal LineDiscount, decimal LineTotal, decimal NetUnitCost, decimal ReturnedQuantity);
+    decimal Quantity, decimal UnitCost, decimal LineDiscount, decimal LineTotal, decimal NetUnitCost, decimal ReturnedQuantity,
+    int? ProductUnitId = null, decimal UnitFactor = 1);
 
 public sealed record PurchaseReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason);
 

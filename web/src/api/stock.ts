@@ -190,6 +190,9 @@ export interface PurchaseLine {
   lineTotal: number;
   netUnitCost: number;
   returnedQuantity: number;
+  /** Bought in an extra unit (dozen); null = the base unit. */
+  productUnitId?: number | null;
+  unitFactor?: number;
 }
 
 export interface Purchase {
@@ -228,7 +231,7 @@ export interface SavePurchaseInput {
   paidAmount: number;
   paymentAccountId?: number | null;
   notes?: string | null;
-  lines: { productId: number; quantity: number; unitCost: number; lineDiscount: number }[];
+  lines: { productId: number; quantity: number; unitCost: number; lineDiscount: number; productUnitId?: number | null }[];
   post: boolean;
 }
 
