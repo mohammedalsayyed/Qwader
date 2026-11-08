@@ -237,4 +237,24 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var lossTotal = await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Losses")).ReadAsync<MovementTotalDto>();
         lossTotal.Should().Be(new MovementTotalDto(1, -2, -6));
     }
+
+    [Fact]
+    public async Task Archiving_writes_off_the_remaining_stock_as_a_loss()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 15, openingQuantity: 12, openingCost: 9);
+
+        (await admin.PostAsync($"/api/products/{product.Id}/archive", null)).EnsureSuccessStatusCode();
+
+        (await admin.GetProductAsync(product.Id)).Quantity.Should().Be(0);
+        var losses = await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Losses")).ReadAsync<MovementTotalDto>();
+        losses.Should().Be(new MovementTotalDto(1, -12, -108));
+        var movements = await (await admin.GetAsync($"/api/inventory/movements?productId={product.Id}&type=ArchiveWriteOff")).ReadAsync<Application.Common.PagedResult<StockMovementDto>>();
+        movements.Items.Should().ContainSingle().Which.BalanceAfter.Should().Be(0);
+
+        // Back on the list it starts at zero; archiving again writes nothing more off.
+        (await admin.PostAsync($"/api/products/{product.Id}/unarchive", null)).EnsureSuccessStatusCode();
+        (await admin.PostAsync($"/api/products/{product.Id}/archive", null)).EnsureSuccessStatusCode();
+        (await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Losses")).ReadAsync<MovementTotalDto>()).Count.Should().Be(1);
+    }
 }

@@ -51,7 +51,7 @@ public enum MovementGroup
 {
     /// <summary>Found + count increase: the «زيادة بالجرد» line of the profit report.</summary>
     Gains = 1,
-    /// <summary>Damaged + lost + count decrease: the «نقص بالتالف والمفقود» line.</summary>
+    /// <summary>Damaged + lost + count decrease + stock written off on archiving: the «نقص بالتالف والمفقود» line.</summary>
     Losses = 2,
 }
 
@@ -165,7 +165,7 @@ public sealed class InventoryService(
 
     /// <summary>The shrinkage groups the profit report shows: gains (found + count increase) and losses (damaged, lost, count decrease).</summary>
     private static readonly StockMovementType[] GainTypes = [StockMovementType.Found, StockMovementType.CountIncrease];
-    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease];
+    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease, StockMovementType.ArchiveWriteOff];
 
     private IQueryable<StockMovement> FilterMovements(MovementListRequest request)
     {

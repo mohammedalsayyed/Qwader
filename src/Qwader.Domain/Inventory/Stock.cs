@@ -27,13 +27,15 @@ public enum StockMovementType
     Found = 22,
     CountIncrease = 23,
     CountDecrease = 24,
+    /// <summary>Stock left on a product when it is archived, written off so archived goods hold no capital.</summary>
+    ArchiveWriteOff = 25,
 }
 
 public static class StockMovementTypes
 {
     /// <summary>Movements whose value is a stock loss (or, for gains, a negative loss) in the P&amp;L.</summary>
     public static readonly StockMovementType[] Shrinkage =
-        [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.Found, StockMovementType.CountIncrease, StockMovementType.CountDecrease];
+        [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.Found, StockMovementType.CountIncrease, StockMovementType.CountDecrease, StockMovementType.ArchiveWriteOff];
 }
 
 /// <summary>Immutable record of one change to a product's stock. Quantity is signed: + in, − out.</summary>

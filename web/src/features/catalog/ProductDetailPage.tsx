@@ -32,7 +32,9 @@ export function ProductDetailPage() {
   const archive = useMutation({
     mutationFn: (archived: boolean) => (archived ? productsApi.archive(id) : productsApi.unarchive(id)),
     onSuccess: (_, archived) => {
-      toast.success(archived ? 'تمت أرشفة المنتج' : 'تمت إعادة المنتج إلى القائمة');
+      toast.success(archived ? 'تمت أرشفة المنتج وتصفير رصيده' : 'تمت إعادة المنتج إلى القائمة — رصيده صفر، أدخل الكمية بفاتورة شراء');
+      void queryClient.invalidateQueries({ queryKey: ['movements'] });
+      void queryClient.invalidateQueries({ queryKey: ['inventory-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['product', id] });
       void queryClient.invalidateQueries({ queryKey: ['products'] });
     },
@@ -103,8 +105,9 @@ export function ProductDetailPage() {
               if (p.isArchived) return archive.mutate(false);
               const ok = await confirm({
                 title: 'أرشفة المنتج',
-                message: p.quantity > 0
-                  ? `ما زال لهذا المنتج رصيد ${formatQuantity(p.quantity)} ${p.unitName}. الأرشفة تخفيه من القوائم والبيع ولا تحذف حركاته. متابعة؟`
+                message: p.quantity !== 0
+                  ? `لهذا المنتج رصيد ${formatQuantity(p.quantity)} ${p.unitName}${p.stockValue != null ? ` (قيمته ${formatMoney(p.stockValue)})` : ''}. `
+                    + 'الأرشفة تصفّر الرصيد وتسجّله «تصفير عند الأرشفة» ضمن نقص المخزون في التقارير، وتخفي المنتج من القوائم والبيع. متابعة؟'
                   : 'الأرشفة تخفي المنتج من القوائم والبيع، ويمكن إعادته لاحقًا. متابعة؟',
                 confirmLabel: 'أرشفة',
                 danger: true,

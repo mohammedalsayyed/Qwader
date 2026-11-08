@@ -12,7 +12,8 @@ export type MovementType =
   | 'Lost'
   | 'Found'
   | 'CountIncrease'
-  | 'CountDecrease';
+  | 'CountDecrease'
+  | 'ArchiveWriteOff';
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   OpeningBalance: 'رصيد افتتاحي',
@@ -27,6 +28,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   Found: 'زيادة / عثور',
   CountIncrease: 'زيادة جرد',
   CountDecrease: 'نقص جرد',
+  ArchiveWriteOff: 'تصفير عند الأرشفة',
 };
 
 export interface StockMovement {

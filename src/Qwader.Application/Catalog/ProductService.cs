@@ -190,11 +190,39 @@ public sealed class ProductService(
 
     public async Task SetArchivedAsync(int id, bool archived, CancellationToken ct = default)
     {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var product = await db.Products.FirstOrDefaultAsync(p => p.Id == id, ct) ?? throw new NotFoundException("المنتج غير موجود");
         if (product.IsArchived == archived) return;
         product.IsArchived = archived;
-        audit.Log(archived ? "Product.Archive" : "Product.Unarchive", "Product", id.ToString());
+
+        // An archived product holds no stock: whatever is left is written off (a shrinkage loss in the reports),
+        // so the stock value on every screen and the capital in the report agree.
+        object? writtenOff = null;
+        if (archived)
+        {
+            var balances = await db.StockBalances.AsNoTracking().Where(b => b.ProductId == id && b.Quantity != 0)
+                .OrderBy(b => b.WarehouseId).Select(b => new { b.WarehouseId, b.Quantity }).ToListAsync(ct);
+            if (balances.Count > 0)
+            {
+                if (!currentUser.HasPermission(Permissions.InventoryAdjust))
+                    throw new ForbiddenException("للمنتج رصيد في المخزون؛ أرشفته تصفّر الرصيد وتحتاج صلاحية تعديل المخزون");
+                var number = await numbers.NextAsync(DocumentType.StockAdjustment, ct);
+                const string note = "تصفير المخزون عند أرشفة المنتج";
+                foreach (var b in balances)
+                {
+                    if (b.Quantity > 0)
+                        await inventory.IssueAsync(new StockEntry(id, b.WarehouseId, b.Quantity, StockMovementType.ArchiveWriteOff, "Adjustment", null, number, note), ct: ct);
+                    else // sold beyond stock (offline): bring it back up to zero at the current average
+                        await inventory.ReceiveAsync(new StockEntry(id, b.WarehouseId, -b.Quantity, StockMovementType.ArchiveWriteOff, "Adjustment", null, number, note),
+                            product.AverageCost, ct);
+                }
+                writtenOff = new { number, Quantity = balances.Sum(b => b.Quantity), Value = CostMath.RoundMoney(balances.Sum(b => b.Quantity) * product.AverageCost) };
+            }
+        }
+
+        audit.Log(archived ? "Product.Archive" : "Product.Unarchive", "Product", id.ToString(), null, writtenOff);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 
     public Task<bool> IsCodeTakenAsync(string code, int? exceptId, CancellationToken ct = default)

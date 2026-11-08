@@ -69,7 +69,7 @@ public interface IReportService
 
 public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IClock clock) : IReportService
 {
-    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease];
+    private static readonly StockMovementType[] LossTypes = [StockMovementType.Damaged, StockMovementType.Lost, StockMovementType.CountDecrease, StockMovementType.ArchiveWriteOff];
 
     /// <summary>
     /// Surpluses are usually stock that was never entered (or entered through a count instead of a purchase);
