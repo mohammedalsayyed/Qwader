@@ -171,6 +171,4 @@ public interface IProductService
     Task<ProductDetailDto> UpdateAsync(int id, SaveProductRequest request, CancellationToken ct = default);
     Task SetArchivedAsync(int id, bool archived, CancellationToken ct = default);
     Task<bool> IsCodeTakenAsync(string code, int? exceptId, CancellationToken ct = default);
-    /// <summary>Deletes a product that never appeared on any invoice (a mistake): its opening stock and history go with it.</summary>
-    Task DeleteAsync(int id, CancellationToken ct = default);
 }

@@ -106,18 +106,4 @@ public sealed class MultiUnitTests(ApiFactory factory)
             .ReadAsync<List<ProductReportRow>>();
         rows.Single(r => r.ProductId == product.Id).Quantity.Should().Be(13);
     }
-
-    [Fact]
-    public async Task A_product_never_invoiced_can_be_deleted_with_its_opening_stock()
-    {
-        var admin = await factory.LoginAsync();
-        var fresh = await admin.CreateProductAsync(openingQuantity: 5, openingCost: 3);
-        (await admin.DeleteAsync($"/api/products/{fresh.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await admin.GetAsync($"/api/products/{fresh.Id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var bought = await admin.CreateProductAsync();
-        var supplier = await admin.CreateSupplierAsync();
-        await admin.PurchaseAsync(supplier.Id, [new PurchaseLineInput(bought.Id, 1, 5)]);
-        (await admin.DeleteAsync($"/api/products/{bought.Id}")).StatusCode.Should().Be((HttpStatusCode)422);
-    }
 }

@@ -166,7 +166,6 @@ export const productsApi = {
   update: (id: number, input: SaveProductInput) => api<ProductDetail>(`/products/${id}`, { method: 'PUT', body: input }),
   archive: (id: number) => api<void>(`/products/${id}/archive`, { method: 'POST' }),
   unarchive: (id: number) => api<void>(`/products/${id}/unarchive`, { method: 'POST' }),
-  remove: (id: number) => api<void>(`/products/${id}`, { method: 'DELETE' }),
   exportExcel: (params: ProductListParams) => apiDownload('/products/export', { ...params }, 'products.xlsx'),
   template: () => apiDownload('/products/import-template', undefined, 'products-template.xlsx'),
   importExcel: (file: File) => {

@@ -197,29 +197,6 @@ public sealed class ProductService(
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task DeleteAsync(int id, CancellationToken ct = default)
-    {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var product = await db.Products.Include(p => p.Units).FirstOrDefaultAsync(p => p.Id == id, ct)
-            ?? throw new NotFoundException("المنتج غير موجود");
-        // Anything that sits on an invoice is part of the books: it can only be archived.
-        if (await db.PurchaseInvoiceLines.AnyAsync(l => l.ProductId == id, ct))
-            throw new BusinessRuleException("لا يمكن حذف المنتج لأنه موجود في فواتير شراء؛ يمكنك أرشفته بدلًا من ذلك");
-        if (await db.SaleInvoiceLines.AnyAsync(l => l.ProductId == id, ct))
-            throw new BusinessRuleException("لا يمكن حذف المنتج لأنه موجود في فواتير بيع؛ يمكنك أرشفته بدلًا من ذلك");
-        if (await db.Products.AnyAsync(p => p.ParentProductId == id, ct))
-            throw new BusinessRuleException("لا يمكن حذف المنتج لأن له متغيرات؛ احذف المتغيرات أولًا");
-
-        var stock = await db.StockBalances.Where(b => b.ProductId == id).SumAsync(b => (decimal?)b.Quantity, ct) ?? 0;
-        await db.StockCountLines.Where(l => l.ProductId == id).ExecuteDeleteAsync(ct);
-        await db.StockMovements.Where(m => m.ProductId == id).ExecuteDeleteAsync(ct);
-        await db.StockBalances.Where(b => b.ProductId == id).ExecuteDeleteAsync(ct);
-        db.Products.Remove(product);
-        audit.Log("Product.Delete", "Product", id.ToString(), new { product.Sku, product.Name, Stock = stock }, null);
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-    }
-
     public Task<bool> IsCodeTakenAsync(string code, int? exceptId, CancellationToken ct = default)
     {
         var c = code.Trim();
