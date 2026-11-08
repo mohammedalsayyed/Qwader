@@ -24,10 +24,11 @@ const schema = z.object({
   name: z.string().trim().min(1, 'اكتب اسم المنتج').max(150, 'اسم المنتج طويل جدًا'),
   retailPrice: zPositive('اكتب سعر البيع'),
   wholesalePrice: zOptionalAmount(),
+  minSalePrice: zOptionalAmount(),
   purchasePrice: zOptionalAmount(),
   quantity: zOptionalAmount(),
   barcode: z.string().trim().max(50).regex(/^\S*$/, 'الباركود يجب ألا يحتوي على مسافات').optional(),
-});
+}).refine((v) => v.minSalePrice == null || v.minSalePrice <= v.retailPrice, { path: ['minSalePrice'], message: 'أقل سعر بيع يجب ألا يتجاوز سعر البيع' });
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
 
@@ -36,12 +37,14 @@ export interface QuickProductDraft {
   name: string;
   category: LookupItem | null;
   retailPrice: string;
+  wholesalePrice?: string;
+  minSalePrice?: string;
   purchasePrice: string;
   quantity: string;
   barcode?: string;
 }
 
-const EMPTY = { name: '', retailPrice: '', wholesalePrice: '', purchasePrice: '', quantity: '', barcode: '' };
+const EMPTY = { name: '', retailPrice: '', wholesalePrice: '', minSalePrice: '', purchasePrice: '', quantity: '', barcode: '' };
 
 /**
  * The everyday way to add products: five fields, sensible defaults for the rest
@@ -85,7 +88,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
         unitId,
         retailPrice: v.retailPrice,
         wholesalePrice: v.wholesalePrice ?? v.retailPrice, // blank = the retail price
-        minSalePrice: 0,
+        minSalePrice: v.minSalePrice ?? 0, // blank = no floor
         purchasePrice: v.purchasePrice ?? 0,
         reorderLevel: settings.data?.defaultReorderLevel ?? 5,
         openingQuantity: canOpenStock ? v.quantity ?? null : null,
@@ -107,7 +110,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       }
     },
     onError: (e) => {
-      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'wholesalePrice', 'purchasePrice', 'barcode']);
+      const msg = applyServerErrors(e, setError, ['name', 'retailPrice', 'wholesalePrice', 'minSalePrice', 'purchasePrice', 'barcode']);
       if (msg) toast.error(msg);
     },
   });
@@ -183,6 +186,9 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
           </Field>
           <Field label="سعر الجملة" error={errors.wholesalePrice?.message} hint="فارغ = نفس سعر البيع">
             {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder={String(retailRaw ?? '') || '0'} invalid={!!errors.wholesalePrice} {...register('wholesalePrice')} />}
+          </Field>
+          <Field label="أقل سعر بيع مسموح" error={errors.minSalePrice?.message} hint="فارغ = بدون حد">
+            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.minSalePrice} {...register('minSalePrice')} />}
           </Field>
         </div>
 
