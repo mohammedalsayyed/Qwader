@@ -40,6 +40,7 @@ public sealed class ProductService(
         var query = ApplySearch(db.Products.AsNoTracking().Where(p => p.IsArchived == request.Archived), request.Search);
         if (request.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
         if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
+        if (request.NoCost && CanViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
 
         var withQty = query.Select(p => new { P = p, Qty = p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0 });
         withQty = request.Stock switch

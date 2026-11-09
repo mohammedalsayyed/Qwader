@@ -61,6 +61,7 @@ public sealed class ProductExcelService(
         var canViewCost = currentUser.HasPermission(Permissions.ProductsViewCost);
         var query = ProductService.ApplySearch(db.Products.AsNoTracking().Where(p => p.IsArchived == filter.Archived), filter.Search);
         if (filter.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
+        if (filter.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
 
         var rows = await query.OrderBy(p => p.Category.Name).ThenBy(p => p.Name)
             .Select(p => new

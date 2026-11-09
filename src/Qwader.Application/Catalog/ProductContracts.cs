@@ -52,6 +52,8 @@ public sealed class ProductListRequest : PagedRequest
     public int? SupplierId { get; set; }
     public StockFilter Stock { get; set; } = StockFilter.All;
     public bool Archived { get; set; }
+    /// <summary>Only products whose purchase price was never entered (purchase price and average cost both 0). Needs cost permission.</summary>
+    public bool NoCost { get; set; }
 }
 
 public sealed record StockByWarehouseDto(int WarehouseId, string WarehouseName, decimal Quantity);

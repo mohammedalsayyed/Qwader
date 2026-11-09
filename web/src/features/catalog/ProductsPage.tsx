@@ -18,7 +18,7 @@ import { formatMoney } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { useLookups } from '@/lib/queries';
 
-type Filter = StockFilter | 'Archived';
+type Filter = StockFilter | 'Archived' | 'NoCost';
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'All', label: 'الكل' },
   { value: 'Available', label: 'متوفر' },
@@ -26,6 +26,8 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'Out', label: 'نفد' },
   { value: 'Archived', label: 'المؤرشفة' },
 ];
+/** Products whose purchase price was never entered: their profit and stock value read as zero until it is. */
+const NO_COST: { value: Filter; label: string } = { value: 'NoCost', label: 'بدون سعر شراء' };
 
 const PAGE_SIZE = 20;
 
@@ -60,8 +62,9 @@ export function ProductsPage() {
   const listParams = {
     search: term,
     categoryId,
-    stock: filter === 'Archived' ? undefined : filter,
+    stock: filter === 'Archived' || filter === 'NoCost' ? undefined : filter,
     archived: filter === 'Archived',
+    noCost: filter === 'NoCost' || undefined,
   };
 
   const query = useQuery({
@@ -83,7 +86,12 @@ export function ProductsPage() {
         actions={
           <>
             {can(P.ProductsManage) && (
-              <div className="hidden lg:block">
+              <div className="hidden gap-2 lg:flex">
+                <Link to="/products/new" className="contents">
+                  <Button variant="secondary">
+                    <SlidersHorizontal className="size-5" /> إضافة منتج بكل التفاصيل
+                  </Button>
+                </Link>
                 <Button onClick={() => setAdding(true)}>
                   <Plus className="size-5" /> إضافة منتج
                 </Button>
@@ -110,7 +118,7 @@ export function ProductsPage() {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
-            <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={FILTERS} />
+            <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST] : FILTERS} />
           </div>
           <div className="sm:w-64">
             <CategoryPicker

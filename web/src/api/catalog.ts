@@ -139,6 +139,8 @@ export interface ProductListParams {
   supplierId?: number;
   stock?: StockFilter;
   archived?: boolean;
+  /** Only products with no purchase price entered (needs cost permission). */
+  noCost?: boolean;
 }
 
 export interface ImportResult {

@@ -208,6 +208,12 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {canOpenStock && (
+          <Field label="الكمية الموجودة الآن" error={errors.quantity?.message} hint="اتركها فارغة إذا لم تصل البضاعة بعد">
+            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.quantity} {...register('quantity')} />}
+          </Field>
+        )}
+
         <Field label="الباركود (اختياري)" error={errors.barcode?.message}>
           {(id, d) => (
             <div className="flex gap-2">
@@ -216,12 +222,6 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </Field>
-
-        {canOpenStock && (
-          <Field label="الكمية الموجودة الآن" error={errors.quantity?.message} hint="اتركها فارغة إذا لم تصل البضاعة بعد">
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.quantity} {...register('quantity')} />}
-          </Field>
-        )}
       </form>
       {scanning && <BarcodeScannerSheet onDetected={(code) => setValue('barcode', code, { shouldValidate: true })} onClose={() => setScanning(false)} />}
     </Sheet>
