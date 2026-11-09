@@ -31,7 +31,8 @@ public sealed class ExcelService : IExcelService
                 switch (row[c])
                 {
                     case null: break;
-                    case decimal d: cell.Value = d; cell.Style.NumberFormat.Format = "#,##0.##"; break;
+                    // "#,##0.##" shows a whole number as «938.» in Excel, so whole numbers get a format without the point.
+                    case decimal d: cell.Value = d; cell.Style.NumberFormat.Format = d == decimal.Truncate(d) ? "#,##0" : "#,##0.##"; break;
                     case int i: cell.Value = i; break;
                     case double dbl: cell.Value = dbl; break;
                     case DateTime dt: cell.Value = dt; cell.Style.DateFormat.Format = "yyyy-mm-dd hh:mm"; break;
