@@ -1,5 +1,7 @@
 import { Link, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { DateRangeFilter, resolveRange, type DateRangeValue, type RangePreset } from '@/components/ui/DateRange';
 import { searchApi } from '@/api/catalog';
 import { reportsApi } from '@/api/reports';
 import { salesApi } from '@/api/sales';
@@ -19,7 +21,7 @@ import {
 import { useAuth } from '@/auth/AuthProvider';
 import { LatestNotifications } from '@/features/notifications/NotificationFeed';
 import { P, type Permission } from '@/auth/permissions';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, localToday } from '@/lib/format';
 
 interface QuickAction {
   to: string;
@@ -110,12 +112,31 @@ export function DashboardPage() {
  * Today's figures. With profit reports: المبيعات (الإيرادات) → إجمالي الربح (− سعر الشراء) → المصروفات → صافي الربح.
  * Staff without report access see their own sales only.
  */
+const PERIODS: RangePreset[] = ['today', 'yesterday', 'last7', 'thisMonth', 'custom', 'all'];
+const PERIOD_TITLES: Partial<Record<RangePreset, string>> = {
+  today: 'اليوم', yesterday: 'أمس', last7: 'آخر 7 أيام', thisMonth: 'هذا الشهر', custom: 'الفترة المحددة', all: 'منذ البداية',
+};
+
+/** «الكل»: the reports accept up to 10 years, which covers everything this store has recorded. */
+function rangeBounds(range: DateRangeValue): { from?: string; to?: string } {
+  if (range.preset !== 'all') return { from: range.from, to: range.to };
+  const today = localToday();
+  const from = new Date(new Date(`${today}T00:00:00Z`).getTime() - 3650 * 86_400_000).toISOString().slice(0, 10);
+  return { from, to: today };
+}
+
 function TodayStats() {
   const navigate = useNavigate();
   const { can } = useAuth();
   const withProfit = can(P.ReportsProfit);
-  const summary = useQuery({ queryKey: ['sales-summary', 'today'], queryFn: () => salesApi.summary(), refetchInterval: 60_000 });
-  const period = useQuery({ queryKey: ['report-period', 'today'], queryFn: () => reportsApi.period({}), refetchInterval: 60_000, enabled: withProfit });
+  // «اليوم» unless the user picks another period; not remembered, so the home screen always opens on today.
+  const [range, setRange] = useState<DateRangeValue>({ preset: 'today', ...resolveRange('today') });
+  const { from, to } = rangeBounds(range);
+  const ready = range.preset !== 'custom' || (!!from && !!to);
+  const summary = useQuery({ queryKey: ['sales-summary', from, to], queryFn: () => salesApi.summary(from, to), refetchInterval: 60_000, enabled: ready,
+    placeholderData: keepPreviousData });
+  const period = useQuery({ queryKey: ['report-period', from, to], queryFn: () => reportsApi.period({ from, to }), refetchInterval: 60_000,
+    enabled: withProfit && ready, placeholderData: keepPreviousData });
   if (summary.isError) return null;
   const s = summary.data;
   const r = withProfit ? period.data : undefined;
@@ -126,8 +147,11 @@ function TodayStats() {
   return (
     <section aria-labelledby="today">
       <h2 id="today" className="mb-2 text-sm font-semibold text-muted">
-        اليوم {s?.ownSalesOnly && '— مبيعاتك أنت'}
+        {PERIOD_TITLES[range.preset]} {s?.ownSalesOnly && '— مبيعاتك أنت'}
       </h2>
+      <div className="mb-3">
+        <DateRangeFilter value={range} onChange={setRange} presets={PERIODS} />
+      </div>
       {withProfit && (
         <div className="mb-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
           <Stat label="المبيعات (الإيرادات)" value={money(r?.netSales)} onClick={() => navigate('/sales')}
@@ -147,7 +171,7 @@ function TodayStats() {
         <Stat label="عدد الفواتير" value={s ? s.invoiceCount : '…'} onClick={() => navigate('/sales')} />
         <Stat label="المبالغ المستلمة" value={value(s?.received)}
           hint={s?.receivedByAccount.slice(0, 2).map((a) => `${a.accountName} ${formatMoney(a.amount)}`).join(' · ') || undefined} />
-        <Stat label="ديون جديدة اليوم" value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
+        <Stat label={range.preset === 'today' ? 'ديون جديدة اليوم' : 'ديون جديدة'} value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
       </div>
     </section>
   );
