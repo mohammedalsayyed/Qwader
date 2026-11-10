@@ -25,6 +25,11 @@ describe('offline till search', () => {
     expect(searchProducts(snapshot, 'غلايه زجاج').map((p) => p.id)).toEqual([3]);
   });
 
+  it('ignores spaces typed or left out', () => {
+    expect(searchProducts(snapshot, 'غلايهزجاج').map((p) => p.id)).toEqual([3]);
+    expect(searchProducts(snapshot, 'مكو اه بخار').map((p) => p.id)).toEqual([2]);
+  });
+
   it('puts an exact code first and finds by barcode', () => {
     expect(searchProducts(snapshot, 'p-010')[0].id).toBe(3);
     expect(findByCode(snapshot, '6291041500213')?.id).toBe(1);

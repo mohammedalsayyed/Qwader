@@ -26,31 +26,40 @@ public sealed class ProductService(
     public static string BuildSearchText(string name, string? size, string? color, string? model, string? brand, string sku, string? barcode) =>
         ArabicText.Normalize(string.Join(' ', new[] { name, model, color, size, brand, sku, barcode }.Where(s => !string.IsNullOrWhiteSpace(s))));
 
-    /// <summary>Applies the shared search semantics: every word must appear; exact code matches rank first.</summary>
+    /// <summary>
+    /// The shared search: every typed word must appear in the product's text with its spaces removed, so a space typed
+    /// or left out anywhere does not matter («صحن بورسولان» = «صحنبورسولان»). Exact code matches rank first.
+    /// </summary>
     public static IQueryable<Product> ApplySearch(IQueryable<Product> query, string? search)
     {
         if (string.IsNullOrWhiteSpace(search)) return query;
         foreach (var term in ArabicText.Normalize(search).Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            query = query.Where(p => p.NormalizedName.Contains(term));
+            query = query.Where(p => p.SearchKey.Contains(term));
         return query;
+    }
+
+    /// <summary>The product list's filters, shared by the list and its Excel export so the file holds what the screen shows.</summary>
+    public static IQueryable<Product> ApplyFilters(IQueryable<Product> query, ProductListRequest request, bool canViewCost)
+    {
+        query = ApplySearch(query.Where(p => p.IsArchived == request.Archived), request.Search);
+        if (request.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
+        if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
+        if (request.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
+        return request.Stock switch
+        {
+            StockFilter.Available => query.Where(p => (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) > p.ReorderLevel),
+            StockFilter.Low => query.Where(p => (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) > 0
+                && (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) <= p.ReorderLevel),
+            StockFilter.Out => query.Where(p => (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) <= 0),
+            StockFilter.NeedsReorder => query.Where(p => (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) <= p.ReorderLevel),
+            _ => query,
+        };
     }
 
     public async Task<PagedResult<ProductListItemDto>> ListAsync(ProductListRequest request, CancellationToken ct = default)
     {
-        var query = ApplySearch(db.Products.AsNoTracking().Where(p => p.IsArchived == request.Archived), request.Search);
-        if (request.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
-        if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
-        if (request.NoCost && CanViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
-
+        var query = ApplyFilters(db.Products.AsNoTracking(), request, CanViewCost);
         var withQty = query.Select(p => new { P = p, Qty = p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0 });
-        withQty = request.Stock switch
-        {
-            StockFilter.Available => withQty.Where(x => x.Qty > x.P.ReorderLevel),
-            StockFilter.Low => withQty.Where(x => x.Qty > 0 && x.Qty <= x.P.ReorderLevel),
-            StockFilter.Out => withQty.Where(x => x.Qty <= 0),
-            StockFilter.NeedsReorder => withQty.Where(x => x.Qty <= x.P.ReorderLevel),
-            _ => withQty,
-        };
 
         var raw = request.Search?.Trim();
         var ordered = string.IsNullOrEmpty(raw)

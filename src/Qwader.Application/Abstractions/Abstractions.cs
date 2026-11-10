@@ -129,7 +129,10 @@ public sealed record ExcelColumn(string Header, int Width = 16, IReadOnlyList<st
 
 public interface IExcelService
 {
-    byte[] Write(string sheetName, IReadOnlyList<ExcelColumn> columns, IEnumerable<object?[]> rows);
+    /// <param name="listsSheet">
+    /// Name of a visible second sheet listing every column's choices (the drop-downs read from it); null keeps that sheet hidden.
+    /// </param>
+    byte[] Write(string sheetName, IReadOnlyList<ExcelColumn> columns, IEnumerable<object?[]> rows, string? listsSheet = null);
 
     /// <summary>Reads the first sheet; header row values become the dictionary keys of every following row.</summary>
     IReadOnlyList<(int RowNumber, IReadOnlyDictionary<string, string?> Cells)> Read(Stream content);

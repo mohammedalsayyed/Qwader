@@ -396,6 +396,13 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("SearchKey")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasComputedColumnSql("REPLACE([NormalizedName], N' ', N'')", true);
+
                     b.Property<string>("Size")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -431,6 +438,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.HasIndex("NormalizedName");
 
                     b.HasIndex("ParentProductId");
+
+                    b.HasIndex("SearchKey");
 
                     b.HasIndex("Sku")
                         .IsUnique();

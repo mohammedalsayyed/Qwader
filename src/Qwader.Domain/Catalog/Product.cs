@@ -12,6 +12,12 @@ public class Product : AuditableEntity
 
     /// <summary>Normalized name + variant attributes, used for searching.</summary>
     public string NormalizedName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// NormalizedName without spaces, computed and indexed by the database, so «صحن بورسولان», «صحنبورسولان» and
+    /// «صحن بورسو لان» all find the same product.
+    /// </summary>
+    public string SearchKey { get; private set; } = string.Empty;
     public string? Description { get; set; }
 
     public int CategoryId { get; set; }

@@ -59,9 +59,7 @@ public sealed class ProductExcelService(
     public async Task<byte[]> ExportAsync(ProductListRequest filter, CancellationToken ct = default)
     {
         var canViewCost = currentUser.HasPermission(Permissions.ProductsViewCost);
-        var query = ProductService.ApplySearch(db.Products.AsNoTracking().Where(p => p.IsArchived == filter.Archived), filter.Search);
-        if (filter.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
-        if (filter.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
+        var query = ProductService.ApplyFilters(db.Products.AsNoTracking(), filter, canViewCost);
 
         var rows = await query.OrderBy(p => p.Category.Name).ThenBy(p => p.Name)
             .Select(p => new
@@ -77,7 +75,7 @@ public sealed class ProductExcelService(
         var units = await UnitNamesAsync(ct);
         var columns = new List<ExcelColumn>
         {
-            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10, units), new(H.Brand, 14),
+            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18, await CategoryNamesAsync(ct)), new(H.Unit, 10, units), new(H.Brand, 14),
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12),
         };
         if (canViewCost) columns.AddRange([new(H.PurchasePrice, 12), new(H.AverageCost, 12)]);
@@ -89,19 +87,25 @@ public sealed class ProductExcelService(
             if (canViewCost) cells.AddRange([r.PurchasePrice, r.AverageCost]);
             cells.AddRange([r.WholesalePrice, r.RetailPrice, r.MinSalePrice, r.Quantity, r.ReorderLevel]);
             return cells.ToArray();
-        }));
+        }), ListsSheet);
     }
+
+    /// <summary>The second sheet of the file: the store's categories and units, which the drop-downs of the first sheet read.</summary>
+    private const string ListsSheet = "الأصناف والوحدات";
+
+    private async Task<IReadOnlyList<string>> CategoryNamesAsync(CancellationToken ct) =>
+        await db.Categories.AsNoTracking().Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => c.Name).ToListAsync(ct);
 
     private async Task<IReadOnlyList<string>> UnitNamesAsync(CancellationToken ct) =>
         await db.Units.AsNoTracking().Where(u => u.IsActive).OrderBy(u => u.Id).Select(u => u.Name).ToListAsync(ct);
 
     public async Task<byte[]> TemplateAsync(CancellationToken ct = default) => excel.Write("المنتجات",
         [
-            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18), new(H.Unit, 10, await UnitNamesAsync(ct)), new(H.Brand, 14),
+            new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18, await CategoryNamesAsync(ct)), new(H.Unit, 10, await UnitNamesAsync(ct)), new(H.Brand, 14),
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12), new(H.PurchasePrice, 12), new(H.Wholesale, 12),
             new(H.Retail, 12), new(H.MinPrice, 12), new(H.ReorderLevel, 10), new(H.OpeningQuantity, 14),
         ],
-        [["", "", "صحن زجاجي 25 سم", "الصحون", "قطعة", "", "25 سم", "شفاف", "", 8, 11, 14, 10, 5, 24]]);
+        [["", "", "صحن زجاجي 25 سم", "الصحون", "قطعة", "", "25 سم", "شفاف", "", 8, 11, 14, 10, 5, 24]], ListsSheet);
 
     private sealed record Row(
         int Number, string? Sku, string? Barcode, string Name, string Category, string? Unit, string? Brand,
@@ -168,8 +172,40 @@ public sealed class ProductExcelService(
         foreach (var row in rows.Where(r => r.Unit is { Length: > 30 }))
             errors.Add(new ImportRowError(row.Number, $"اسم وحدة القياس «{row.Unit}» طويل جدًا (30 حرفًا على الأكثر)"));
 
+        // ---- which existing product each row updates: by its code, or (no code) by its name.
         var skus = rows.Where(r => r.Sku is not null).Select(r => r.Sku!).ToList();
-        var existing = await db.Products.Where(p => skus.Contains(p.Sku)).ToDictionaryAsync(p => p.Sku, StringComparer.OrdinalIgnoreCase, ct);
+        var bySku = await db.Products.Where(p => skus.Contains(p.Sku)).ToDictionaryAsync(p => p.Sku, StringComparer.OrdinalIgnoreCase, ct);
+        var targetIds = new Dictionary<int, int>(); // row number → product id
+        foreach (var row in rows.Where(r => r.Sku is not null && bySku.ContainsKey(r.Sku)))
+            targetIds[row.Number] = bySku[row.Sku!].Id;
+
+        var unnamed = rows.Where(r => r.Sku is null && r.Name.Length > 0).ToList();
+        if (unnamed.Count > 0)
+        {
+            var names = unnamed.Select(r => ArabicText.Normalize(r.Name)).ToHashSet();
+            var candidates = (await db.Products.AsNoTracking().Where(p => !p.IsArchived)
+                    .Select(p => new { p.Id, p.Sku, p.Name, p.Size, p.Color, p.Model }).ToListAsync(ct))
+                .Where(p => names.Contains(ArabicText.Normalize(p.Name))).ToList();
+            static bool Same(string? a, string? b) => ArabicText.Normalize(a) == ArabicText.Normalize(b);
+            foreach (var row in unnamed)
+            {
+                var named = candidates.Where(p => Same(p.Name, row.Name)).ToList();
+                // Variants share a name: the size, colour and model in the row tell them apart. A row that does not is refused
+                // rather than guessed (or added as yet another product).
+                var matches = named.Count > 1
+                    ? named.Where(p => Same(p.Size, row.Size) && Same(p.Color, row.Color) && Same(p.Model, row.Model)).ToList()
+                    : named;
+                if (matches.Count == 1) targetIds[row.Number] = matches[0].Id;
+                else if (named.Count > 1)
+                    errors.Add(new ImportRowError(row.Number, $"الاسم «{row.Name}» لأكثر من منتج ({string.Join("، ", named.Select(m => m.Sku))})؛ اكتب الكود في عمود «{H.Sku}» أو المقاس واللون والموديل"));
+            }
+        }
+        foreach (var dup in rows.Where(r => targetIds.ContainsKey(r.Number)).GroupBy(r => targetIds[r.Number]).Where(g => g.Count() > 1))
+            errors.Add(new ImportRowError(dup.Skip(1).First().Number, $"المنتج «{dup.First().Name}» مكرر داخل الملف"));
+
+        var targetList = targetIds.Values.Distinct().ToList();
+        var existingById = await db.Products.Where(p => targetList.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        Product? TargetOf(Row row) => targetIds.TryGetValue(row.Number, out var id) ? existingById[id] : null;
 
         var barcodes = rows.Where(r => r.Barcode is not null).Select(r => r.Barcode!).ToList();
         var barcodeOwners = await db.Products.AsNoTracking().Where(p => p.Barcode != null && barcodes.Contains(p.Barcode))
@@ -177,7 +213,7 @@ public sealed class ProductExcelService(
         foreach (var row in rows.Where(r => r.Barcode is not null))
         {
             var owner = barcodeOwners.FirstOrDefault(o => string.Equals(o.Barcode, row.Barcode, StringComparison.OrdinalIgnoreCase));
-            if (owner is not null && !string.Equals(owner.Sku, row.Sku, StringComparison.OrdinalIgnoreCase))
+            if (owner is not null && !string.Equals(owner.Sku, TargetOf(row)?.Sku ?? row.Sku, StringComparison.OrdinalIgnoreCase))
                 errors.Add(new ImportRowError(row.Number, $"الباركود «{row.Barcode}» مستخدم للمنتج {owner.Sku}"));
         }
 
@@ -185,10 +221,10 @@ public sealed class ProductExcelService(
         var canOpenStock = currentUser.HasPermission(Permissions.InventoryAdjust) || currentUser.HasPermission(Permissions.PurchasesManage);
         foreach (var row in rows)
         {
-            if (row.Sku is not null && existing.TryGetValue(row.Sku, out var p) && !canEditPrices
+            if (TargetOf(row) is { } p && !canEditPrices
                 && (p.RetailPrice != row.Retail || (row.Wholesale is { } w && w != p.WholesalePrice) || (row.MinPrice is { } m && m != p.MinSalePrice)))
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية تعديل أسعار المنتجات الموجودة"));
-            if (row.OpeningQuantity > 0 && row.Sku is not null && existing.ContainsKey(row.Sku))
+            if (row.OpeningQuantity > 0 && TargetOf(row) is not null)
                 errors.Add(new ImportRowError(row.Number, "لا يمكن إدخال كمية افتتاحية لمنتج موجود؛ استخدم فاتورة شراء أو الجرد"));
             if (row.OpeningQuantity > 0 && !canOpenStock)
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية إدخال رصيد افتتاحي"));
@@ -236,8 +272,8 @@ public sealed class ProductExcelService(
                 brands[row.Brand] = brand;
             }
 
-            Product? product = null;
-            var isNew = row.Sku is null || !existing.TryGetValue(row.Sku, out product);
+            var product = TargetOf(row);
+            var isNew = product is null;
             if (isNew)
             {
                 product = new Product { Sku = row.Sku ?? await NextFreeSkuAsync(ct), PurchasePrice = row.PurchasePrice ?? 0 };

@@ -148,7 +148,12 @@ export function searchProducts(snapshot: OfflineSnapshot, term: string, limit = 
   const words = normalizeArabic(term).split(' ').filter(Boolean);
   if (words.length === 0) return [];
   const isCode = (p: OfflineProduct) => p.sku.toLowerCase() === raw || p.barcode?.toLowerCase() === raw;
-  const found = snapshot.products.filter((p) => isCode(p) || words.every((w) => p.search.includes(w)));
+  // As on the server: the words are looked up in the product's text with its spaces removed.
+  const found = snapshot.products.filter((p) => {
+    if (isCode(p)) return true;
+    const key = p.search.replace(/\s+/g, '');
+    return words.every((w) => key.includes(w));
+  });
   return found.sort((a, b) => Number(isCode(b)) - Number(isCode(a))).slice(0, limit);
 }
 

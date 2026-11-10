@@ -190,7 +190,7 @@ export function ProductsPage() {
               <span className="text-brand-700"><SlidersHorizontal className="size-5" /></span> إضافة منتج بكل التفاصيل
             </Link>
           )}
-          <MenuButton icon={<Download className="size-5" />} label="تصدير القائمة إلى Excel"
+          <MenuButton icon={<Download className="size-5" />} label={filter !== 'All' || term || categoryId ? 'تصدير القائمة إلى Excel (حسب الفلتر)' : 'تصدير القائمة إلى Excel'}
             onClick={() => { setMenuOpen(false); exportExcel.mutate(); }} />
           {can(P.ProductsManage) && (
             <>
@@ -246,8 +246,9 @@ function ImportSheet({ onClose }: { onClose: () => void }) {
       <div className="space-y-4 text-[15px] leading-7">
         <ul className="list-disc space-y-1 ps-5 text-sm text-muted">
           <li>الأعمدة المطلوبة: اسم المنتج، الصنف، سعر المفرق. نزّل النموذج من قائمة الخيارات.</li>
-          <li>الكود الموجود مسبقًا يُحدِّث المنتج، والكود الفارغ يُنشئ منتجًا جديدًا بكود تلقائي.</li>
-          <li>الأصناف غير الموجودة تُنشأ تلقائيًا.</li>
+          <li>الكود الموجود مسبقًا يُحدِّث المنتج. بدون كود: إذا كان الاسم لمنتج موجود يُحدَّث، وإلا يُنشأ منتج جديد بكود تلقائي.</li>
+          <li>إذا كان الاسم لأكثر من منتج (مقاسات أو ألوان) اكتب المقاس واللون والموديل أو الكود.</li>
+          <li>الأصناف والوحدات الموجودة في الورقة الثانية «الأصناف والوحدات» وتظهر كقائمة في الملف؛ وإذا كتبت صنفًا أو وحدة غير موجودة تُنشأ تلقائيًا.</li>
           <li>إذا وُجد خطأ في أي صف لا يُستورد شيء، وتظهر الأخطاء برقم الصف لتصحيحها.</li>
         </ul>
         <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line p-4 text-center hover:bg-canvas">

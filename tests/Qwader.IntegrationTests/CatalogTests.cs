@@ -183,7 +183,68 @@ public sealed class CatalogTests(ApiFactory factory)
         var sheet = wb.Worksheet("المنتجات");
         var unitColumn = sheet.Row(1).CellsUsed().First(c => c.GetString() == "الوحدة").Address.ColumnNumber;
         sheet.DataValidations.Should().Contain(v => v.Ranges.Any(r => r.RangeAddress.FirstAddress.ColumnNumber == unitColumn));
-        wb.Worksheet("القوائم").Column(1).CellsUsed().Select(c => c.GetString()).Should().Contain([box, roll]);
+        var lists = wb.Worksheet("الأصناف والوحدات");
+        lists.Visibility.Should().Be(XLWorksheetVisibility.Visible);
+        lists.Column(2).CellsUsed().Select(c => c.GetString()).Should().Contain([box, roll]);
+    }
+
+    [Fact]
+    public async Task Search_ignores_spaces_typed_or_left_out()
+    {
+        var admin = await factory.LoginAsync();
+        var tag = Guid.NewGuid().ToString("N")[..5];
+        var product = await admin.CreateProductAsync(name: $"صحن بورسولان {tag}");
+
+        foreach (var term in new[] { $"صحنبورسولان {tag}", $"صحن بورسو لان {tag}", $"صحنبورسولان{tag}" })
+        {
+            var found = await admin.GetFromJsonAsync<PagedResult<ProductListItemDto>>($"/api/products?search={Uri.EscapeDataString(term)}", TestJson.Options);
+            found!.Items.Should().ContainSingle(p => p.Id == product.Id, term);
+        }
+    }
+
+    [Fact]
+    public async Task Excel_export_holds_what_the_filters_show_and_lists_the_categories()
+    {
+        var admin = await factory.LoginAsync();
+        var category = await admin.CreateCategoryAsync();
+        var lookups = await admin.LookupsAsync();
+        async Task<ProductDetailDto> Create(string name, decimal qty) => await (await admin.PostAsJsonAsync("/api/products", new SaveProductRequest(name, null, null,
+            category.Id, null, lookups.Units[0].Id, null, null, null, null, null, null, 1, 5, 5, 0, 2, null, qty, 1))).ReadAsync<ProductDetailDto>();
+        var inStock = await Create(TestData.Unique("متوفر"), 20);
+        var empty = await Create(TestData.Unique("نافد"), 0);
+
+        var file = await admin.GetByteArrayAsync($"/api/products/export?categoryId={category.Id}&stock=Out");
+        using var wb = new XLWorkbook(new MemoryStream(file));
+        var names = wb.Worksheet("المنتجات").Column(3).CellsUsed().Skip(1).Select(c => c.GetString()).ToList();
+        names.Should().Equal(empty.Name);
+        wb.Worksheet("الأصناف والوحدات").Column(1).CellsUsed().Select(c => c.GetString()).Should().Contain(category.Name);
+        _ = inStock;
+    }
+
+    [Fact]
+    public async Task Excel_import_without_a_code_updates_the_product_with_that_name()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 10);
+        var file = Workbook(["اسم المنتج", "الصنف", "سعر المفرق"], [product.Name, product.CategoryName, "12.5"]);
+
+        var result = await (await admin.PostAsync("/api/products/import", file)).ReadAsync<ProductImportResult>();
+
+        result.Should().BeEquivalentTo(new { Created = 0, Updated = 1 });
+        (await admin.GetProductAsync(product.Id)).RetailPrice.Should().Be(12.5m);
+
+        // Two variants with that name: the row must say which (by size here), or give the code.
+        var name = TestData.Unique("كاسة");
+        var lookups = await admin.LookupsAsync();
+        foreach (var size in new[] { "صغير", "كبير" })
+            await admin.PostAsJsonAsync("/api/products", new SaveProductRequest(name, null, null, product.CategoryId, null, lookups.Units[0].Id, null, null,
+                size, null, null, null, 1, 5, 5, 0, 2, null));
+        var ambiguous = await (await admin.PostAsync("/api/products/import", Workbook(["اسم المنتج", "الصنف", "سعر المفرق"], [name, product.CategoryName, "7"])))
+            .ReadAsync<ProductImportResult>();
+        ambiguous.Errors.Should().ContainSingle().Which.Message.Should().Contain("لأكثر من منتج");
+        var bySize = await (await admin.PostAsync("/api/products/import", Workbook(["اسم المنتج", "الصنف", "المقاس", "سعر المفرق"], [name, product.CategoryName, "كبير", "7"])))
+            .ReadAsync<ProductImportResult>();
+        bySize.Should().BeEquivalentTo(new { Created = 0, Updated = 1 });
     }
 
     private sealed record UploadedFile(Guid Id, string Url);

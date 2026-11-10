@@ -46,6 +46,8 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(p => p.Barcode).HasMaxLength(50);
         b.Property(p => p.Name).HasMaxLength(150).IsRequired();
         b.Property(p => p.NormalizedName).HasMaxLength(500).IsRequired();
+        b.Property(p => p.SearchKey).HasMaxLength(500).HasComputedColumnSql("REPLACE([NormalizedName], N' ', N'')", stored: true);
+        b.HasIndex(p => p.SearchKey);
         b.Property(p => p.Description).HasMaxLength(1000);
         b.Property(p => p.Size).HasMaxLength(50);
         b.Property(p => p.Color).HasMaxLength(50);
