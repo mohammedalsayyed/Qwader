@@ -228,7 +228,10 @@ function ImportSheet({ onClose }: { onClose: () => void }) {
     onSuccess: (r) => {
       setResult(r);
       if (r.succeeded) {
-        toast.success(`تم استيراد ${r.created} منتج جديد وتحديث ${r.updated}${r.stockChanged ? ` — تعديل كمية ${r.stockChanged} منتج` : ''}`);
+        toast.success(`تم استيراد ${r.created} منتج جديد وتحديث ${r.updated}${r.stockChanged ? ` — تعديل كمية ${r.stockChanged} منتج` : ''}`
+          + `${r.categoriesAdded ? ` — ${r.categoriesAdded} صنف جديد` : ''}${r.unitsAdded ? ` — ${r.unitsAdded} وحدة جديدة` : ''}`);
+        void queryClient.invalidateQueries({ queryKey: ['lookups'] });
+        void queryClient.invalidateQueries({ queryKey: ['categories'] });
         void queryClient.invalidateQueries({ queryKey: ['products'] });
         void queryClient.invalidateQueries({ queryKey: ['lookups'] });
       }
@@ -248,7 +251,7 @@ function ImportSheet({ onClose }: { onClose: () => void }) {
           <li>الأعمدة المطلوبة: اسم المنتج، الصنف، سعر المفرق. نزّل النموذج من قائمة الخيارات.</li>
           <li>الكود الموجود مسبقًا يُحدِّث المنتج. بدون كود: إذا كان الاسم لمنتج موجود يُحدَّث، وإلا يُنشأ منتج جديد بكود تلقائي.</li>
           <li>إذا كان الاسم لأكثر من منتج (مقاسات أو ألوان) اكتب المقاس واللون والموديل أو الكود.</li>
-          <li>الأصناف والوحدات الموجودة في الورقة الثانية «الأصناف والوحدات» وتظهر كقائمة في الملف؛ وإذا كتبت صنفًا أو وحدة غير موجودة تُنشأ تلقائيًا.</li>
+          <li>الورقة الثانية «الأصناف والوحدات» فيها الأصناف والوحدات الموجودة وتظهر كقائمة في الملف. أي صنف أو وحدة جديدة تكتبها فيها (أو في عمود المنتج) تُضاف عند الاستيراد، حتى لو لم يستخدمها أي منتج.</li>
           <li>«الكمية الفعلية»: اكتب الكمية الموجودة فعلًا. للمنتج الجديد تصبح رصيده الافتتاحي، وللمنتج الموجود يُسجَّل الفرق عن النظام في جرد واحد. اتركها فارغة إذا لم تتغير.</li>
           <li>إذا وُجد خطأ في أي صف لا يُستورد شيء، وتظهر الأخطاء برقم الصف لتصحيحها.</li>
         </ul>
@@ -273,6 +276,8 @@ function ImportSheet({ onClose }: { onClose: () => void }) {
           <p className="rounded-2xl bg-green-50 p-4 font-medium text-success">
             تم بنجاح: {result.created} منتج جديد، و{result.updated} منتج محدَّث.
             {!!result.stockChanged && <> تعديل كمية {result.stockChanged} منتج.</>}
+            {!!result.categoriesAdded && <> إضافة {result.categoriesAdded} صنف جديد.</>}
+            {!!result.unitsAdded && <> إضافة {result.unitsAdded} وحدة جديدة.</>}
             {result.stockCountNumber && <> فروقات الكمية سُجّلت في الجرد <span className="ltr inline-block font-semibold">{result.stockCountNumber}</span> (إدارة المخزون ← الجرد).</>}
           </p>
         )}

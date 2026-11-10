@@ -14,7 +14,10 @@ public sealed record ImportRowError(int Row, string Message);
 
 /// <param name="StockCountNumber">The stock count (جرد) recording the «الكمية الفعلية» differences of existing products, if any.</param>
 /// <param name="StockChanged">Products whose stock the file changed (opening balances and count differences).</param>
-public sealed record ProductImportResult(int Created, int Updated, IReadOnlyList<ImportRowError> Errors, string? StockCountNumber = null, int StockChanged = 0)
+/// <param name="CategoriesAdded">New categories (from the products or the «الأصناف والوحدات» sheet).</param>
+/// <param name="UnitsAdded">New units (from the products or the «الأصناف والوحدات» sheet).</param>
+public sealed record ProductImportResult(int Created, int Updated, IReadOnlyList<ImportRowError> Errors, string? StockCountNumber = null, int StockChanged = 0,
+    int CategoriesAdded = 0, int UnitsAdded = 0)
 {
     public bool Succeeded => Errors.Count == 0;
 }
@@ -125,18 +128,28 @@ public sealed class ProductExcelService(
     public async Task<ProductImportResult> ImportAsync(Stream content, CancellationToken ct = default)
     {
         IReadOnlyList<(int RowNumber, IReadOnlyDictionary<string, string?> Cells)> sheet;
+        IReadOnlyDictionary<string, IReadOnlyList<string>> lists;
         try
         {
-            sheet = excel.Read(content);
+            // Read twice: the products sheet, then the «الأصناف والوحدات» sheet (categories and units added there are created too).
+            using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, ct);
+            buffer.Position = 0;
+            sheet = excel.Read(buffer);
+            buffer.Position = 0;
+            lists = excel.ReadColumns(buffer, ListsSheet);
         }
         catch (Exception)
         {
             return new ProductImportResult(0, 0, [new ImportRowError(0, "تعذر قراءة الملف، تأكد أنه ملف Excel بصيغة xlsx")]);
         }
 
-        if (sheet.Count == 0) return new ProductImportResult(0, 0, [new ImportRowError(0, "الملف لا يحتوي على بيانات")]);
+        var listedCategories = lists.GetValueOrDefault(H.Category, []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var listedUnits = lists.GetValueOrDefault(H.Unit, []).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (sheet.Count == 0 && listedCategories.Count == 0 && listedUnits.Count == 0)
+            return new ProductImportResult(0, 0, [new ImportRowError(0, "الملف لا يحتوي على بيانات")]);
         if (sheet.Count > MaxRows) return new ProductImportResult(0, 0, [new ImportRowError(0, $"الحد الأقصى {MaxRows} صف في المرة الواحدة")]);
-        if (!sheet[0].Cells.ContainsKey(H.Name) || !sheet[0].Cells.ContainsKey(H.Retail) || !sheet[0].Cells.ContainsKey(H.Category))
+        if (sheet.Count > 0 && (!sheet[0].Cells.ContainsKey(H.Name) || !sheet[0].Cells.ContainsKey(H.Retail) || !sheet[0].Cells.ContainsKey(H.Category)))
             return new ProductImportResult(0, 0, [new ImportRowError(1, $"يجب أن يحتوي الملف على الأعمدة: {H.Name}، {H.Category}، {H.Retail}. استخدم النموذج الجاهز")]);
 
         var errors = new List<ImportRowError>();
@@ -182,6 +195,10 @@ public sealed class ProductExcelService(
         var defaultUnitId = units.GetValueOrDefault("قطعة", units.Values.FirstOrDefault());
         foreach (var row in rows.Where(r => r.Unit is { Length: > 30 }))
             errors.Add(new ImportRowError(row.Number, $"اسم وحدة القياس «{row.Unit}» طويل جدًا (30 حرفًا على الأكثر)"));
+        foreach (var name in listedUnits.Where(u => u.Length > 30))
+            errors.Add(new ImportRowError(0, $"ورقة «{ListsSheet}»: اسم الوحدة «{name}» طويل جدًا (30 حرفًا على الأكثر)"));
+        foreach (var name in listedCategories.Concat(rows.Select(r => r.Category)).Where(c => c.Length > 100).Distinct())
+            errors.Add(new ImportRowError(0, $"اسم الصنف «{name}» طويل جدًا (100 حرف على الأكثر)"));
 
         // ---- which existing product each row updates: by its code, or (no code) by its name.
         var skus = rows.Where(r => r.Sku is not null).Select(r => r.Sku!).ToList();
@@ -252,30 +269,38 @@ public sealed class ProductExcelService(
         var categories = await db.Categories.ToDictionaryAsync(c => c.Name, StringComparer.OrdinalIgnoreCase, ct);
         var brands = await db.Brands.ToDictionaryAsync(b => b.Name, StringComparer.OrdinalIgnoreCase, ct);
         var warehouseId = await db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);
-        // A unit the store does not have yet is added, as categories are.
-        foreach (var name in rows.Where(r => r.Unit is not null && !units.ContainsKey(r.Unit)).Select(r => r.Unit!).Distinct())
+        // A unit or category the store does not have yet is added: named on a product row, or listed on the second sheet.
+        var unitsAdded = 0;
+        foreach (var name in rows.Where(r => r.Unit is not null).Select(r => r.Unit!).Concat(listedUnits)
+                     .Distinct(StringComparer.OrdinalIgnoreCase).Where(n => !units.Keys.Contains(n, StringComparer.OrdinalIgnoreCase)))
         {
             var unit = new Unit { Name = name };
             db.Units.Add(unit);
             await db.SaveChangesAsync(ct);
             units[name] = unit.Id;
+            unitsAdded++;
         }
+        var categoriesAdded = 0;
+        async Task<Category> CategoryAsync(string name)
+        {
+            if (categories.TryGetValue(name, out var found)) return found;
+            var category = new Category
+            {
+                Name = name, NormalizedName = ArabicText.Normalize(name), Code = await numbers.NextAsync(DocumentType.Category, ct),
+            };
+            db.Categories.Add(category);
+            categories[name] = category;
+            categoriesAdded++;
+            return category;
+        }
+        foreach (var name in listedCategories) await CategoryAsync(name);
         int created = 0, updated = 0;
         var openings = new List<(Product Product, decimal Quantity, decimal Cost)>();
         var counted = new List<(Product Product, decimal Actual, decimal? Cost)>();
 
         foreach (var row in rows)
         {
-            if (!categories.TryGetValue(row.Category, out var category))
-            {
-                category = new Category
-                {
-                    Name = row.Category, NormalizedName = ArabicText.Normalize(row.Category),
-                    Code = await numbers.NextAsync(DocumentType.Category, ct),
-                };
-                db.Categories.Add(category);
-                categories[row.Category] = category;
-            }
+            var category = await CategoryAsync(row.Category);
 
             Brand? brand = null;
             if (row.Brand is not null && !brands.TryGetValue(row.Brand, out brand))
@@ -359,10 +384,10 @@ public sealed class ProductExcelService(
             countNumber = count.Number;
         }
 
-        audit.Log("Product.Import", "Product", null, null, new { created, updated, StockCount = countNumber, stockChanged });
+        audit.Log("Product.Import", "Product", null, null, new { created, updated, StockCount = countNumber, stockChanged, categoriesAdded, unitsAdded });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return new ProductImportResult(created, updated, [], countNumber, stockChanged);
+        return new ProductImportResult(created, updated, [], countNumber, stockChanged, categoriesAdded, unitsAdded);
     }
 
     private async Task<string> NextFreeSkuAsync(CancellationToken ct)

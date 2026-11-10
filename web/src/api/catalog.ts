@@ -149,6 +149,8 @@ export interface ImportResult {
   /** The stock count recording «الكمية الفعلية» differences of existing products. */
   stockCountNumber?: string | null;
   stockChanged?: number;
+  categoriesAdded?: number;
+  unitsAdded?: number;
   errors: { row: number; message: string }[];
   succeeded: boolean;
 }

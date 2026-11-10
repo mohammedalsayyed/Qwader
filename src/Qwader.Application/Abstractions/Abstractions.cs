@@ -136,6 +136,9 @@ public interface IExcelService
 
     /// <summary>Reads the first sheet; header row values become the dictionary keys of every following row.</summary>
     IReadOnlyList<(int RowNumber, IReadOnlyDictionary<string, string?> Cells)> Read(Stream content);
+
+    /// <summary>A named sheet read as lists: each header of its first row → the non-empty values under it. Empty when the sheet is missing.</summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> ReadColumns(Stream content, string sheetName);
 }
 
 public interface IIdempotencyService

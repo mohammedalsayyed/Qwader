@@ -78,6 +78,21 @@ public sealed class ExcelService : IExcelService
         return stream.ToArray();
     }
 
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> ReadColumns(Stream content, string sheetName)
+    {
+        using var workbook = new XLWorkbook(content);
+        if (!workbook.TryGetWorksheet(sheetName, out var sheet) || sheet.RangeUsed() is not { } used) return new Dictionary<string, IReadOnlyList<string>>();
+        var result = new Dictionary<string, IReadOnlyList<string>>();
+        for (var c = 1; c <= used.LastColumn().ColumnNumber(); c++)
+        {
+            var header = sheet.Cell(1, c).GetString().Trim();
+            if (header.Length == 0) continue;
+            result[header] = Enumerable.Range(2, Math.Max(0, used.LastRow().RowNumber() - 1))
+                .Select(r => sheet.Cell(r, c).GetString().Trim()).Where(v => v.Length > 0).ToList();
+        }
+        return result;
+    }
+
     public IReadOnlyList<(int RowNumber, IReadOnlyDictionary<string, string?> Cells)> Read(Stream content)
     {
         using var workbook = new XLWorkbook(content);

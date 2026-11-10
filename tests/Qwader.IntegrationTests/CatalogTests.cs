@@ -276,6 +276,35 @@ public sealed class CatalogTests(ApiFactory factory)
         gains.Items.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Categories_and_units_added_on_the_lists_sheet_are_created_even_without_products()
+    {
+        var admin = await factory.LoginAsync();
+        var category = TestData.Unique("صنف ورقة");
+        var unit = "علبة " + Guid.NewGuid().ToString("N")[..5];
+
+        // The template as downloaded, with one new category and one new unit typed on its second sheet and no product rows.
+        var template = await admin.GetByteArrayAsync("/api/products/import-template");
+        using var wb = new XLWorkbook(new MemoryStream(template));
+        wb.Worksheet("المنتجات").Row(2).Clear();
+        var lists = wb.Worksheet("الأصناف والوحدات");
+        lists.Cell(lists.Column(1).LastCellUsed()!.Address.RowNumber + 1, 1).SetValue(category);
+        lists.Cell(lists.Column(2).LastCellUsed()!.Address.RowNumber + 1, 2).SetValue(unit);
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        var file = new ByteArrayContent(ms.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+        var result = await (await admin.PostAsync("/api/products/import", new MultipartFormDataContent { { file, "file", "products.xlsx" } }))
+            .ReadAsync<ProductImportResult>();
+
+        result.Errors.Should().BeEmpty();
+        result.Should().BeEquivalentTo(new { Created = 0, Updated = 0, CategoriesAdded = 1, UnitsAdded = 1 });
+        var lookups = await admin.LookupsAsync();
+        lookups.Categories.Should().Contain(c => c.Name == category);
+        lookups.Units.Should().Contain(u => u.Name == unit);
+    }
+
     private sealed record UploadedFile(Guid Id, string Url);
 
     private static MultipartFormDataContent Workbook(params string[][] rows)
