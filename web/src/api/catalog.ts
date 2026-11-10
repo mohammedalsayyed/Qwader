@@ -146,6 +146,9 @@ export interface ProductListParams {
 export interface ImportResult {
   created: number;
   updated: number;
+  /** The stock count recording «الكمية الفعلية» differences of existing products. */
+  stockCountNumber?: string | null;
+  stockChanged?: number;
   errors: { row: number; message: string }[];
   succeeded: boolean;
 }

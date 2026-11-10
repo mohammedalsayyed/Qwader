@@ -12,7 +12,9 @@ namespace Qwader.Application.Catalog;
 
 public sealed record ImportRowError(int Row, string Message);
 
-public sealed record ProductImportResult(int Created, int Updated, IReadOnlyList<ImportRowError> Errors)
+/// <param name="StockCountNumber">The stock count (جرد) recording the «الكمية الفعلية» differences of existing products, if any.</param>
+/// <param name="StockChanged">Products whose stock the file changed (opening balances and count differences).</param>
+public sealed record ProductImportResult(int Created, int Updated, IReadOnlyList<ImportRowError> Errors, string? StockCountNumber = null, int StockChanged = 0)
 {
     public bool Succeeded => Errors.Count == 0;
 }
@@ -31,7 +33,8 @@ public sealed class ProductExcelService(
     IDocumentNumberGenerator numbers,
     IInventoryLedger inventory,
     IAuditService audit,
-    Settings.ISettingsService settings) : IProductExcelService
+    Settings.ISettingsService settings,
+    IClock clock) : IProductExcelService
 {
     private const int MaxRows = 5000;
 
@@ -53,6 +56,12 @@ public sealed class ProductExcelService(
         public const string MinPrice = "أقل سعر بيع";
         public const string ReorderLevel = "حد التنبيه";
         public const string Quantity = "الكمية";
+        /// <summary>
+        /// The quantity really on the shelf. New product: its opening balance. Existing product: the difference from the system
+        /// is recorded as a stock count (or as an opening balance when the product never had any stock movement). Blank: unchanged.
+        /// </summary>
+        public const string Actual = "الكمية الفعلية";
+        /// <summary>The older template's column; read as «الكمية الفعلية».</summary>
         public const string OpeningQuantity = "الكمية الافتتاحية";
     }
 
@@ -79,13 +88,14 @@ public sealed class ProductExcelService(
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12),
         };
         if (canViewCost) columns.AddRange([new(H.PurchasePrice, 12), new(H.AverageCost, 12)]);
-        columns.AddRange([new(H.Wholesale, 12), new(H.Retail, 12), new(H.MinPrice, 12), new(H.Quantity, 10), new(H.ReorderLevel, 10)]);
+        // «الكمية» is what the system holds when exported (ignored on import); «الكمية الفعلية» stays blank for what was counted.
+        columns.AddRange([new(H.Wholesale, 12), new(H.Retail, 12), new(H.MinPrice, 12), new(H.Quantity, 10), new(H.ReorderLevel, 10), new(H.Actual, 14)]);
 
         return excel.Write("المنتجات", columns, rows.Select(r =>
         {
             var cells = new List<object?> { r.Sku, r.Barcode, r.Name, r.Category, r.Unit, r.Brand, r.Size, r.Color, r.Model };
             if (canViewCost) cells.AddRange([r.PurchasePrice, r.AverageCost]);
-            cells.AddRange([r.WholesalePrice, r.RetailPrice, r.MinSalePrice, r.Quantity, r.ReorderLevel]);
+            cells.AddRange([r.WholesalePrice, r.RetailPrice, r.MinSalePrice, r.Quantity, r.ReorderLevel, null]);
             return cells.ToArray();
         }), ListsSheet);
     }
@@ -103,14 +113,14 @@ public sealed class ProductExcelService(
         [
             new(H.Sku, 14), new(H.Barcode, 16), new(H.Name, 30), new(H.Category, 18, await CategoryNamesAsync(ct)), new(H.Unit, 10, await UnitNamesAsync(ct)), new(H.Brand, 14),
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12), new(H.PurchasePrice, 12), new(H.Wholesale, 12),
-            new(H.Retail, 12), new(H.MinPrice, 12), new(H.ReorderLevel, 10), new(H.OpeningQuantity, 14),
+            new(H.Retail, 12), new(H.MinPrice, 12), new(H.ReorderLevel, 10), new(H.Actual, 14),
         ],
         [["", "", "صحن زجاجي 25 سم", "الصحون", "قطعة", "", "25 سم", "شفاف", "", 8, 11, 14, 10, 5, 24]], ListsSheet);
 
     private sealed record Row(
         int Number, string? Sku, string? Barcode, string Name, string Category, string? Unit, string? Brand,
         string? Size, string? Color, string? Model, decimal? PurchasePrice, decimal? Wholesale, decimal Retail,
-        decimal? MinPrice, decimal? ReorderLevel, decimal? OpeningQuantity);
+        decimal? MinPrice, decimal? ReorderLevel, decimal? ActualQuantity);
 
     public async Task<ProductImportResult> ImportAsync(Stream content, CancellationToken ct = default)
     {
@@ -149,7 +159,8 @@ public sealed class ProductExcelService(
             var retail = Number(H.Retail, H.Retail);
             var row = new Row(number, Text(H.Sku), Text(H.Barcode), name ?? "", category ?? "", Text(H.Unit), Text(H.Brand),
                 Text(H.Size), Text(H.Color), Text(H.Model), Number(H.PurchasePrice, H.PurchasePrice), Number(H.Wholesale, H.Wholesale),
-                retail ?? 0, Number(H.MinPrice, H.MinPrice), Number(H.ReorderLevel, H.ReorderLevel), Number(H.OpeningQuantity, H.OpeningQuantity));
+                retail ?? 0, Number(H.MinPrice, H.MinPrice), Number(H.ReorderLevel, H.ReorderLevel),
+                Number(H.Actual, H.Actual) ?? Number(H.OpeningQuantity, H.OpeningQuantity));
 
             if (name is null && category is null && retail is null && row.Sku is null) continue; // blank line
             if (name is null) errors.Add(new ImportRowError(number, "اسم المنتج مطلوب"));
@@ -219,14 +230,15 @@ public sealed class ProductExcelService(
 
         var canEditPrices = currentUser.HasPermission(Permissions.ProductsEditPrices);
         var canOpenStock = currentUser.HasPermission(Permissions.InventoryAdjust) || currentUser.HasPermission(Permissions.PurchasesManage);
+        var canCount = currentUser.HasPermission(Permissions.InventoryCount) || currentUser.HasPermission(Permissions.InventoryAdjust);
         foreach (var row in rows)
         {
             if (TargetOf(row) is { } p && !canEditPrices
                 && (p.RetailPrice != row.Retail || (row.Wholesale is { } w && w != p.WholesalePrice) || (row.MinPrice is { } m && m != p.MinSalePrice)))
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية تعديل أسعار المنتجات الموجودة"));
-            if (row.OpeningQuantity > 0 && TargetOf(row) is not null)
-                errors.Add(new ImportRowError(row.Number, "لا يمكن إدخال كمية افتتاحية لمنتج موجود؛ استخدم فاتورة شراء أو الجرد"));
-            if (row.OpeningQuantity > 0 && !canOpenStock)
+            if (row.ActualQuantity is not null && TargetOf(row) is not null && !canCount)
+                errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية الجرد لتعديل كمية منتج موجود"));
+            else if (row.ActualQuantity > 0 && TargetOf(row) is null && !canOpenStock)
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية إدخال رصيد افتتاحي"));
         }
 
@@ -250,6 +262,7 @@ public sealed class ProductExcelService(
         }
         int created = 0, updated = 0;
         var openings = new List<(Product Product, decimal Quantity, decimal Cost)>();
+        var counted = new List<(Product Product, decimal Actual, decimal? Cost)>();
 
         foreach (var row in rows)
         {
@@ -298,18 +311,58 @@ public sealed class ProductExcelService(
             product.NormalizedName = ProductService.BuildSearchText(product.Name, product.Size, product.Color, product.Model,
                 brand?.Name ?? row.Brand, product.Sku, product.Barcode);
 
-            if (isNew && row.OpeningQuantity is > 0 and var qty) openings.Add((product, qty, row.PurchasePrice ?? 0));
+            if (isNew && row.ActualQuantity is > 0 and var qty) openings.Add((product, qty, row.PurchasePrice ?? 0));
+            else if (!isNew && row.ActualQuantity is { } actual) counted.Add((product, actual, row.PurchasePrice));
         }
 
         await db.SaveChangesAsync(ct);
+        // An existing product that never had a stock movement (added without its quantity) gets an opening balance, like a new
+        // one, instead of a count «gain»; the others are counted against what the system holds now.
+        var countedIds = counted.Select(c => c.Product.Id).ToList();
+        var withHistory = (await db.StockMovements.Where(m => countedIds.Contains(m.ProductId)).Select(m => m.ProductId).Distinct().ToListAsync(ct)).ToHashSet();
+        foreach (var (product, actual, cost) in counted.Where(c => !withHistory.Contains(c.Product.Id) && c.Actual > 0))
+            openings.Add((product, actual, cost ?? product.PurchasePrice));
+
         foreach (var (product, qty, cost) in openings.OrderBy(o => o.Product.Id))
             await inventory.ReceiveAsync(new StockEntry(product.Id, warehouseId, qty, StockMovementType.OpeningBalance,
                 "ProductImport", product.Id, product.Sku, "رصيد افتتاحي (استيراد Excel)"), cost, ct);
 
-        audit.Log("Product.Import", "Product", null, null, new { created, updated });
+        // One posted stock count for the whole file: each product's difference is a count increase or decrease, as on the count screen.
+        string? countNumber = null;
+        var stockChanged = openings.Count;
+        var toCount = counted.Where(c => withHistory.Contains(c.Product.Id)).OrderBy(c => c.Product.Id).ToList();
+        if (toCount.Count > 0)
+        {
+            var count = new StockCount
+            {
+                Number = await numbers.NextAsync(DocumentType.StockCount, ct), WarehouseId = warehouseId, Status = StockCountStatus.Posted,
+                Notes = "جرد من استيراد Excel (الكمية الفعلية)", PostedAt = clock.UtcNow,
+            };
+            db.StockCounts.Add(count);
+            await db.SaveChangesAsync(ct);
+            foreach (var (product, actual, _) in toCount)
+            {
+                var expected = await db.StockBalances.Where(s => s.ProductId == product.Id && s.WarehouseId == warehouseId)
+                    .Select(s => (decimal?)s.Quantity).FirstOrDefaultAsync(ct) ?? 0;
+                count.Lines.Add(new StockCountLine { ProductId = product.Id, ExpectedQuantity = expected, CountedQuantity = actual });
+                var diff = actual - expected;
+                if (diff > 0)
+                {
+                    var unitCost = await db.Products.AsNoTracking().Where(p => p.Id == product.Id)
+                        .Select(p => p.AverageCost > 0 ? p.AverageCost : p.PurchasePrice).FirstAsync(ct);
+                    await inventory.ReceiveAsync(new StockEntry(product.Id, warehouseId, diff, StockMovementType.CountIncrease, "StockCount", count.Id, count.Number), unitCost, ct);
+                }
+                else if (diff < 0)
+                    await inventory.IssueAsync(new StockEntry(product.Id, warehouseId, -diff, StockMovementType.CountDecrease, "StockCount", count.Id, count.Number), ct: ct);
+                if (diff != 0) stockChanged++;
+            }
+            countNumber = count.Number;
+        }
+
+        audit.Log("Product.Import", "Product", null, null, new { created, updated, StockCount = countNumber, stockChanged });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return new ProductImportResult(created, updated, []);
+        return new ProductImportResult(created, updated, [], countNumber, stockChanged);
     }
 
     private async Task<string> NextFreeSkuAsync(CancellationToken ct)

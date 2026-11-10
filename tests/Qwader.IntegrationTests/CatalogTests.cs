@@ -247,6 +247,35 @@ public sealed class CatalogTests(ApiFactory factory)
         bySize.Should().BeEquivalentTo(new { Created = 0, Updated = 1 });
     }
 
+    [Fact]
+    public async Task Excel_actual_quantity_counts_existing_products_and_opens_those_never_stocked()
+    {
+        var admin = await factory.LoginAsync();
+        var stocked = await admin.CreateProductAsync(retail: 10, openingQuantity: 10, openingCost: 4);
+        var neverStocked = await admin.CreateProductAsync(retail: 10);
+        var untouched = await admin.CreateProductAsync(retail: 10, openingQuantity: 3, openingCost: 4);
+        var file = Workbook(["الكود", "اسم المنتج", "الصنف", "سعر الشراء", "سعر المفرق", "الكمية الفعلية"],
+            [stocked.Sku, stocked.Name, stocked.CategoryName, "", "10", "7"],
+            [neverStocked.Sku, neverStocked.Name, neverStocked.CategoryName, "6", "10", "5"],
+            [untouched.Sku, untouched.Name, untouched.CategoryName, "", "10", ""]);
+
+        var result = await (await admin.PostAsync("/api/products/import", file)).ReadAsync<ProductImportResult>();
+
+        result.Errors.Should().BeEmpty();
+        result.StockChanged.Should().Be(2);
+        result.StockCountNumber.Should().NotBeNull();
+        (await admin.GetProductAsync(stocked.Id)).Quantity.Should().Be(7);
+        var opened = await admin.GetProductAsync(neverStocked.Id);
+        opened.Quantity.Should().Be(5);
+        opened.AverageCost.Should().Be(6, "a product never stocked opens at its purchase price, not as a count gain");
+        (await admin.GetProductAsync(untouched.Id)).Quantity.Should().Be(3, "a blank cell leaves the stock alone");
+
+        var decrease = await (await admin.GetAsync($"/api/inventory/movements?productId={stocked.Id}&type=CountDecrease")).ReadAsync<PagedResult<Application.Inventory.StockMovementDto>>();
+        decrease.Items.Should().ContainSingle().Which.Should().Match<Application.Inventory.StockMovementDto>(m => m.Quantity == -3 && m.SourceNumber == result.StockCountNumber);
+        var gains = await (await admin.GetAsync($"/api/inventory/movements?productId={neverStocked.Id}&group=Gains")).ReadAsync<PagedResult<Application.Inventory.StockMovementDto>>();
+        gains.Items.Should().BeEmpty();
+    }
+
     private sealed record UploadedFile(Guid Id, string Url);
 
     private static MultipartFormDataContent Workbook(params string[][] rows)
