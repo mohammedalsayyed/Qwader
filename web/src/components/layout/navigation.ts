@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   Banknote,
   BarChart3,
+  BookOpen,
   Boxes,
   FileText,
   FolderTree,
@@ -62,6 +63,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },
   { to: '/settings', label: 'الإعدادات', icon: Settings, anyOf: [P.SettingsManage], group: 'admin' },
   { to: '/audit', label: 'سجل التدقيق', icon: ScrollText, anyOf: [P.AuditView], group: 'admin' },
+  { to: '/help', label: 'التعليمات', icon: BookOpen, anyOf: [], group: 'admin' },
 ];
 
 /** The four fixed tabs of the phone bottom bar (the fifth is «المزيد»). */

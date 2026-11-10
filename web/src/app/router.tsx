@@ -46,6 +46,7 @@ const MyPayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'MyP
 const NotificationFeedPage = page(() => import('@/features/notifications/NotificationFeed'), 'NotificationFeedPage');
 const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
 const AuditLogPage = page(() => import('@/features/settings/AuditLogPage'), 'AuditLogPage');
+const HelpPage = page(() => import('@/features/help/HelpPage'), 'HelpPage');
 
 
 function SessionGate() {
@@ -196,6 +197,7 @@ export const router = createBrowserRouter([
           guarded('payroll', <PayrollPage />, [P.PayrollManage]),
           guarded('payroll/:id', <EmployeePayrollPage />, [P.PayrollManage]),
           guarded('audit', <AuditLogPage />, [P.AuditView]),
+          { path: 'help', element: <HelpPage /> },
           guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           { path: '*', element: <NotFoundPage /> },
         ],
