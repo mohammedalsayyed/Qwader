@@ -305,6 +305,45 @@ public sealed class CatalogTests(ApiFactory factory)
         lookups.Units.Should().Contain(u => u.Name == unit);
     }
 
+    [Fact]
+    public async Task Exported_actual_quantity_starts_at_the_current_one_and_only_edited_rows_change_stock()
+    {
+        var admin = await factory.LoginAsync();
+        var category = await admin.CreateCategoryAsync();
+        var lookups = await admin.LookupsAsync();
+        async Task<ProductDetailDto> Create(decimal qty) => await (await admin.PostAsJsonAsync("/api/products", new SaveProductRequest(TestData.Unique("عد"), null, null,
+            category.Id, null, lookups.Units[0].Id, null, null, null, null, null, null, 4, 9, 9, 0, 2, null, qty, 4))).ReadAsync<ProductDetailDto>();
+        var counted = await Create(10);
+        var soldMeanwhile = await Create(5);
+
+        var exported = await admin.GetByteArrayAsync($"/api/products/export?categoryId={category.Id}");
+        using var wb = new XLWorkbook(new MemoryStream(exported));
+        var sheet = wb.Worksheet("المنتجات");
+        int Col(string header) => sheet.Row(1).CellsUsed().First(c => c.GetString() == header).Address.ColumnNumber;
+        var current = Col("الكمية الحالية");
+        var actual = Col("الكمية الفعلية");
+        actual.Should().Be(current + 1, "«الكمية الفعلية» comes right after «الكمية الحالية»");
+        var rows = sheet.RowsUsed().Skip(1).ToDictionary(r => r.Cell(Col("الكود")).GetString());
+        rows[counted.Sku].Cell(current).GetDouble().Should().Be(10);
+        rows[counted.Sku].Cell(actual).GetDouble().Should().Be(10, "it starts equal to the current quantity");
+
+        // After the export two units of the other product leave the shelf; the file still says 5 for it.
+        (await admin.AdjustAsync(soldMeanwhile.Id, Application.Inventory.AdjustmentKind.Damaged, 2)).EnsureSuccessStatusCode();
+        rows[counted.Sku].Cell(actual).SetValue(8);
+        using var ms = new MemoryStream();
+        wb.SaveAs(ms);
+        var file = new ByteArrayContent(ms.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+        var result = await (await admin.PostAsync("/api/products/import", new MultipartFormDataContent { { file, "file", "products.xlsx" } }))
+            .ReadAsync<ProductImportResult>();
+
+        result.Errors.Should().BeEmpty();
+        result.StockChanged.Should().Be(1);
+        (await admin.GetProductAsync(counted.Id)).Quantity.Should().Be(8);
+        (await admin.GetProductAsync(soldMeanwhile.Id)).Quantity.Should().Be(3, "an untouched row does not bring back the old quantity");
+    }
+
     private sealed record UploadedFile(Guid Id, string Url);
 
     private static MultipartFormDataContent Workbook(params string[][] rows)

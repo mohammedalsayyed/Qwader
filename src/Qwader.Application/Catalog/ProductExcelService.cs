@@ -58,6 +58,12 @@ public sealed class ProductExcelService(
         public const string Retail = "سعر المفرق";
         public const string MinPrice = "أقل سعر بيع";
         public const string ReorderLevel = "حد التنبيه";
+        /// <summary>
+        /// What the system held when the file was exported. On import it only tells whether «الكمية الفعلية» was changed: a row
+        /// whose two quantities are equal leaves the stock alone, so an old file never undoes the sales made since.
+        /// </summary>
+        public const string Current = "الكمية الحالية";
+        /// <summary>The older export's name for «الكمية الحالية».</summary>
         public const string Quantity = "الكمية";
         /// <summary>
         /// The quantity really on the shelf. New product: its opening balance. Existing product: the difference from the system
@@ -91,14 +97,15 @@ public sealed class ProductExcelService(
             new(H.Size, 10), new(H.Color, 10), new(H.Model, 12),
         };
         if (canViewCost) columns.AddRange([new(H.PurchasePrice, 12), new(H.AverageCost, 12)]);
-        // «الكمية» is what the system holds when exported (ignored on import); «الكمية الفعلية» stays blank for what was counted.
-        columns.AddRange([new(H.Wholesale, 12), new(H.Retail, 12), new(H.MinPrice, 12), new(H.Quantity, 10), new(H.ReorderLevel, 10), new(H.Actual, 14)]);
+        // «الكمية الفعلية» starts equal to «الكمية الحالية»: edit it where the shelf differs; untouched rows change nothing on import.
+        columns.AddRange([new(H.Wholesale, 12), new(H.Retail, 12), new(H.MinPrice, 12), new(H.ReorderLevel, 10), new(H.Current, 12), new(H.Actual, 14)]);
 
         return excel.Write("المنتجات", columns, rows.Select(r =>
         {
             var cells = new List<object?> { r.Sku, r.Barcode, r.Name, r.Category, r.Unit, r.Brand, r.Size, r.Color, r.Model };
             if (canViewCost) cells.AddRange([r.PurchasePrice, r.AverageCost]);
-            cells.AddRange([r.WholesalePrice, r.RetailPrice, r.MinSalePrice, r.Quantity, r.ReorderLevel, null]);
+            // Sold beyond stock (negative): the actual quantity is left blank rather than suggesting a negative count.
+            cells.AddRange([r.WholesalePrice, r.RetailPrice, r.MinSalePrice, r.ReorderLevel, r.Quantity, r.Quantity < 0 ? null : r.Quantity]);
             return cells.ToArray();
         }), ListsSheet);
     }
@@ -123,7 +130,11 @@ public sealed class ProductExcelService(
     private sealed record Row(
         int Number, string? Sku, string? Barcode, string Name, string Category, string? Unit, string? Brand,
         string? Size, string? Color, string? Model, decimal? PurchasePrice, decimal? Wholesale, decimal Retail,
-        decimal? MinPrice, decimal? ReorderLevel, decimal? ActualQuantity);
+        decimal? MinPrice, decimal? ReorderLevel, decimal? ActualQuantity, decimal? CurrentQuantity)
+    {
+        /// <summary>The actual quantity, when it says something: it differs from the file's current quantity (or the file has none).</summary>
+        public decimal? ChangedQuantity => ActualQuantity is { } a && a != CurrentQuantity ? a : null;
+    }
 
     public async Task<ProductImportResult> ImportAsync(Stream content, CancellationToken ct = default)
     {
@@ -157,11 +168,11 @@ public sealed class ProductExcelService(
         foreach (var (number, cells) in sheet)
         {
             string? Text(string key) => cells.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) ? v.Trim() : null;
-            decimal? Number(string key, string label)
+            decimal? Number(string key, string label, bool allowNegative = false)
             {
                 var text = Text(key);
                 if (text is null) return null;
-                if (decimal.TryParse(ToAscii(text).Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var value) && value >= 0)
+                if (decimal.TryParse(ToAscii(text).Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var value) && (value >= 0 || allowNegative))
                     return value;
                 errors.Add(new ImportRowError(number, $"قيمة «{label}» غير صالحة: {text}"));
                 return null;
@@ -173,7 +184,8 @@ public sealed class ProductExcelService(
             var row = new Row(number, Text(H.Sku), Text(H.Barcode), name ?? "", category ?? "", Text(H.Unit), Text(H.Brand),
                 Text(H.Size), Text(H.Color), Text(H.Model), Number(H.PurchasePrice, H.PurchasePrice), Number(H.Wholesale, H.Wholesale),
                 retail ?? 0, Number(H.MinPrice, H.MinPrice), Number(H.ReorderLevel, H.ReorderLevel),
-                Number(H.Actual, H.Actual) ?? Number(H.OpeningQuantity, H.OpeningQuantity));
+                Number(H.Actual, H.Actual) ?? Number(H.OpeningQuantity, H.OpeningQuantity),
+                Number(H.Current, H.Current, allowNegative: true) ?? Number(H.Quantity, H.Quantity, allowNegative: true));
 
             if (name is null && category is null && retail is null && row.Sku is null) continue; // blank line
             if (name is null) errors.Add(new ImportRowError(number, "اسم المنتج مطلوب"));
@@ -253,7 +265,7 @@ public sealed class ProductExcelService(
             if (TargetOf(row) is { } p && !canEditPrices
                 && (p.RetailPrice != row.Retail || (row.Wholesale is { } w && w != p.WholesalePrice) || (row.MinPrice is { } m && m != p.MinSalePrice)))
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية تعديل أسعار المنتجات الموجودة"));
-            if (row.ActualQuantity is not null && TargetOf(row) is not null && !canCount)
+            if (row.ChangedQuantity is not null && TargetOf(row) is not null && !canCount)
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية الجرد لتعديل كمية منتج موجود"));
             else if (row.ActualQuantity > 0 && TargetOf(row) is null && !canOpenStock)
                 errors.Add(new ImportRowError(row.Number, "ليست لديك صلاحية إدخال رصيد افتتاحي"));
@@ -337,7 +349,7 @@ public sealed class ProductExcelService(
                 brand?.Name ?? row.Brand, product.Sku, product.Barcode);
 
             if (isNew && row.ActualQuantity is > 0 and var qty) openings.Add((product, qty, row.PurchasePrice ?? 0));
-            else if (!isNew && row.ActualQuantity is { } actual) counted.Add((product, actual, row.PurchasePrice));
+            else if (!isNew && row.ChangedQuantity is { } actual) counted.Add((product, actual, row.PurchasePrice));
         }
 
         await db.SaveChangesAsync(ct);
