@@ -22,7 +22,8 @@ export function normalizeArabic(input: string | null | undefined): string {
     else c = c.toLowerCase();
 
     const cc = c.charCodeAt(0);
-    if ((cc >= 0x064b && cc <= 0x065f) || cc === 0x0670 || c === 'ـ') continue;
+    // Tashkeel, superscript alef, tatweel and a standalone hamza («ماء» = «ما») carry no search meaning, as on the server.
+    if ((cc >= 0x064b && cc <= 0x065f) || cc === 0x0670 || c === 'ـ' || c === 'ء') continue;
 
     if (/\s/.test(c)) {
       if (!lastSpace) out += ' ';

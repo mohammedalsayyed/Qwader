@@ -29,8 +29,8 @@ public static class ArabicText
                 _ => char.ToLowerInvariant(raw),
             };
 
-            // Tashkeel (harakat), superscript alef and tatweel carry no search meaning.
-            if (c is >= 'ً' and <= 'ٟ' or 'ٰ' or 'ـ') continue;
+            // Tashkeel (harakat), superscript alef, tatweel and a standalone hamza («ماء» = «ما») carry no search meaning.
+            if (c is >= 'ً' and <= 'ٟ' or 'ٰ' or 'ـ' or 'ء') continue;
 
             if (char.IsWhiteSpace(c))
             {

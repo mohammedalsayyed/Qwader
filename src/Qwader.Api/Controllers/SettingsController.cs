@@ -26,6 +26,12 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HasPermission(Permissions.SettingsManage)]
     public async Task<object> ApplyReorderLevel(CancellationToken ct) => new { changed = await settings.ApplyDefaultReorderLevelAsync(ct) };
 
+    /// <summary>Deletes the audit log of a period (Admin only, with the caller's password; the deletion itself is logged).</summary>
+    [HttpPost("audit-log/delete")]
+    [HasPermission(Permissions.SettingsManage)]
+    public async Task<object> DeleteAuditLog(DeleteAuditLogRequest request, [FromServices] ISystemResetService reset, CancellationToken ct) =>
+        new { deleted = await reset.DeleteAuditLogAsync(request, ct) };
+
     /// <summary>Wipes data for a fresh start (the service also requires the Admin role and the caller's password).</summary>
     [HttpPost("reset")]
     [HasPermission(Permissions.SettingsManage)]

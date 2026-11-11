@@ -9,6 +9,8 @@ public sealed class ArabicTextTests
 {
     [Theory]
     [InlineData("أحمد", "احمد")]
+    [InlineData("ماء", "ما")]
+    [InlineData("جزء أساسي", "جز اساسي")]
     [InlineData("إبريق", "ابريق")]
     [InlineData("آلة", "اله")]
     [InlineData("صحون زجاجيّة", "صحون زجاجيه")]

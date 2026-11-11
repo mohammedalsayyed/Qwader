@@ -4,8 +4,9 @@ using Qwader.Application.Common;
 
 namespace Qwader.Application.Settings;
 
+/// <param name="EntityLabel">What the entry is about, readable: «P-00402 · صحن …», an invoice number, a customer's name. Null when unknown.</param>
 public sealed record AuditLogDto(long Id, DateTime OccurredAt, string? UserName, string Action, string ActionName, string EntityType,
-    string? EntityId, string? OldValues, string? NewValues, string? Reason, string? IpAddress);
+    string? EntityId, string? OldValues, string? NewValues, string? Reason, string? IpAddress, string? EntityLabel = null);
 
 public sealed class AuditLogRequest : PagedRequest
 {
@@ -36,6 +37,7 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Settings.ApplyReorderLevel"] = "تطبيق حد التنبيه على كل المنتجات",
         ["System.Reset"] = "تصفير النظام",
         ["System.Backup"] = "تنزيل نسخة احتياطية",
+        ["AuditLog.Delete"] = "حذف من سجل التدقيق",
         ["Product.Create"] = "إضافة منتج",
         ["Product.Update"] = "تعديل منتج",
         ["Product.UpdatePrices"] = "تعديل أسعار منتج",
@@ -101,9 +103,45 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         }
 
         var page = await query.OrderByDescending(a => a.Id).ToPagedAsync(request, ct);
+        var labels = await LabelsAsync(page.Items, ct);
         return new PagedResult<AuditLogDto>(
             page.Items.Select(a => new AuditLogDto(a.Id, a.OccurredAt, a.UserName, a.Action, Names.GetValueOrDefault(a.Action, a.Action), a.EntityType,
-                a.EntityId, a.OldValues, a.NewValues, a.Reason, a.IpAddress)).ToList(),
+                a.EntityId, a.OldValues, a.NewValues, a.Reason, a.IpAddress,
+                int.TryParse(a.EntityId, out var id) ? labels.GetValueOrDefault((a.EntityType, id)) : null)).ToList(),
             page.Page, page.PageSize, page.TotalCount);
+    }
+
+    /// <summary>
+    /// Readable names for the page's entries, looked up now (a later rename shows the new name). Nothing is stored or changed;
+    /// a deleted record simply keeps showing its number.
+    /// </summary>
+    private async Task<Dictionary<(string Type, int Id), string>> LabelsAsync(IReadOnlyList<Domain.Administration.AuditLog> items, CancellationToken ct)
+    {
+        var ids = items.Where(a => int.TryParse(a.EntityId, out _)).GroupBy(a => a.EntityType)
+            .ToDictionary(g => g.Key, g => g.Select(a => int.Parse(a.EntityId!)).Distinct().ToList());
+        var labels = new Dictionary<(string, int), string>();
+        async Task Add(string type, Func<List<int>, Task<Dictionary<int, string>>> load)
+        {
+            if (!ids.TryGetValue(type, out var list)) return;
+            foreach (var (id, label) in await load(list)) labels[(type, id)] = label;
+        }
+
+        await Add("Product", async l => (await db.Products.AsNoTracking().Where(p => l.Contains(p.Id))
+                .Select(p => new { p.Id, p.Sku, p.Name, p.Size, p.Color, p.Model }).ToListAsync(ct))
+            .ToDictionary(p => p.Id, p => $"{p.Sku} · {Domain.Catalog.Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model)}"));
+        await Add("SaleInvoice", l => db.SaleInvoices.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Number} · {x.CustomerName}", ct));
+        await Add("PurchaseInvoice", l => db.PurchaseInvoices.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Number} · {x.Supplier.Name}", ct));
+        await Add("ReceiptVoucher", l => db.ReceiptVouchers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
+        await Add("PaymentVoucher", l => db.PaymentVouchers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
+        await Add("IncomingTransfer", l => db.IncomingTransfers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
+        await Add("Expense", l => db.Expenses.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
+        await Add("StockCount", l => db.StockCounts.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
+        await Add("Customer", l => db.Customers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Code} · {x.Name}", ct));
+        await Add("Supplier", l => db.Suppliers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Code} · {x.Name}", ct));
+        await Add("Category", l => db.Categories.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct));
+        await Add("Unit", l => db.Units.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct));
+        await Add("FinancialAccount", l => db.FinancialAccounts.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct));
+        await Add("User", l => db.Users.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.FullName, ct));
+        return labels;
     }
 }

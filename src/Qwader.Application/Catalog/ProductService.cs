@@ -62,9 +62,10 @@ public sealed class ProductService(
         var withQty = query.Select(p => new { P = p, Qty = p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0 });
 
         var raw = request.Search?.Trim();
+        // Newest first (the id grows with every product added); a search still puts an exact code or barcode on top.
         var ordered = string.IsNullOrEmpty(raw)
-            ? withQty.OrderBy(x => x.P.Name).ThenBy(x => x.P.Id)
-            : withQty.OrderByDescending(x => x.P.Sku == raw || x.P.Barcode == raw).ThenBy(x => x.P.Name).ThenBy(x => x.P.Id);
+            ? withQty.OrderByDescending(x => x.P.Id)
+            : withQty.OrderByDescending(x => x.P.Sku == raw || x.P.Barcode == raw).ThenByDescending(x => x.P.Id);
 
         var canViewCost = CanViewCost;
         return await ordered.Select(x => new ProductListItemDto(

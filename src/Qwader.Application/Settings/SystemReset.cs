@@ -19,6 +19,23 @@ public interface ISystemResetService
 {
     /// <summary>Wipes data for a fresh start. Admin only, re-confirmed with the caller's own password. Cannot be undone.</summary>
     Task<SystemResetResult> ResetAsync(SystemResetRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes the audit log entries of a period (both days included). Admin only, re-confirmed with the caller's password;
+    /// the deletion itself is then logged (who, which period, how many).
+    /// </summary>
+    Task<int> DeleteAuditLogAsync(DeleteAuditLogRequest request, CancellationToken ct = default);
+}
+
+public sealed record DeleteAuditLogRequest(DateOnly From, DateOnly To, string Password);
+
+public sealed class DeleteAuditLogRequestValidator : AbstractValidator<DeleteAuditLogRequest>
+{
+    public DeleteAuditLogRequestValidator()
+    {
+        RuleFor(x => x.Password).NotEmpty().WithMessage("أدخل كلمة المرور للتأكيد");
+        RuleFor(x => x.To).GreaterThanOrEqualTo(x => x.From).WithMessage("تاريخ النهاية قبل تاريخ البداية");
+    }
 }
 
 public sealed class SystemResetRequestValidator : AbstractValidator<SystemResetRequest>

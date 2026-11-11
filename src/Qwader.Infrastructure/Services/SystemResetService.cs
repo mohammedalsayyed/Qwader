@@ -16,8 +16,25 @@ public sealed class SystemResetService(
     UserManager<AppUser> userManager,
     ICurrentUser currentUser,
     IFileStorage files,
-    IAuditService audit) : ISystemResetService
+    IAuditService audit,
+    IClock clock) : ISystemResetService
 {
+    public async Task<int> DeleteAuditLogAsync(DeleteAuditLogRequest request, CancellationToken ct = default)
+    {
+        var user = await userManager.FindByIdAsync(currentUser.RequiredUserId.ToString()) ?? throw new UnauthorizedException();
+        if (!await userManager.IsInRoleAsync(user, SystemRoles.Admin))
+            throw new ForbiddenException("حذف سجل التدقيق متاح لمدير النظام فقط");
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+            throw new ValidationFailedException("password", "كلمة المرور غير صحيحة");
+
+        var (start, end) = clock.LocalDaysToUtcRange(request.From, request.To);
+        var deleted = await db.AuditLogs.Where(a => a.OccurredAt >= start && a.OccurredAt < end).ExecuteDeleteAsync(ct);
+        // Written after the delete, so this entry stays: the log always shows that a period was removed and by whom.
+        audit.Log("AuditLog.Delete", "AuditLog", null, null, new { From = request.From, To = request.To, Deleted = deleted });
+        await db.SaveChangesAsync(ct);
+        return deleted;
+    }
+
     public async Task<SystemResetResult> ResetAsync(SystemResetRequest request, CancellationToken ct = default)
     {
         var user = await userManager.FindByIdAsync(currentUser.RequiredUserId.ToString()) ?? throw new UnauthorizedException();

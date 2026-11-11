@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
 import { api, type PagedResult } from '@/api/client';
@@ -21,7 +22,15 @@ interface AuditEntry {
   newValues: string | null;
   reason: string | null;
   ipAddress: string | null;
+  /** «P-00402 · صحن …», an invoice number, a name. */
+  entityLabel: string | null;
 }
+
+/** Where an entry's record opens, when it has a page. */
+const ENTITY_PAGES: Record<string, string> = {
+  Product: '/products/', SaleInvoice: '/sales/', PurchaseInvoice: '/purchases/', Customer: '/customers/', Supplier: '/suppliers/',
+  ReceiptVoucher: '/receipts/', PaymentVoucher: '/payments/', StockCount: '/inventory/counts/', FinancialAccount: '/accounts/',
+};
 
 const AREAS = [
   { value: '', label: 'الكل' },
@@ -69,13 +78,20 @@ export function AuditLogPage() {
                       <p className="font-semibold">{a.actionName}</p>
                       <p className="shrink-0 text-xs text-muted">{formatDateTime(a.occurredAt)}</p>
                     </div>
-                    <p className="text-sm text-muted">{a.userName ?? 'النظام'}{a.entityId && <> · <span className="ltr inline-block">#{a.entityId}</span></>}</p>
+                    <p className="text-sm text-muted">
+                      {a.userName ?? 'النظام'}
+                      {a.entityLabel ? <> · <span className="font-medium text-gray-700">{a.entityLabel}</span></>
+                        : a.entityId && <> · <span className="ltr inline-block">#{a.entityId}</span></>}
+                    </p>
                     {a.reason && <p className="text-sm">السبب: {a.reason}</p>}
                   </button>
                   {open === a.id && (
                     <div className="space-y-2 px-3 pb-3 text-xs">
                       {a.oldValues && <pre className="ltr overflow-x-auto rounded-lg bg-red-50 p-2 whitespace-pre-wrap break-all">{pretty(a.oldValues)}</pre>}
                       {a.newValues && <pre className="ltr overflow-x-auto rounded-lg bg-green-50 p-2 whitespace-pre-wrap break-all">{pretty(a.newValues)}</pre>}
+                      {a.entityLabel && a.entityId && ENTITY_PAGES[a.entityType] && (
+                        <Link to={ENTITY_PAGES[a.entityType] + a.entityId} className="inline-block text-sm text-brand-700 underline">فتح {a.entityLabel}</Link>
+                      )}
                       {a.ipAddress && <p className="text-muted">IP: <span className="ltr inline-block">{a.ipAddress}</span></p>}
                     </div>
                   )}
