@@ -1,10 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { useAuth } from '@/auth/AuthProvider';
 import { cn } from '@/lib/cn';
 
-/** Copyright, developer credit and the app version (from the server's App:Version), under the menus and on the sign-in page. */
+/**
+ * Copyright and developer credit, under the menus and on the sign-in page; the version (App:Version) only once signed in —
+ * the server does not tell it before sign-in.
+ */
 export function Credit({ className }: { className?: string }) {
-  const info = useQuery({ queryKey: ['app-info'], queryFn: () => api<{ version: string }>('/app-info'), staleTime: Infinity, retry: false });
+  const { status } = useAuth();
+  const info = useQuery({ queryKey: ['app-info'], queryFn: () => api<{ version: string }>('/app-info'), staleTime: Infinity, retry: false,
+    enabled: status === 'authenticated' });
 
   return (
     <p className={cn('text-center text-xs leading-5 print:hidden', className)}>

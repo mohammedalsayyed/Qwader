@@ -87,10 +87,9 @@ public sealed class LookupsController(ILookupService lookups) : ControllerBase
     public Task<LookupItem> AddUnit(AddUnitRequest request, CancellationToken ct) => lookups.AddUnitAsync(request.Name, ct);
 }
 
-/// <summary>Public: the sign-in page shows the version under the copyright line.</summary>
+/// <summary>The version, for signed-in users only (shown under the copyright line); not told to anyone before sign-in.</summary>
 [ApiController]
 [Route("api/app-info")]
-[AllowAnonymous]
 public sealed class AppInfoController(IConfiguration config) : ControllerBase
 {
     [HttpGet]

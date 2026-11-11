@@ -452,19 +452,20 @@ public sealed class SaleService(
     public async Task<OfflineChangesDto> OfflineChangesAsync(long movementId, long ledgerEntryId, DateTime at, CancellationToken ct = default)
     {
         var cursor = await CursorAsync(ct);
-        // A little overlap: a transaction that started earlier may commit after the last read. Sending a row twice is harmless.
+        // A little overlap: a transaction that started earlier may commit after the last read. It is limited to rows of the last
+        // minute, so an idle store gets an empty answer instead of the same last 100 rows every few seconds (measured: 32 KB each time).
         var fromMovement = movementId - 100;
         var fromEntry = ledgerEntryId - 100;
         var since = at.ToUniversalTime().AddMinutes(-1);
 
-        var productIds = await db.StockMovements.Where(m => m.Id > fromMovement).Select(m => m.ProductId)
+        var productIds = await db.StockMovements.Where(m => m.Id > movementId || (m.Id > fromMovement && m.OccurredAt >= since)).Select(m => m.ProductId)
             .Union(db.Products.Where(p => p.CreatedAt >= since || p.UpdatedAt >= since).Select(p => p.Id))
             .Distinct().ToListAsync(ct);
         var changed = await db.Products.Where(p => productIds.Contains(p.Id)).Select(p => new { p.Id, p.IsArchived }).ToListAsync(ct);
         var live = changed.Where(p => !p.IsArchived).Select(p => p.Id).ToList();
         var products = await OfflineProductsAsync(db.Products.Where(p => live.Contains(p.Id)), ct);
 
-        var customerIds = await db.CustomerLedgerEntries.Where(e => e.Id > fromEntry).Select(e => e.CustomerId)
+        var customerIds = await db.CustomerLedgerEntries.Where(e => e.Id > ledgerEntryId || (e.Id > fromEntry && e.Date >= since)).Select(e => e.CustomerId)
             .Union(db.Customers.Where(c => c.CreatedAt >= since || c.UpdatedAt >= since).Select(c => c.Id))
             .Distinct().ToListAsync(ct);
         var customers = await db.Customers.AsNoTracking().Where(c => customerIds.Contains(c.Id) && !c.IsWalkIn)

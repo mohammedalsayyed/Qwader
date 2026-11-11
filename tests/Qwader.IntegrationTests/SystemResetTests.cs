@@ -97,9 +97,16 @@ public sealed class SystemResetTests(ApiFactory factory)
         }
     }
 
-    private static async Task ResetAsync(HttpClient admin, SystemResetMode mode) =>
-        (await (await admin.PostAsJsonAsync("/api/settings/reset", new SystemResetRequest(mode, ApiFactory.AdminPassword), TestJson.Options))
-            .ReadAsync<SystemResetResult>()).Mode.Should().Be(mode);
+    private static async Task ResetAsync(HttpClient admin, SystemResetMode mode)
+    {
+        var result = await (await admin.PostAsJsonAsync("/api/settings/reset", new SystemResetRequest(mode, ApiFactory.AdminPassword), TestJson.Options))
+            .ReadAsync<SystemResetResult>();
+        result.Mode.Should().Be(mode);
+        // Every reset first leaves a full backup on the server.
+        result.BackupFile.Should().StartWith("before-reset-");
+        File.Exists(Path.Combine(ApiFactory.BackupsRoot, result.BackupFile!)).Should().BeTrue();
+        new FileInfo(Path.Combine(ApiFactory.BackupsRoot, result.BackupFile!)).Length.Should().BeGreaterThan(0);
+    }
 
     private static async Task<int> CountAsync(HttpClient client, string path) =>
         (await client.GetFromJsonAsync<JsonElement>(path + "?pageSize=1", TestJson.Options)).GetProperty("totalCount").GetInt32();

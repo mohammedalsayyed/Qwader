@@ -171,7 +171,8 @@ export function NotificationsButton() {
     refetchInterval: 120_000,
   });
   const n = query.data;
-  const unread = useFeed(1, 1).data?.unreadCount ?? 0;
+  // Same query as the home screen's «آخر الإشعارات» (page 1 of 5): one request serves both.
+  const unread = useFeed(1, 5).data?.unreadCount ?? 0;
   const total = (n ? n.lowStock + n.outOfStock + n.draftPurchases + n.pendingTransfers : 0) + unread;
 
   const items = n

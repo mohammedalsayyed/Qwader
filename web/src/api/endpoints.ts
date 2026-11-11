@@ -120,7 +120,7 @@ export const settingsApi = {
   deleteAuditLog: (input: { from: string; to: string; password: string }) =>
     api<{ deleted: number }>('/settings/audit-log/delete', { method: 'POST', body: input }),
   reset: (input: { mode: SystemResetMode; password: string }) =>
-    api<{ mode: SystemResetMode; deletedRows: number }>('/settings/reset', { method: 'POST', body: input }),
+    api<{ mode: SystemResetMode; deletedRows: number; backupFile?: string | null }>('/settings/reset', { method: 'POST', body: input }),
 };
 
 export type SystemResetMode = 'TransactionsOnly' | 'Everything';

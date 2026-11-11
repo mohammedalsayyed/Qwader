@@ -17,8 +17,29 @@ public sealed class SystemResetService(
     ICurrentUser currentUser,
     IFileStorage files,
     IAuditService audit,
-    IClock clock) : ISystemResetService
+    IClock clock,
+    ISystemBackupService backup,
+    Microsoft.Extensions.Configuration.IConfiguration config,
+    Microsoft.Extensions.Hosting.IHostEnvironment env) : ISystemResetService
 {
+    private const int BackupsKept = 10;
+
+    /// <summary>
+    /// A full backup on the server before anything is wiped, so a reset by mistake can be undone. If it cannot be written,
+    /// nothing is reset. The newest ten are kept.
+    /// </summary>
+    private async Task<string> BackupBeforeResetAsync(CancellationToken ct)
+    {
+        var folder = Path.GetFullPath(config["Backups:Root"] ?? Path.Combine(env.ContentRootPath, "App_Data", "backups"));
+        Directory.CreateDirectory(folder);
+        var name = "before-reset-" + backup.FileName().Replace("qwader-backup-", "");
+        var path = Path.Combine(folder, name);
+        await using (var file = File.Create(path)) await backup.WriteAsync(file, ct);
+        foreach (var old in new DirectoryInfo(folder).GetFiles("before-reset-*.zip").OrderByDescending(f => f.CreationTimeUtc).Skip(BackupsKept))
+            old.Delete();
+        return name;
+    }
+
     public async Task<int> DeleteAuditLogAsync(DeleteAuditLogRequest request, CancellationToken ct = default)
     {
         var user = await userManager.FindByIdAsync(currentUser.RequiredUserId.ToString()) ?? throw new UnauthorizedException();
@@ -42,7 +63,11 @@ public sealed class SystemResetService(
             throw new ForbiddenException("تصفير النظام متاح لمدير النظام فقط");
         if (!await userManager.CheckPasswordAsync(user, request.Password))
             throw new ValidationFailedException("password", "كلمة المرور غير صحيحة");
+        // A copy in daily use can switch the reset off altogether (System:AllowReset = false in its settings).
+        if (string.Equals(config["System:AllowReset"], "false", StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("تصفير النظام معطّل في هذه النسخة");
 
+        var backupFile = await BackupBeforeResetAsync(ct);
         var everything = request.Mode == SystemResetMode.Everything;
         var deleted = 0;
         // Whole-table deletes right after a bulk import can run on stale statistics and exceed the default 30 s;
@@ -113,7 +138,7 @@ public sealed class SystemResetService(
 
             if (everything) await DbInitializer.SeedReferenceDataAsync(db, ct);
 
-            audit.Log("System.Reset", "System", null, null, new { Mode = request.Mode.ToString(), DeletedRows = deleted },
+            audit.Log("System.Reset", "System", null, null, new { Mode = request.Mode.ToString(), DeletedRows = deleted, Backup = backupFile },
                 everything ? "مسح كل البيانات" : "مسح الحركات فقط");
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
@@ -128,6 +153,6 @@ public sealed class SystemResetService(
         }
 
         db.ChangeTracker.Clear();
-        return new SystemResetResult(request.Mode, deleted);
+        return new SystemResetResult(request.Mode, deleted, backupFile);
     }
 }

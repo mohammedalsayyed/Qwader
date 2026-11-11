@@ -39,7 +39,7 @@ export function SystemResetCard() {
   return (
     <Card className="space-y-3 border-danger/40 p-5">
       <h2 className="flex items-center gap-2 font-bold text-danger"><TriangleAlert className="size-5" aria-hidden /> تصفير النظام</h2>
-      <p className="text-sm text-muted">لبدء العمل من جديد بعد التجربة. المسح نهائي ولا يمكن التراجع عنه — نزّل التقارير التي تحتاجها قبله.</p>
+      <p className="text-sm text-muted">لبدء العمل من جديد بعد التجربة. قبل المسح تُحفظ نسخة احتياطية كاملة على الخادم تلقائيًا، ومع ذلك نزّل التقارير التي تحتاجها قبله.</p>
       <Button variant="outline" className="border-danger text-danger" onClick={() => setOpen(true)}>تصفير النظام…</Button>
       {open && <ResetSheet onClose={() => setOpen(false)} />}
     </Card>
@@ -57,10 +57,11 @@ function ResetSheet({ onClose }: { onClose: () => void }) {
 
   const reset = useMutation({
     mutationFn: () => settingsApi.reset({ mode, password }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       // Every cached list is now stale.
       queryClient.clear();
-      toast.success(mode === 'Everything' ? 'تم مسح كل البيانات، النظام جاهز من البداية' : 'تم مسح الحركات وتصفير الأرصدة والكميات');
+      toast.success((mode === 'Everything' ? 'تم مسح كل البيانات، النظام جاهز من البداية' : 'تم مسح الحركات وتصفير الأرصدة والكميات')
+        + (result.backupFile ? ` — حُفظت نسخة احتياطية قبل المسح: ${result.backupFile}` : ''));
       navigate('/');
     },
     onError: (e) => setError((e instanceof ApiError && e.fieldErrors?.password?.[0]) || errorMessage(e)),

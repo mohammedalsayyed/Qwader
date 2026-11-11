@@ -89,9 +89,11 @@ public sealed class ReportTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task App_version_is_public_for_the_sign_in_page()
+    public async Task App_version_is_shown_to_signed_in_users_only()
     {
-        var info = await factory.CreateClient().GetFromJsonAsync<System.Text.Json.JsonElement>("/api/app-info");
+        // Not told before sign-in (external review S10); the menus show it once signed in.
+        (await factory.CreateClient().GetAsync("/api/app-info")).StatusCode.Should().Be(System.Net.HttpStatusCode.Unauthorized);
+        var info = await (await factory.LoginAsync()).GetFromJsonAsync<System.Text.Json.JsonElement>("/api/app-info");
         info.GetProperty("version").GetString().Should().NotBeNullOrWhiteSpace();
     }
 

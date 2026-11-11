@@ -53,8 +53,10 @@ builder.Services.AddResponseCompression(options =>
     options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
     options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
 });
-builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
-builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+// Measured on 3,000 products: brotli at «Fastest» came out larger than gzip (199 KB vs 153 KB) and browsers prefer brotli,
+// so phones got the bigger one. «Optimal» (brotli quality 4) is smaller than gzip and still quick.
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Optimal);
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Optimal);
 builder.Services.AddProblemDetails();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
@@ -138,6 +140,30 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(o => o.DocumentTitle = "Qwader API");
 }
 
+// Security headers on every response (pages, files and API), so they hold wherever the app is hosted — the production site is
+// served straight by IIS, without the Cloudflare layer that added them on the trial copy.
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var h = context.Response.Headers;
+        h["X-Content-Type-Options"] = "nosniff";
+        h["X-Frame-Options"] = "DENY";
+        h["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        // The camera is for the barcode scanner and product photos; nothing else is used.
+        h["Permissions-Policy"] = "camera=(self), microphone=(), geolocation=(), payment=(), usb=()";
+        // Everything the app loads is its own: scripts, fonts, images (and blob:/data: previews), API calls, the service worker.
+        // Inline style attributes are allowed (React style props); inline scripts are not.
+        h["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+            + "font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+            + "base-uri 'self'; form-action 'self'; frame-ancestors 'none'" + (context.Request.IsHttps ? "; upgrade-insecure-requests" : "");
+        if (context.Request.IsHttps) h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+        h.Remove("X-Powered-By");
+        return Task.CompletedTask;
+    });
+    await next();
+});
+
 app.UseDefaultFiles();
 var contentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
@@ -179,6 +205,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 // The built React app is served from wwwroot; unknown non-API routes fall back to it.
+// An /api address that does not exist is a 404 in JSON, not the app's page with 200 (which hid typos and broken calls).
+app.MapFallback("/api/{**rest}", (HttpContext ctx) => Results.Problem(statusCode: 404, title: "المسار غير موجود", detail: ctx.Request.Path))
+    .AllowAnonymous();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
 if (!app.Configuration.GetValue<bool>("Database:SkipInitialization"))

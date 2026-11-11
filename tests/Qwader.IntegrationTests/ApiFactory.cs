@@ -22,6 +22,9 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public static readonly string ConnectionString =
         $"Server={SqlServer};Database=Qwader_IntegrationTests;Trusted_Connection=True;TrustServerCertificate=True";
 
+    /// <summary>Where the automatic backup before a reset is written during the tests (outside the project folder).</summary>
+    public static readonly string BackupsRoot = Path.Combine(Path.GetTempPath(), "qwader-test-backups");
+
     public ApiFactory()
     {
         // Environment variables are visible to Program.cs before the host is built.
@@ -31,6 +34,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         Environment.SetEnvironmentVariable("Seed__AdminPassword", AdminPassword);
         Environment.SetEnvironmentVariable("Seed__SkipPasswordChange", "true");
         Environment.SetEnvironmentVariable("RateLimiting__LoginPerMinute", "10000");
+        Environment.SetEnvironmentVariable("Backups__Root", BackupsRoot);
     }
 
     public async Task InitializeAsync()

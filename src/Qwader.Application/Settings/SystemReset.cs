@@ -13,7 +13,8 @@ public enum SystemResetMode
 
 public sealed record SystemResetRequest(SystemResetMode Mode, string Password);
 
-public sealed record SystemResetResult(SystemResetMode Mode, int DeletedRows);
+/// <param name="BackupFile">The backup taken on the server just before the wipe (kept under App_Data/backups).</param>
+public sealed record SystemResetResult(SystemResetMode Mode, int DeletedRows, string? BackupFile = null);
 
 public interface ISystemResetService
 {

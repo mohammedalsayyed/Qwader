@@ -95,12 +95,32 @@ export async function refreshOfflineData(user: CurrentUser) {
  * Brings the copy up to date with only what changed (stock, prices, balances) — small enough to ask every few seconds,
  * so a collection or a sale on another device shows here before the connection drops. Falls back to a full download.
  */
-export async function applyOfflineChanges(user: CurrentUser) {
+let changesInFlight: Promise<void> | null = null;
+let changesAt = 0;
+
+export function applyOfflineChanges(user: CurrentUser): Promise<void> {
+  // One request at a time, and none within 2 s of the last: opening a screen, returning to the tab and the timer often
+  // asked together (measured: the same request twice within 3 s).
+  if (changesInFlight) return changesInFlight;
+  if (Date.now() - changesAt < 2000) return Promise.resolve();
+  changesAt = Date.now();
+  changesInFlight = fetchChanges(user).finally(() => { changesInFlight = null; });
+  return changesInFlight;
+}
+
+async function fetchChanges(user: CurrentUser) {
   const current = state.snapshot;
   if (!current?.cursor || current.user.id !== user.id) return refreshOfflineData(user);
   const changes = await salesApi.offlineChanges(current.cursor);
   const snapshot = state.snapshot;
   if (snapshot !== current) return; // replaced while we were asking
+  const nothingChanged = changes.products.length === 0 && changes.removedProductIds.length === 0
+    && changes.customers.length === 0 && changes.removedCustomerIds.length === 0;
+  if (nothingChanged && changes.maxHours === snapshot.maxHours) {
+    // Only the cursor and the time move; the lists stay as they are (no re-render of every screen that reads them).
+    await saveSnapshot({ ...snapshot, generatedAt: changes.generatedAt, cursor: changes.cursor });
+    return;
+  }
   const queued = state.queue.filter((q) => q.userId === user.id);
   const fresh = withQueuedSales({ ...snapshot, products: changes.products }, queued).products;
   await saveSnapshot({
