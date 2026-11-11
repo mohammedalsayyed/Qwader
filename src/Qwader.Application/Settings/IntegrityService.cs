@@ -33,6 +33,8 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     public async Task<IntegrityReport> CheckAsync(CancellationToken ct = default)
     {
+        // It reads every movement on purpose; on a large store with a cold cache that may take longer than a screen's 30 seconds.
+        db.Database.SetCommandTimeout(TimeSpan.FromMinutes(3));
         var checks = new List<IntegrityCheck>
         {
             await AccountsAsync(ct),
@@ -55,12 +57,10 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> AccountsAsync(CancellationToken ct)
     {
-        var rows = await db.FinancialAccounts.AsNoTracking().Select(a => new
-        {
-            a.Id, a.Name, a.CurrentBalance,
-            Computed = db.AccountTransactions.Where(t => t.FinancialAccountId == a.Id)
-                .Sum(t => (decimal?)(t.Direction == MoneyDirection.In ? t.Amount : -t.Amount)) ?? 0,
-        }).ToListAsync(ct);
+        var sums = await db.AccountTransactions.AsNoTracking().GroupBy(t => t.FinancialAccountId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var rows = (await db.FinancialAccounts.AsNoTracking().Select(a => new { a.Id, a.Name, a.CurrentBalance }).ToListAsync(ct))
+            .Select(a => new { a.Id, a.Name, a.CurrentBalance, Computed = sums.GetValueOrDefault(a.Id) }).ToList();
         return Check("أرصدة الحسابات المالية", "رصيد كل حساب (الصندوق، البنك، المحافظ) = مجموع ما دخله − مجموع ما خرج منه",
             rows.Count, rows.Where(r => Math.Abs(r.CurrentBalance - r.Computed) > Money)
                 .Select(r => new IntegrityIssue(r.Name, r.CurrentBalance, r.Computed, $"/accounts/{r.Id}")));
@@ -68,11 +68,10 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> CustomersAsync(CancellationToken ct)
     {
-        var rows = await db.Customers.AsNoTracking().Select(c => new
-        {
-            c.Id, c.Code, c.Name, c.Balance, c.IsWalkIn,
-            Computed = db.CustomerLedgerEntries.Where(e => e.CustomerId == c.Id).Sum(e => (decimal?)(e.Debit - e.Credit)) ?? 0,
-        }).ToListAsync(ct);
+        var sums = await db.CustomerLedgerEntries.AsNoTracking().GroupBy(e => e.CustomerId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(e => e.Debit - e.Credit) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var rows = (await db.Customers.AsNoTracking().Select(c => new { c.Id, c.Code, c.Name, c.Balance, c.IsWalkIn }).ToListAsync(ct))
+            .Select(c => new { c.Id, c.Code, c.Name, c.Balance, c.IsWalkIn, Computed = sums.GetValueOrDefault(c.Id) }).ToList();
         return Check("ديون العملاء", "رصيد كل عميل = مجموع حركات كشف حسابه (فواتير، دفعات، مرتجعات، سندات)",
             rows.Count, rows.Where(r => Math.Abs(r.Balance - r.Computed) > Money || (r.IsWalkIn && r.Balance != 0))
                 .Select(r => new IntegrityIssue($"{r.Code} · {r.Name}", r.Balance, r.IsWalkIn ? 0 : r.Computed, $"/customers/{r.Id}")));
@@ -80,11 +79,10 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> SuppliersAsync(CancellationToken ct)
     {
-        var rows = await db.Suppliers.AsNoTracking().Select(s => new
-        {
-            s.Id, s.Code, s.Name, s.Balance,
-            Computed = db.SupplierLedgerEntries.Where(e => e.SupplierId == s.Id).Sum(e => (decimal?)(e.Credit - e.Debit)) ?? 0,
-        }).ToListAsync(ct);
+        var sums = await db.SupplierLedgerEntries.AsNoTracking().GroupBy(e => e.SupplierId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(e => e.Credit - e.Debit) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var rows = (await db.Suppliers.AsNoTracking().Select(x => new { x.Id, x.Code, x.Name, x.Balance }).ToListAsync(ct))
+            .Select(x => new { x.Id, x.Code, x.Name, x.Balance, Computed = sums.GetValueOrDefault(x.Id) }).ToList();
         return Check("مستحقات الموردين", "رصيد كل مورد = مجموع حركات كشف حسابه (فواتير شراء، دفعات، مردودات)",
             rows.Count, rows.Where(r => Math.Abs(r.Balance - r.Computed) > Money)
                 .Select(r => new IntegrityIssue($"{r.Code} · {r.Name}", r.Balance, r.Computed, $"/suppliers/{r.Id}")));
@@ -108,30 +106,38 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> AverageCostAsync(CancellationToken ct)
     {
-        // The product's average cost is what its last stock movement left.
-        var rows = await db.Products.AsNoTracking()
-            .Select(p => new
-            {
-                p.Id, p.AverageCost,
-                Last = db.StockMovements.Where(m => m.ProductId == p.Id).OrderByDescending(m => m.Id).Select(m => (decimal?)m.AverageCostAfter).FirstOrDefault(),
-            })
-            .Where(p => p.Last != null).ToListAsync(ct);
-        var bad = rows.Where(r => Math.Abs(r.AverageCost - r.Last!.Value) > Cost).ToList();
+        // The product's average cost is what its last stock movement left. One grouped query, not one lookup per product.
+        var lastIds = db.StockMovements.GroupBy(m => m.ProductId).Select(g => g.Max(m => m.Id));
+        var last = await db.StockMovements.AsNoTracking().Where(m => lastIds.Contains(m.Id))
+            .Select(m => new { m.ProductId, m.AverageCostAfter }).ToDictionaryAsync(m => m.ProductId, m => m.AverageCostAfter, ct);
+        var products = await db.Products.AsNoTracking().Select(p => new { p.Id, p.AverageCost }).ToListAsync(ct);
+        var rows = products.Where(p => last.ContainsKey(p.Id)).ToList();
+        var bad = rows.Where(r => Math.Abs(r.AverageCost - last[r.Id]) > Cost).ToList();
         var names = await NamesAsync(bad.Select(r => r.Id), ct);
         return Check("متوسط التكلفة", "متوسط تكلفة كل منتج = ما تركته آخر حركة مخزون له",
-            rows.Count, bad.Select(r => new IntegrityIssue(names.GetValueOrDefault(r.Id, $"#{r.Id}"), r.AverageCost, r.Last!.Value, $"/products/{r.Id}")));
+            rows.Count, bad.Select(r => new IntegrityIssue(names.GetValueOrDefault(r.Id, $"#{r.Id}"), r.AverageCost, last[r.Id], $"/products/{r.Id}")));
     }
 
     private async Task<IntegrityCheck> SaleInvoicesAsync(CancellationToken ct)
     {
-        var rows = await db.SaleInvoices.AsNoTracking().Select(s => new
+        // Each total is summed once for every invoice (grouped queries), then matched in memory: a store with tens of thousands of
+        // invoices is checked in a few seconds instead of one lookup per invoice.
+        var invoices = await db.SaleInvoices.AsNoTracking()
+            .Select(s => new { s.Id, s.Number, s.Status, s.Total, s.PaidAmount, s.CollectedAmount }).ToListAsync(ct);
+        var lines = await db.SaleInvoiceLines.AsNoTracking().GroupBy(l => l.SaleInvoiceId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(l => l.NetTotal) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var payments = await db.SalePayments.AsNoTracking().GroupBy(p => p.SaleInvoiceId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(p => p.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var allocated = await db.ReceiptAllocations.AsNoTracking().Where(a => a.SaleInvoiceId != null).GroupBy(a => a.SaleInvoiceId!.Value)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(a => a.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var returned = await db.SaleReturns.AsNoTracking().Where(r => r.Settlement == ReturnSettlement.ReduceBalance).GroupBy(r => r.SaleInvoiceId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(r => r.Total) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var rows = invoices.Select(s => new
         {
             s.Id, s.Number, s.Status, s.Total, s.PaidAmount, s.CollectedAmount,
-            Lines = s.Lines.Sum(l => (decimal?)l.NetTotal) ?? 0,
-            Payments = s.Payments.Sum(p => (decimal?)p.Amount) ?? 0,
-            Allocated = db.ReceiptAllocations.Where(a => a.SaleInvoiceId == s.Id).Sum(a => (decimal?)a.Amount) ?? 0,
-            ReturnedOnBalance = db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0,
-        }).ToListAsync(ct);
+            Lines = lines.GetValueOrDefault(s.Id), Payments = payments.GetValueOrDefault(s.Id),
+            Allocated = allocated.GetValueOrDefault(s.Id), ReturnedOnBalance = returned.GetValueOrDefault(s.Id),
+        }).ToList();
         var issues = new List<IntegrityIssue>();
         foreach (var s in rows)
         {
@@ -148,11 +154,11 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> PurchaseInvoicesAsync(CancellationToken ct)
     {
-        var rows = await db.PurchaseInvoices.AsNoTracking().Select(p => new
-        {
-            p.Id, p.Number, p.Subtotal, p.Discount, p.Total, p.PaidAmount,
-            Lines = p.Lines.Sum(l => (decimal?)l.LineTotal) ?? 0,
-        }).ToListAsync(ct);
+        var lines = await db.PurchaseInvoiceLines.AsNoTracking().GroupBy(l => l.PurchaseInvoiceId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(l => l.LineTotal) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var rows = (await db.PurchaseInvoices.AsNoTracking()
+                .Select(p => new { p.Id, p.Number, p.Subtotal, p.Discount, p.Total, p.PaidAmount }).ToListAsync(ct))
+            .Select(p => new { p.Id, p.Number, p.Subtotal, p.Discount, p.Total, p.PaidAmount, Lines = lines.GetValueOrDefault(p.Id) }).ToList();
         var issues = new List<IntegrityIssue>();
         foreach (var p in rows)
         {
@@ -166,21 +172,25 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
 
     private async Task<IntegrityCheck> ReturnedQuantitiesAsync(CancellationToken ct)
     {
-        var sale = await db.SaleInvoiceLines.AsNoTracking().Select(l => new
-        {
-            l.SaleInvoiceId, l.SaleInvoice.Number, l.ProductName, l.ReturnedQuantity,
-            Computed = db.SaleReturnLines.Where(r => r.SaleInvoiceLineId == l.Id).Sum(r => (decimal?)r.Quantity) ?? 0,
-        }).ToListAsync(ct);
-        var purchase = await db.PurchaseInvoiceLines.AsNoTracking().Select(l => new
-        {
-            l.PurchaseInvoiceId, l.PurchaseInvoice.Number, l.ProductId, l.ReturnedQuantity,
-            Computed = db.PurchaseReturnLines.Where(r => r.PurchaseInvoiceLineId == l.Id).Sum(r => (decimal?)r.Quantity) ?? 0,
-        }).ToListAsync(ct);
+        // Only lines with a returned quantity, or with a return document, can disagree; the rest need no lookup.
+        var saleReturns = await db.SaleReturnLines.AsNoTracking().GroupBy(r => r.SaleInvoiceLineId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(r => r.Quantity) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var saleIds = saleReturns.Keys.ToList();
+        var sale = (await db.SaleInvoiceLines.AsNoTracking().Where(l => l.ReturnedQuantity != 0 || saleIds.Contains(l.Id))
+                .Select(l => new { l.Id, l.SaleInvoiceId, l.SaleInvoice.Number, l.ProductName, l.ReturnedQuantity }).ToListAsync(ct))
+            .Select(l => new { l.SaleInvoiceId, l.Number, l.ProductName, l.ReturnedQuantity, Computed = saleReturns.GetValueOrDefault(l.Id) }).ToList();
+        var purchaseReturns = await db.PurchaseReturnLines.AsNoTracking().GroupBy(r => r.PurchaseInvoiceLineId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(r => r.Quantity) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var purchaseIds = purchaseReturns.Keys.ToList();
+        var purchase = (await db.PurchaseInvoiceLines.AsNoTracking().Where(l => l.ReturnedQuantity != 0 || purchaseIds.Contains(l.Id))
+                .Select(l => new { l.Id, l.PurchaseInvoiceId, l.PurchaseInvoice.Number, l.ProductId, l.ReturnedQuantity }).ToListAsync(ct))
+            .Select(l => new { l.PurchaseInvoiceId, l.Number, l.ProductId, l.ReturnedQuantity, Computed = purchaseReturns.GetValueOrDefault(l.Id) }).ToList();
+        var checkedLines = await db.SaleInvoiceLines.CountAsync(ct) + await db.PurchaseInvoiceLines.CountAsync(ct);
         var issues = sale.Where(l => Math.Abs(l.ReturnedQuantity - l.Computed) > Quantity)
             .Select(l => new IntegrityIssue($"{l.Number}: {l.ProductName}", l.ReturnedQuantity, l.Computed, $"/sales/{l.SaleInvoiceId}"))
             .Concat(purchase.Where(l => Math.Abs(l.ReturnedQuantity - l.Computed) > Quantity)
                 .Select(l => new IntegrityIssue($"{l.Number}: منتج #{l.ProductId}", l.ReturnedQuantity, l.Computed, $"/purchases/{l.PurchaseInvoiceId}")));
-        return Check("الكميات المرتجعة", "الكمية المرتجعة من كل بند = مجموع مستندات المرتجع عليه (بيع وشراء)", sale.Count + purchase.Count, issues);
+        return Check("الكميات المرتجعة", "الكمية المرتجعة من كل بند = مجموع مستندات المرتجع عليه (بيع وشراء)", checkedLines, issues);
     }
 
     private async Task<Dictionary<int, string>> NamesAsync(IEnumerable<int> productIds, CancellationToken ct)

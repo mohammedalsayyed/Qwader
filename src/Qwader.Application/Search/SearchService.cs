@@ -55,6 +55,9 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
         if (normalized.Length == 0) return new SearchResult(raw, []);
         perKind = Math.Clamp(perKind, 1, 20);
         var hits = new List<SearchHit>();
+        // Document numbers (INV-…, RCV-…, a supplier's invoice number) always hold digits. A search without any digit («صحن»)
+        // skips them: «ends with» cannot use an index, so it would read every invoice and voucher for nothing.
+        var mayBeNumber = raw.Any(char.IsDigit);
 
         if (currentUser.HasPermission(Permissions.ProductsView))
         {
@@ -96,7 +99,7 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
                 .ToListAsync(ct));
         }
 
-        if ((currentUser.HasPermission(Permissions.SalesCreate) || currentUser.HasPermission(Permissions.SalesViewAll)) && raw.Length >= 3)
+        if ((currentUser.HasPermission(Permissions.SalesCreate) || currentUser.HasPermission(Permissions.SalesViewAll)) && raw.Length >= 3 && mayBeNumber)
         {
             var sales = db.SaleInvoices.AsNoTracking().Where(s => s.Number.EndsWith(raw) || s.Number == raw);
             if (!currentUser.HasPermission(Permissions.SalesViewAll) && !currentUser.HasPermission(Permissions.ReportsSales))
@@ -115,7 +118,7 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
                 .ToListAsync(ct));
         }
 
-        if ((currentUser.HasPermission(Permissions.VouchersCreate) || currentUser.HasPermission(Permissions.ReportsFinancial)) && raw.Length >= 3)
+        if ((currentUser.HasPermission(Permissions.VouchersCreate) || currentUser.HasPermission(Permissions.ReportsFinancial)) && raw.Length >= 3 && mayBeNumber)
         {
             hits.AddRange(await db.ReceiptVouchers.AsNoTracking().Where(v => v.Number.EndsWith(raw) || v.Number == raw)
                 .OrderByDescending(v => v.Id).Take(2)
@@ -125,7 +128,7 @@ public sealed class SearchService(IAppDbContext db, ICurrentUser currentUser) : 
                 .Select(v => new SearchHit(SearchResultKind.PaymentVoucher, v.Id, v.Number, v.BeneficiaryName, null, v.Amount, null, null)).ToListAsync(ct));
         }
 
-        if (currentUser.HasPermission(Permissions.PurchasesView) && raw.Length >= 3)
+        if (currentUser.HasPermission(Permissions.PurchasesView) && raw.Length >= 3 && mayBeNumber)
         {
             hits.AddRange(await db.PurchaseInvoices.AsNoTracking()
                 .Where(p => p.Number.EndsWith(raw) || p.Number == raw || p.SupplierInvoiceNo == raw)
