@@ -16,6 +16,7 @@ import { cn } from '@/lib/cn';
 import { BackupCard } from './BackupCard';
 import { SystemResetCard } from './SystemResetCard';
 import { AuditLogDeleteCard } from './AuditLogDeleteCard';
+import { IntegrityCard } from './IntegrityCard';
 
 const num = (min: number, max: number, message: string) =>
   z.preprocess((v) => (typeof v === 'string' ? Number(toAsciiDigits(v.trim()) || NaN) : v), z.number({ invalid_type_error: 'أدخل رقمًا صحيحًا' }).min(min, message).max(max, message));
@@ -193,6 +194,7 @@ export function SettingsPage() {
       </form>
 
       <BackupCard />
+      <IntegrityCard />
       <AuditLogDeleteCard />
       <SystemResetCard />
     </div>

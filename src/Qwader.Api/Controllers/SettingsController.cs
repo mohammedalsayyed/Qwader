@@ -26,6 +26,11 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HasPermission(Permissions.SettingsManage)]
     public async Task<object> ApplyReorderLevel(CancellationToken ct) => new { changed = await settings.ApplyDefaultReorderLevelAsync(ct) };
 
+    /// <summary>Recomputes every stored balance from its movements and lists differences. Read-only.</summary>
+    [HttpGet("integrity")]
+    [HasPermission(Permissions.SettingsManage)]
+    public Task<IntegrityReport> Integrity([FromServices] IIntegrityService integrity, CancellationToken ct) => integrity.CheckAsync(ct);
+
     /// <summary>Deletes the audit log of a period (Admin only, with the caller's password; the deletion itself is logged).</summary>
     [HttpPost("audit-log/delete")]
     [HasPermission(Permissions.SettingsManage)]

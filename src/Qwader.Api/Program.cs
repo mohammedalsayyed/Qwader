@@ -45,6 +45,16 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     });
 
 builder.Services.AddExceptionHandler<AppExceptionHandler>();
+
+// API responses (lists, reports, the offline copy of the products) shrink by ~80% compressed; build assets are compressed by IIS.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
 builder.Services.AddProblemDetails();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
@@ -144,6 +154,10 @@ app.UseStaticFiles(new StaticFileOptions
             : "no-cache";
     },
 });
+
+// After the static files (already compressed by IIS), so only API responses go through it. Sign-in and token responses are
+// left uncompressed: compressing secrets next to text an attacker can influence is what BREACH-style attacks rely on.
+app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api/auth"), branch => branch.UseResponseCompression());
 
 app.UseAuthentication();
 app.UseRateLimiter();
