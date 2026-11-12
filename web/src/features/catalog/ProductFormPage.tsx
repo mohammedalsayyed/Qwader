@@ -233,8 +233,11 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
         <h2 className="font-bold">الأسعار</h2>
         {!canEditPrices && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">ليست لديك صلاحية تعديل أسعار البيع.</p>}
         <div className="grid grid-cols-2 gap-3">
+          {/* An existing product: this is the last purchase price, for reference. The cost of the stock is the average,
+              changed only by stock movements (or «تصحيح التكلفة» on the product page). */}
           {(canSeeCost || isNew) && (
-            <Field label="سعر الشراء (التكلفة)" error={errors.purchasePrice?.message}>
+            <Field label={isNew ? 'سعر الشراء (التكلفة)' : 'آخر سعر شراء'} error={errors.purchasePrice?.message}
+              hint={isNew ? undefined : `لا يغيّر تكلفة البضاعة الموجودة — متوسط التكلفة الحالي ${formatMoney(existing?.averageCost ?? 0)}. لتصحيحها: «تصحيح التكلفة» في صفحة المنتج`}>
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.purchasePrice} {...register('purchasePrice')} />}
             </Field>
           )}

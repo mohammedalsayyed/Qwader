@@ -257,4 +257,38 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         (await admin.PostAsync($"/api/products/{product.Id}/archive", null)).EnsureSuccessStatusCode();
         (await (await admin.GetAsync($"/api/inventory/movements/total?productId={product.Id}&group=Losses")).ReadAsync<MovementTotalDto>()).Count.Should().Be(1);
     }
+
+    [Fact]
+    public async Task A_manager_corrects_a_wrong_cost_without_moving_stock_and_later_sales_use_it()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 10, openingCost: 3);
+
+        var result = await (await admin.PostAsJsonAsync("/api/inventory/cost-corrections",
+            new CostCorrectionRequest(Guid.NewGuid(), product.Id, 7, "الرصيد الافتتاحي انكتب بتكلفة 3 بدل 7"))).ReadAsync<CostCorrectionResult>();
+
+        result.OldCost.Should().Be(3);
+        result.NewCost.Should().Be(7);
+        result.ValueChange.Should().Be(40);
+        var after = await admin.GetProductAsync(product.Id);
+        after.AverageCost.Should().Be(7);
+        after.Quantity.Should().Be(10, "nothing moves");
+        var movement = (await (await admin.GetAsync($"/api/inventory/movements?productId={product.Id}&type=CostCorrection"))
+            .ReadAsync<Application.Common.PagedResult<StockMovementDto>>()).Items.Should().ContainSingle().Subject;
+        movement.Quantity.Should().Be(0);
+        movement.Notes.Should().Contain("من 3").And.Contain("إلى 7").And.Contain("الرصيد الافتتاحي");
+
+        // A sale now leaves at the corrected cost, and the books still agree with themselves.
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Name == "الصندوق النقدي").Id;
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", new Application.Sales.CreateSaleRequest(Guid.NewGuid(), Domain.Sales.PriceTier.Retail,
+            null, null, null, 0, [new Application.Sales.SaleLineInput(product.Id, 2, 10)], [new Application.Sales.SalePaymentInput(cash, 20)], null)))
+            .ReadAsync<Application.Sales.SaleDetailDto>();
+        sale.TotalCost.Should().Be(14);
+        var integrity = await admin.GetFromJsonAsync<Application.Settings.IntegrityReport>("/api/settings/integrity", TestJson.Options);
+        integrity!.Checks.Where(c => c.Name is "متوسط التكلفة" or "كميات المخزون").Should().OnlyContain(c => c.IssueCount == 0);
+
+        // A reason is required.
+        (await admin.PostAsJsonAsync("/api/inventory/cost-corrections", new CostCorrectionRequest(Guid.NewGuid(), product.Id, 5, " ")))
+            .StatusCode.Should().Be((HttpStatusCode)400);
+    }
 }

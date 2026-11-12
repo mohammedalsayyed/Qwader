@@ -44,6 +44,7 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Product.Archive"] = "أرشفة منتج",
         ["Product.Unarchive"] = "إلغاء أرشفة منتج",
         ["Product.Import"] = "استيراد منتجات",
+        ["Product.CostCorrection"] = "تصحيح تكلفة منتج",
         ["Inventory.Adjust"] = "حركة مخزون يدوية",
         ["StockCount.Post"] = "اعتماد جرد",
         ["StockCount.Cancel"] = "إلغاء جرد",

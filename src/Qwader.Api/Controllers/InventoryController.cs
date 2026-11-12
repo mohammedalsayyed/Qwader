@@ -26,6 +26,11 @@ public sealed class InventoryController(IInventoryService inventory) : Controlle
     [HasPermission(Permissions.InventoryAdjust)]
     public Task<StockAdjustmentResult> Adjust(StockAdjustmentRequest request, CancellationToken ct) => inventory.AdjustAsync(request, ct);
 
+    /// <summary>Corrects a product's average cost (stock adjustment + cost visibility; checked in the service).</summary>
+    [HttpPost("cost-corrections")]
+    [HasPermission(Permissions.InventoryAdjust)]
+    public Task<CostCorrectionResult> CorrectCost(CostCorrectionRequest request, CancellationToken ct) => inventory.CorrectCostAsync(request, ct);
+
     [HttpGet("counts")]
     [HasPermission(Permissions.InventoryCount)]
     public Task<PagedResult<StockCountListItemDto>> Counts([FromQuery] PagedRequest request, CancellationToken ct) => inventory.CountsAsync(request, ct);

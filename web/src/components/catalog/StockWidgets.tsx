@@ -133,6 +133,7 @@ const TYPE_FILTERS: { value: MovementFilter; label: string }[] = [
   { value: 'CountIncrease', label: 'زيادة جرد' },
   { value: 'CountDecrease', label: 'نقص جرد' },
   { value: 'ArchiveWriteOff', label: 'تصفير عند الأرشفة' },
+  { value: 'CostCorrection', label: 'تصحيح تكلفة' },
   { value: 'SaleReturn', label: 'مرتجع بيع' },
   { value: 'PurchaseReturn', label: 'مردود' },
 ];

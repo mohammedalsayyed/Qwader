@@ -13,7 +13,8 @@ export type MovementType =
   | 'Found'
   | 'CountIncrease'
   | 'CountDecrease'
-  | 'ArchiveWriteOff';
+  | 'ArchiveWriteOff'
+  | 'CostCorrection';
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   OpeningBalance: 'رصيد افتتاحي',
@@ -29,6 +30,7 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   CountIncrease: 'زيادة جرد',
   CountDecrease: 'نقص جرد',
   ArchiveWriteOff: 'تصفير عند الأرشفة',
+  CostCorrection: 'تصحيح تكلفة',
 };
 
 export interface StockMovement {
@@ -115,6 +117,8 @@ export const inventoryApi = {
     api<{ count: number; quantity: number; value: number | null }>('/inventory/movements/total', { query: { ...params } }),
   adjust: (input: { idempotencyKey: string; productId: number; kind: AdjustmentKind; quantity: number; notes?: string | null }) =>
     api<{ number: string; balanceAfter: number }>('/inventory/adjustments', { method: 'POST', body: input }),
+  correctCost: (input: { idempotencyKey: string; productId: number; newCost: number; reason: string }) =>
+    api<{ number: string; oldCost: number; newCost: number; quantity: number; valueChange: number }>('/inventory/cost-corrections', { method: 'POST', body: input }),
   counts: (params: { page?: number }) => api<PagedResult<StockCountListItem>>('/inventory/counts', { query: params }),
   count: (id: number) => api<StockCount>(`/inventory/counts/${id}`),
   createCount: (input: { categoryId?: number | null; productIds?: number[] | null; notes?: string | null }) =>

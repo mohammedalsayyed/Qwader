@@ -28,6 +28,12 @@ public interface IInventoryLedger
     /// </summary>
     /// <param name="allowNegative">Goods already handed over (a sale made without internet): post it even if the stock goes below zero.</param>
     Task<StockPosting> IssueAsync(StockEntry entry, decimal? atCost = null, CancellationToken ct = default, bool allowNegative = false);
+
+    /// <summary>
+    /// Sets the product's average cost (a correction): nothing moves; a movement of quantity 0 records the new cost.
+    /// Returns the previous average as <see cref="StockPosting.UnitCost"/>.
+    /// </summary>
+    Task<StockPosting> RevalueAsync(StockEntry entry, decimal newAverage, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -98,6 +104,19 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
 
         AddMovement(entry, -entry.Quantity, unitCost, balances[0], newAverage);
         return new StockPosting(unitCost, balances[0], newAverage);
+    }
+
+    public async Task<StockPosting> RevalueAsync(StockEntry entry, decimal newAverage, CancellationToken ct = default)
+    {
+        EnsureTransaction();
+        if (newAverage < 0) throw new ArgumentOutOfRangeException(nameof(newAverage));
+        var (average, _) = await LockProductAsync(entry.ProductId, ct);
+        var rounded = CostMath.RoundCost(newAverage);
+        await db.Database.ExecuteSqlAsync($"UPDATE Products SET AverageCost = {db.Database.Exact(rounded)} WHERE Id = {entry.ProductId}", ct);
+        var balance = (await db.Database.SqlQuery<decimal>(
+            $"SELECT ISNULL(SUM(Quantity), 0) AS Value FROM StockBalances WHERE ProductId = {entry.ProductId} AND WarehouseId = {entry.WarehouseId}").ToListAsync(ct)).Single();
+        AddMovement(entry, 0, rounded, balance, rounded);
+        return new StockPosting(average, balance, rounded);
     }
 
     private async Task<(decimal Average, decimal OnHand)> LockProductAsync(int productId, CancellationToken ct)

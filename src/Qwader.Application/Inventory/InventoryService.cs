@@ -21,6 +21,23 @@ public sealed record StockAdjustmentRequest(Guid IdempotencyKey, int ProductId, 
 
 public sealed record StockAdjustmentResult(string Number, decimal BalanceAfter);
 
+/// <summary>A manager corrects a product's average cost (e.g. an opening balance entered at the wrong cost).</summary>
+public sealed record CostCorrectionRequest(Guid IdempotencyKey, int ProductId, decimal NewCost, string Reason);
+
+/// <param name="ValueChange">How much the stock's value at cost changed (quantity on hand × the cost difference).</param>
+public sealed record CostCorrectionResult(string Number, decimal OldCost, decimal NewCost, decimal Quantity, decimal ValueChange);
+
+public sealed class CostCorrectionRequestValidator : AbstractValidator<CostCorrectionRequest>
+{
+    public CostCorrectionRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).NotEmpty();
+        RuleFor(x => x.ProductId).GreaterThan(0);
+        RuleFor(x => x.NewCost).GreaterThanOrEqualTo(0).WithMessage("التكلفة لا يمكن أن تكون سالبة").LessThan(10_000_000);
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("اكتب سبب التصحيح").MaximumLength(300);
+    }
+}
+
 public sealed record StockMovementDto(
     long Id,
     DateTime OccurredAt,
@@ -75,6 +92,7 @@ public interface IInventoryService
 {
     Task<InventorySummaryDto> SummaryAsync(CancellationToken ct = default);
     Task<StockAdjustmentResult> AdjustAsync(StockAdjustmentRequest request, CancellationToken ct = default);
+    Task<CostCorrectionResult> CorrectCostAsync(CostCorrectionRequest request, CancellationToken ct = default);
     Task<PagedResult<StockMovementDto>> MovementsAsync(MovementListRequest request, CancellationToken ct = default);
     /// <summary>How many movements match the filter, their quantity and their value at cost (null without cost permission).</summary>
     Task<MovementTotalDto> MovementTotalAsync(MovementListRequest request, CancellationToken ct = default);
@@ -326,6 +344,46 @@ public sealed class InventoryService(
     {
         var product = await db.Products.AsNoTracking().Where(p => p.Id == entry.ProductId).Select(p => new { p.AverageCost, p.PurchasePrice }).FirstAsync(ct);
         return await ledger.ReceiveAsync(entry, product.AverageCost > 0 ? product.AverageCost : product.PurchasePrice, ct);
+    }
+
+    private const string CostCorrectionOperation = "Inventory.CostCorrection";
+
+    /// <summary>
+    /// Sets a product's average cost: the stock on hand is revalued, nothing moves. Recorded as a «تصحيح تكلفة» movement
+    /// (old → new and the reason) and in the audit log. Needs cost visibility as well as stock adjustment.
+    /// </summary>
+    public async Task<CostCorrectionResult> CorrectCostAsync(CostCorrectionRequest request, CancellationToken ct = default)
+    {
+        if (!currentUser.HasPermission(Permissions.ProductsViewCost))
+            throw new ForbiddenException("تصحيح التكلفة يحتاج صلاحية عرض أسعار التكلفة");
+        if (await idempotency.FindAsync(request.IdempotencyKey, CostCorrectionOperation, ct) is { } done)
+        {
+            var m = await db.StockMovements.AsNoTracking().Where(x => x.SourceType == "CostCorrection" && x.SourceNumber == done.ResultId)
+                .Select(x => new { x.UnitCost, x.BalanceAfter }).FirstAsync(ct);
+            return new CostCorrectionResult(done.ResultId!, m.UnitCost, m.UnitCost, m.BalanceAfter, 0);
+        }
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var product = await db.Products.AsNoTracking().Where(p => p.Id == request.ProductId).Select(p => new { p.Id, p.Name, p.Sku }).FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("المنتج غير موجود");
+        var warehouseId = await DefaultWarehouseAsync(ct);
+        var number = await numbers.NextAsync(DocumentType.StockAdjustment, ct);
+        var reason = request.Reason.Trim();
+        var posting = await ledger.RevalueAsync(new StockEntry(product.Id, warehouseId, 0, StockMovementType.CostCorrection, "CostCorrection", null, number,
+            reason), request.NewCost, ct);
+        var onHand = await db.StockBalances.Where(b => b.ProductId == product.Id).SumAsync(b => (decimal?)b.Quantity, ct) ?? 0;
+        var change = CostMath.RoundMoney(onHand * (posting.AverageCostAfter - posting.UnitCost));
+        // The note shows the change on the movement itself: «3.0000 ← 7.0000 — the reason».
+        var movement = db.StockMovements.Local.Last(x => x.SourceNumber == number);
+        movement.Notes = $"من {posting.UnitCost:0.####} إلى {posting.AverageCostAfter:0.####} — {reason}";
+        if (movement.Notes.Length > 500) movement.Notes = movement.Notes[..500];
+
+        idempotency.Record(request.IdempotencyKey, CostCorrectionOperation, "StockAdjustment", number);
+        audit.Log("Product.CostCorrection", "Product", product.Id.ToString(), new { AverageCost = posting.UnitCost },
+            new { number, AverageCost = posting.AverageCostAfter, Quantity = onHand, ValueChange = change }, reason);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return new CostCorrectionResult(number, posting.UnitCost, posting.AverageCostAfter, onHand, change);
     }
 
     private Task<int> DefaultWarehouseAsync(CancellationToken ct) => db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);

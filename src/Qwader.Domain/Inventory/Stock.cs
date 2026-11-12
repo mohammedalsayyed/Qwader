@@ -29,6 +29,8 @@ public enum StockMovementType
     CountDecrease = 24,
     /// <summary>Stock left on a product when it is archived, written off so archived goods hold no capital.</summary>
     ArchiveWriteOff = 25,
+    /// <summary>The average cost corrected by a manager (a wrong opening cost): no quantity moves; the value of the stock changes.</summary>
+    CostCorrection = 26,
 }
 
 public static class StockMovementTypes
