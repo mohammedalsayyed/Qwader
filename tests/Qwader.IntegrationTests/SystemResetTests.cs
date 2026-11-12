@@ -110,6 +110,8 @@ public sealed class SystemResetTests(ApiFactory factory)
             .ReadAsync<JsonElement>();
         client.DefaultRequestHeaders.Authorization = new("Bearer", login.GetProperty("accessToken").GetString());
         (await client.GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("resetAllowed").GetBoolean().Should().BeFalse();
+        // The other switches stay on unless set.
+        (await client.GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("integrityCheckAllowed").GetBoolean().Should().BeTrue();
         var products = await CountAsync(client, "/api/products");
 
         // Refused first: a wrong password gets the same answer (so this can be checked safely), and the right one wipes nothing.
@@ -120,6 +122,20 @@ public sealed class SystemResetTests(ApiFactory factory)
             (await response.Content.ReadAsStringAsync()).Should().Contain("معطّل");
         }
         (await CountAsync(client, "/api/products")).Should().Be(products);
+    }
+
+    [Fact]
+    public async Task A_copy_with_the_integrity_check_switched_off_hides_and_refuses_it()
+    {
+        (await (await factory.LoginAsync()).GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("integrityCheckAllowed").GetBoolean().Should().BeTrue();
+
+        using var locked = factory.WithWebHostBuilder(b => b.UseSetting("System:AllowIntegrityCheck", "false"));
+        var client = locked.CreateClient();
+        var login = await (await client.PostAsJsonAsync("/api/auth/login", new { userName = ApiFactory.AdminUser, password = ApiFactory.AdminPassword }))
+            .ReadAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", login.GetProperty("accessToken").GetString());
+        (await client.GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("integrityCheckAllowed").GetBoolean().Should().BeFalse();
+        (await client.GetAsync("/api/settings/integrity")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     private static async Task ResetAsync(HttpClient admin, SystemResetMode mode)

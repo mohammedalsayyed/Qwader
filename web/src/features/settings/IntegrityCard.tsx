@@ -1,7 +1,8 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { CircleAlert, CircleCheck, ShieldCheck } from 'lucide-react';
 import { api } from '@/api/client';
+import { settingsApi } from '@/api/endpoints';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Feedback';
 import { cn } from '@/lib/cn';
@@ -21,7 +22,10 @@ const QUANTITY_CHECKS = new Set(['كميات المخزون', 'الكميات ا
  */
 export function IntegrityCard() {
   const run = useMutation({ mutationFn: () => api<IntegrityReport>('/settings/integrity') });
+  // A copy can switch the check off in its server settings (System:AllowIntegrityCheck = false): then the card is not shown.
+  const system = useQuery({ queryKey: ['settings-system'], queryFn: settingsApi.system, staleTime: Infinity });
   const report = run.data;
+  if (system.data?.integrityCheckAllowed !== true) return null;
 
   return (
     <Card className="space-y-3 p-5">

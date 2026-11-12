@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Qwader.Api.Authorization;
+using Qwader.Application.Common;
 using Qwader.Application.Lookups;
 using Qwader.Application.Settings;
 using Qwader.Domain.Identity;
@@ -17,7 +18,7 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HttpGet("system")]
     [HasPermission(Permissions.SettingsManage)]
     public object System([FromServices] IConfiguration config) =>
-        new { resetAllowed = !string.Equals(config["System:AllowReset"], "false", StringComparison.OrdinalIgnoreCase) };
+        new { resetAllowed = !IsOff(config, "System:AllowReset"), integrityCheckAllowed = !IsOff(config, "System:AllowIntegrityCheck") };
 
     /// <summary>Readable by every signed-in user: store name/address are printed on invoices and vouchers.</summary>
     [HttpGet]
@@ -35,7 +36,12 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     /// <summary>Recomputes every stored balance from its movements and lists differences. Read-only.</summary>
     [HttpGet("integrity")]
     [HasPermission(Permissions.SettingsManage)]
-    public Task<IntegrityReport> Integrity([FromServices] IIntegrityService integrity, CancellationToken ct) => integrity.CheckAsync(ct);
+    public Task<IntegrityReport> Integrity([FromServices] IIntegrityService integrity, [FromServices] IConfiguration config, CancellationToken ct) =>
+        IsOff(config, "System:AllowIntegrityCheck")
+            ? throw new ForbiddenException("فحص سلامة الحسابات معطّل في هذه النسخة")
+            : integrity.CheckAsync(ct);
+
+    private static bool IsOff(IConfiguration config, string key) => string.Equals(config[key], "false", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Deletes the audit log of a period (Admin only, with the caller's password; the deletion itself is logged).</summary>
     [HttpPost("audit-log/delete")]
