@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Check, Copy, TriangleAlert } from 'lucide-react';
 import { Card, PageHeader } from '@/components/ui/Feedback';
+import { cn } from '@/lib/cn';
 
 /** Usage notes for the store's staff: which screen records which kind of stock change, and how the Excel file updates stock. */
 export function HelpPage() {
@@ -32,6 +34,30 @@ export function HelpPage() {
         />
         <p className="rounded-xl bg-brand-50 p-3">
           <b>باختصار:</b> أي بضاعة <b>دفعت ثمنها</b> تدخل بفاتورة شراء. نافذة «زيادة» للبضاعة التي كانت موجودة وضاعت ثم وُجدت.
+        </p>
+      </Section>
+
+      <Section danger title="خطأ شائع: بضاعة من مورد دخلت كـ«زيادة» بدل فاتورة شراء">
+        <p className="font-semibold text-danger">
+          لا تعمل فاتورة شراء بنفس البضاعة مباشرة: الكمية دخلت مرة بحركة «زيادة»، والفاتورة ستدخلها مرة ثانية فيتضاعف المخزون.
+        </p>
+        <p>الطريقة الصحيحة: <b>ألغِ الزيادة أولًا، ثم اعمل الفاتورة</b>. لكل منتج:</p>
+        <Table
+          head={['الخطوة', 'ماذا تفعل']}
+          rows={[
+            [<b key="1">1. اعرف ما أُضيف بالخطأ</b>,
+              <><b>إدارة المخزون ← الحركات ← فلتر «زيادة / عثور»</b> واختر تاريخ الإضافة. تظهر كل الحركات بالمنتج والكمية والتكلفة؛ صوّرها أو صدّرها.</>],
+            [<b key="2">2. ألغِ كل زيادة بحركة «مفقود»</b>,
+              <><b>حركة مخزون ← مفقود</b> لنفس المنتج وبنفس الكمية. في الملاحظة (إجبارية) اكتب الملاحظة الموجودة تحت الجدول (مع اسم المورد بدل «فلان»). يرجع المخزون كما كان قبل الخطأ.</>],
+            [<b key="3">3. أضف المورد واعمل فاتورة الشراء</b>,
+              <><b>المشتريات ← فاتورة شراء جديدة</b> (يمكن إضافة المورد والمنتجات الجديدة من داخلها) بالكميات و<b>سعر الشراء الحقيقي</b>، ثم اعتمد الفاتورة.
+                إذا دفعت للمورد وقتها اكتب المبلغ المدفوع واختر الحساب (إن رُفضت الدفعة لأن رصيد الحساب لا يكفي، اضبط الرصيد الافتتاحي للحساب أولًا)، وإلا اتركها دينًا على المورد.</>],
+          ]}
+        />
+        <CopyNote label="الملاحظة التي تكتبها في حركة «مفقود» (غيّر «فلان» لاسم المورد):" text="تصحيح: البضاعة دخلت بالغلط كزيادة، بدلها فاتورة شراء من المورد فلان" />
+        <p className="rounded-xl bg-surface p-3">
+          <b>النتيجة:</b> المخزون بالكمية الصحيحة، مسجّل على المورد، ومتوسط التكلفة بسعر الفاتورة.
+          في تقرير «رأس المال في البضاعة» يظهر «+ زيادة» و«− نقص» بنفس القيمة فيلغيان بعضهما (الصافي صفر)، ويبقيان ظاهرين مع ملاحظة التصحيح.
         </p>
       </Section>
 
@@ -104,12 +130,34 @@ export function HelpPage() {
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** `danger`: a mistake that changes the books (stock counted twice, costs or debts wrong) — red, so it is read first. */
+function Section({ title, children, danger }: { title: string; children: ReactNode; danger?: boolean }) {
   return (
-    <Card className="space-y-3 p-5 text-[15px] leading-7">
-      <h2 className="text-lg font-bold">{title}</h2>
+    <Card className={cn('space-y-3 p-5 text-[15px] leading-7', danger && 'border-2 border-danger bg-red-50/60')}>
+      <h2 className={cn('flex items-center gap-2 text-lg font-bold', danger && 'text-danger')}>
+        {danger && <TriangleAlert className="size-5 shrink-0" aria-hidden />}
+        {title}
+      </h2>
       {children}
     </Card>
+  );
+}
+
+/** A sentence to paste as-is, with a copy button (the field it goes into is in another screen). */
+function CopyNote({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-2 rounded-xl border border-danger/40 bg-surface p-3">
+      <p className="text-sm font-semibold">{label}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 rounded-lg bg-red-50 px-3 py-2 font-bold text-danger">«{text}»</p>
+        <button type="button" className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium hover:bg-canvas"
+          onClick={() => void navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }, () => undefined)}>
+          {copied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+          {copied ? 'نُسخت' : 'نسخ'}
+        </button>
+      </div>
+    </div>
   );
 }
 
