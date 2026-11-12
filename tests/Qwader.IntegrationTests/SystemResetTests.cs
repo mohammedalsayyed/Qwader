@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Hosting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -95,6 +96,30 @@ public sealed class SystemResetTests(ApiFactory factory)
             await (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/entries",
                 new Application.Payroll.CreatePayrollEntryRequest(Guid.NewGuid(), Domain.Payroll.PayrollEntryType.Advance, 10, null, cash, null))).ReadAsync<Application.Payroll.EmployeeDto>();
         }
+    }
+
+    [Fact]
+    public async Task A_copy_with_the_reset_switched_off_refuses_it_before_anything_else_and_hides_it()
+    {
+        (await (await factory.LoginAsync()).GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("resetAllowed").GetBoolean().Should().BeTrue();
+
+        // The same app with System:AllowReset = false, as in the production settings.
+        using var locked = factory.WithWebHostBuilder(b => b.UseSetting("System:AllowReset", "false"));
+        var client = locked.CreateClient();
+        var login = await (await client.PostAsJsonAsync("/api/auth/login", new { userName = ApiFactory.AdminUser, password = ApiFactory.AdminPassword }))
+            .ReadAsync<JsonElement>();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", login.GetProperty("accessToken").GetString());
+        (await client.GetFromJsonAsync<JsonElement>("/api/settings/system")).GetProperty("resetAllowed").GetBoolean().Should().BeFalse();
+        var products = await CountAsync(client, "/api/products");
+
+        // Refused first: a wrong password gets the same answer (so this can be checked safely), and the right one wipes nothing.
+        foreach (var password in new[] { "wrong-password", ApiFactory.AdminPassword })
+        {
+            var response = await client.PostAsJsonAsync("/api/settings/reset", new SystemResetRequest(SystemResetMode.Everything, password), TestJson.Options);
+            response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("معطّل");
+        }
+        (await CountAsync(client, "/api/products")).Should().Be(products);
     }
 
     private static async Task ResetAsync(HttpClient admin, SystemResetMode mode)

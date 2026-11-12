@@ -13,6 +13,12 @@ namespace Qwader.Api.Controllers;
 [Route("api/settings")]
 public sealed class SettingsController(ISettingsService settings) : ControllerBase
 {
+    /// <summary>What this copy allows (from its server settings): the settings screen hides the reset when it is switched off.</summary>
+    [HttpGet("system")]
+    [HasPermission(Permissions.SettingsManage)]
+    public object System([FromServices] IConfiguration config) =>
+        new { resetAllowed = !string.Equals(config["System:AllowReset"], "false", StringComparison.OrdinalIgnoreCase) };
+
     /// <summary>Readable by every signed-in user: store name/address are printed on invoices and vouchers.</summary>
     [HttpGet]
     public Task<SettingsDto> Get(CancellationToken ct) => settings.GetAsync(ct);

@@ -117,6 +117,7 @@ export const settingsApi = {
   update: (input: Settings) => api<Settings>('/settings', { method: 'PUT', body: input }),
   backup: () => apiDownload('/settings/backup', undefined, 'qwader-backup.zip'),
   applyReorderLevel: () => api<{ changed: number }>('/settings/apply-reorder-level', { method: 'POST' }),
+  system: () => api<{ resetAllowed: boolean }>('/settings/system'),
   deleteAuditLog: (input: { from: string; to: string; password: string }) =>
     api<{ deleted: number }>('/settings/audit-log/delete', { method: 'POST', body: input }),
   reset: (input: { mode: SystemResetMode; password: string }) =>

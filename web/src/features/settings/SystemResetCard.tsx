@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TriangleAlert } from 'lucide-react';
 import { settingsApi, type SystemResetMode } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
@@ -34,7 +34,10 @@ const MODES: { value: SystemResetMode; title: string; removes: string; keeps: st
 export function SystemResetCard() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  if (!user?.roles.includes('Admin')) return null;
+  const isAdmin = !!user?.roles.includes('Admin');
+  // A copy in daily use switches the reset off in its server settings: then the card is not shown at all.
+  const system = useQuery({ queryKey: ['settings-system'], queryFn: settingsApi.system, enabled: isAdmin, staleTime: Infinity });
+  if (!isAdmin || system.data?.resetAllowed !== true) return null;
 
   return (
     <Card className="space-y-3 border-danger/40 p-5">

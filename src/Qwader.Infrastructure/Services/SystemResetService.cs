@@ -58,14 +58,15 @@ public sealed class SystemResetService(
 
     public async Task<SystemResetResult> ResetAsync(SystemResetRequest request, CancellationToken ct = default)
     {
+        // A copy in daily use can switch the reset off altogether (System:AllowReset = false in its settings). Checked first, so
+        // whether it is off can be confirmed safely: any request, even with a wrong password, gets this answer and nothing more.
+        if (string.Equals(config["System:AllowReset"], "false", StringComparison.OrdinalIgnoreCase))
+            throw new ForbiddenException("تصفير النظام معطّل في هذه النسخة");
         var user = await userManager.FindByIdAsync(currentUser.RequiredUserId.ToString()) ?? throw new UnauthorizedException();
         if (!await userManager.IsInRoleAsync(user, SystemRoles.Admin))
             throw new ForbiddenException("تصفير النظام متاح لمدير النظام فقط");
         if (!await userManager.CheckPasswordAsync(user, request.Password))
             throw new ValidationFailedException("password", "كلمة المرور غير صحيحة");
-        // A copy in daily use can switch the reset off altogether (System:AllowReset = false in its settings).
-        if (string.Equals(config["System:AllowReset"], "false", StringComparison.OrdinalIgnoreCase))
-            throw new ForbiddenException("تصفير النظام معطّل في هذه النسخة");
 
         var backupFile = await BackupBeforeResetAsync(ct);
         var everything = request.Mode == SystemResetMode.Everything;
