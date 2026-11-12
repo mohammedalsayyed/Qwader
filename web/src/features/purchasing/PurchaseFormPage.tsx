@@ -2,7 +2,10 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Plus, Trash2 } from 'lucide-react';
-import type { ProductListItem, ProductUnit } from '@/api/catalog';
+import type { ProductDetail, ProductListItem, ProductUnit } from '@/api/catalog';
+import { QuickProductSheet } from '@/features/catalog/QuickProductSheet';
+import { useAuth } from '@/auth/AuthProvider';
+import { P } from '@/auth/permissions';
 import { purchasesApi, suppliersApi, type Purchase } from '@/api/stock';
 import { ApiError } from '@/api/client';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -79,6 +82,9 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       quantity: String(l.quantity), unitCost: String(l.unitCost), lineDiscount: l.lineDiscount ? String(l.lineDiscount) : '',
     })) ?? []);
   const [picking, setPicking] = useState(false);
+  // A product the store does not have yet, created from the invoice (null = closed; the text is the name to start with).
+  const [creating, setCreating] = useState<string | null>(null);
+  const canCreateProducts = useAuth().can(P.ProductsManage);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState(false);
   useUnsavedChangesWarning(touched);
@@ -102,7 +108,9 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
   };
 
-  const addProduct = (p: ProductListItem) => {
+  const addProduct = (p: ProductListItem | ProductDetail) => {
+    // A product just created has no average cost yet: its purchase price is the starting cost.
+    const cost = p.averageCost || ('purchasePrice' in p ? p.purchasePrice : null) || null;
     setPicking(false);
     setTouched(true);
     setErrors((e) => ({ ...e, lines: '' }));
@@ -111,8 +119,8 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       if (found) return ls.map((l) => (l === found ? { ...l, quantity: String((parseNumber(l.quantity) || 0) + 1) } : l));
       return [...ls, {
         key: crypto.randomUUID(), productId: p.id, name: p.displayName, unitName: p.unitName, productUnitId: null, factor: 1,
-        baseUnitName: p.unitName, baseCost: p.averageCost || null, units: p.units ?? [],
-        quantity: '1', unitCost: p.averageCost ? String(p.averageCost) : '', lineDiscount: '',
+        baseUnitName: p.unitName, baseCost: cost, units: p.units ?? [],
+        quantity: '1', unitCost: cost ? String(cost) : '', lineDiscount: '',
       }];
     });
   };
@@ -214,7 +222,10 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="font-bold">البنود ({lines.length})</h2>
-          <Button variant="secondary" onClick={() => setPicking(true)}><Plus className="size-4" /> إضافة منتج</Button>
+          <div className="flex gap-2">
+            {canCreateProducts && <Button variant="outline" onClick={() => setCreating('')}><Plus className="size-4" /> منتج جديد</Button>}
+            <Button variant="secondary" onClick={() => setPicking(true)}><Plus className="size-4" /> إضافة منتج</Button>
+          </div>
         </div>
         {errors.lines && <p role="alert" className="mb-2 text-sm text-danger">{errors.lines}</p>}
         {lines.length === 0 ? (
@@ -318,7 +329,17 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
           renderItem={(p) => <ProductRow p={p} showCost />}
           onSelect={addProduct}
           onClose={() => setPicking(false)}
+          footer={canCreateProducts ? (term: string) => (
+            <div className="sticky bottom-0 -mx-4 border-t border-line bg-surface px-4 pt-3">
+              <Button block variant="outline" onClick={() => { setPicking(false); setCreating(term); }}>
+                <Plus className="size-4" /> {term ? `منتج جديد باسم «${term}»` : 'منتج جديد غير موجود في القائمة'}
+              </Button>
+            </div>
+          ) : undefined}
         />
+      )}
+      {creating !== null && (
+        <QuickProductSheet initialName={creating} onClose={() => setCreating(null)} onCreated={(p) => addProduct(p)} />
       )}
     </div>
   );

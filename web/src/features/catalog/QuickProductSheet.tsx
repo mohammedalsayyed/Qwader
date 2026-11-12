@@ -5,7 +5,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CheckCircle2, SlidersHorizontal } from 'lucide-react';
-import { productsApi } from '@/api/catalog';
+import { productsApi, type ProductDetail } from '@/api/catalog';
 import type { LookupItem } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -50,7 +50,16 @@ const EMPTY = { name: '', retailPrice: '', wholesalePrice: '', minSalePrice: '',
  * The everyday way to add products: five fields, sensible defaults for the rest
  * (unit «قطعة», wholesale = retail, alert level from settings), and «حفظ وإضافة آخر» for entering a batch.
  */
-export function QuickProductSheet({ onClose }: { onClose: () => void }) {
+/**
+ * With `onCreated` (a purchase invoice): no quantity field — the invoice brings the stock in at its cost — and each saved
+ * product is handed back to be added to the invoice; «تفاصيل أكثر» is hidden so the invoice being written is not left.
+ */
+export function QuickProductSheet({ onClose, onCreated, initialName }: {
+  onClose: () => void;
+  onCreated?: (product: ProductDetail) => void;
+  initialName?: string;
+}) {
+  const forInvoice = !!onCreated;
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -67,12 +76,12 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
   const unitId = pickedUnit ?? lookups.data?.units.find((u) => u.name === 'قطعة')?.id ?? lookups.data?.units[0]?.id ?? 0;
 
   const canSeeCost = can(P.ProductsViewCost);
-  const canOpenStock = can(P.InventoryAdjust, P.PurchasesManage);
+  const canOpenStock = !forInvoice && can(P.InventoryAdjust, P.PurchasesManage);
   const margin = settings.data?.defaultMarginPercent ?? 25;
 
   const { register, control, handleSubmit, reset, setFocus, setValue, setError, getValues, formState: { errors, isDirty } } = useForm<FormInput, unknown, FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: EMPTY,
+    defaultValues: { ...EMPTY, name: initialName ?? '' },
   });
   const [purchaseRaw, retailRaw] = useWatch({ control, name: ['purchasePrice', 'retailPrice'] });
   const cost = parseNumber(purchaseRaw) ?? 0;
@@ -96,6 +105,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       });
     },
     onSuccess: (saved, { another }) => {
+      onCreated?.(saved);
       void queryClient.invalidateQueries({ queryKey: ['products'] });
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
       setAddedCount((n) => n + 1);
@@ -105,7 +115,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
         reset(EMPTY);
         setTimeout(() => setFocus('name'), 50);
       } else {
-        toast.success(`تمت إضافة «${saved.displayName}» بالكود ${saved.sku}`);
+        toast.success(forInvoice ? `أُضيف «${saved.displayName}» إلى الفاتورة — اكتب الكمية والتكلفة` : `تمت إضافة «${saved.displayName}» بالكود ${saved.sku}`);
         onClose();
       }
     },
@@ -135,7 +145,7 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       dirty={isDirty}
-      title="إضافة منتج"
+      title={forInvoice ? 'منتج جديد للفاتورة' : 'إضافة منتج'}
       footer={
         <div className="space-y-2">
           <div className="flex gap-2">
@@ -146,9 +156,13 @@ export function QuickProductSheet({ onClose }: { onClose: () => void }) {
               حفظ وإضافة آخر
             </Button>
           </div>
-          <button type="button" onClick={moreDetails} className="flex h-10 w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-700">
-            <SlidersHorizontal className="size-4" /> تفاصيل أكثر (باركود، صورة، ماركة، مقاس…)
-          </button>
+          {forInvoice ? (
+            <p className="text-center text-xs text-muted">الكمية تُكتب في الفاتورة؛ يُضاف المنتج إليها بعد الحفظ</p>
+          ) : (
+            <button type="button" onClick={moreDetails} className="flex h-10 w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-700">
+              <SlidersHorizontal className="size-4" /> تفاصيل أكثر (باركود، صورة، ماركة، مقاس…)
+            </button>
+          )}
         </div>
       }
     >
