@@ -190,8 +190,10 @@ export function QuickProductSheet({ onClose, onCreated, initialName }: {
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
+          {/* From a purchase invoice this is the line's unit cost (one number, not two): it is copied to the invoice line. */}
           {canSeeCost && (
-            <Field label="سعر الشراء" error={errors.purchasePrice?.message}>
+            <Field label={forInvoice ? 'تكلفة الوحدة في هذه الفاتورة' : 'سعر الشراء'} error={errors.purchasePrice?.message}
+              hint={forInvoice ? 'تُنقل لسطر الفاتورة' : undefined}>
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors.purchasePrice} {...register('purchasePrice')} />}
             </Field>
           )}
