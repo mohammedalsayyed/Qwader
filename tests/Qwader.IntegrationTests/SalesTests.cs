@@ -244,16 +244,21 @@ public sealed class SalesTests(ApiFactory factory)
             .StatusCode.Should().Be((HttpStatusCode)422, "an invoice discount pushing the line under the minimum is refused too");
 
         // …allowed with the override permission («البيع بأقل من الحد الأدنى أو التكلفة»), even under the cost (50):
-        // the line is flagged and the invoice marked for review with who allowed it.
+        // the line is flagged, the note says who allowed it, and it counts as reviewed at once.
         var adminCash = await AccountAsync(admin, "الصندوق النقدي");
+        var ids = new List<int>();
         foreach (var price in new[] { 69m, 40m })
         {
             var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, price)], [new(adminCash, price)]))).ReadAsync<SaleDetailDto>();
+            ids.Add(sale.Id);
             sale.Total.Should().Be(price);
             sale.Lines[0].PriceOverridden.Should().BeTrue();
             sale.ReviewNote.Should().Contain("أقل من أقل سعر بيع").And.Contain("اعتُمد بصلاحية");
             if (price < 50) sale.ReviewNote.Should().Contain("أقل من التكلفة");
+            sale.ReviewedAt.Should().NotBeNull("the seller allowed it with their own permission, so nobody has to review it again");
         }
+        var pending = await admin.GetFromJsonAsync<Application.Common.PagedResult<SaleListItemDto>>("/api/sales?needsReview=true&pageSize=100", TestJson.Options);
+        pending!.Items.Should().NotContain(s => ids.Contains(s.Id));
     }
 
     [Fact]
@@ -446,7 +451,7 @@ public sealed class SalesTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task A_discount_over_the_limit_by_someone_allowed_is_kept_but_marked_for_review()
+    public async Task A_discount_over_the_limit_by_someone_allowed_is_kept_noted_and_reviewed_at_once()
     {
         var admin = await factory.LoginAsync();
         var product = await admin.CreateProductAsync(retail: 25, openingQuantity: 5, openingCost: 10);
@@ -454,6 +459,7 @@ public sealed class SalesTests(ApiFactory factory)
         var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 2, 25)], [new(cash, 40)], invoiceDiscount: 10))).ReadAsync<SaleDetailDto>();
         sale.Total.Should().Be(40);
         sale.ReviewNote.Should().Contain("يتجاوز الحد المسموح");
+        sale.ReviewedAt.Should().NotBeNull("approved by the seller's own permission");
         sale.SoldOffline.Should().BeFalse();
 
         using var scope = factory.Services.CreateScope();

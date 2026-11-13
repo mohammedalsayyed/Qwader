@@ -53,6 +53,9 @@ public sealed class SaleService(
         // have changed. Rules a connected till enforces are then recorded for a manager to review instead of refusing it.
         var offline = request.SoldOfflineAt is not null;
         var review = new List<string>();
+        // Exceptions the seller allowed with their own permission (under the minimum or the cost, over the discount limit):
+        // written on the invoice and in the audit log, and counted as reviewed at once — nobody has to review them again.
+        var approved = new List<string>();
         void Breach(string problem)
         {
             if (!offline) throw new BusinessRuleException(problem);
@@ -142,7 +145,7 @@ public sealed class SaleService(
             // Allowed for whoever may sell under the limits, but marked on the invoice for the owner to see.
             else if (over)
             {
-                review.Add($"{overText} — اعتُمد بصلاحية {currentUser.UserName}");
+                approved.Add($"{overText} — اعتُمد بصلاحية {currentUser.UserName}");
                 discountOverLimit = (Math.Round(discountGiven / chargedGross * 100, 1), maxPercent, discountGiven);
             }
         }
@@ -164,13 +167,13 @@ public sealed class SaleService(
             {
                 var text = $"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)";
                 if (!canOverride) Breach(text);
-                else review.Add($"{text} — اعتُمد بصلاحية {currentUser.UserName}");
+                else approved.Add($"{text} — اعتُمد بصلاحية {currentUser.UserName}");
             }
             if (belowCost)
             {
                 if (!canOverride)
                     Breach($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
-                else review.Add($"«{line.ProductName}» بِيع بأقل من التكلفة — اعتُمد بصلاحية {currentUser.UserName}");
+                else approved.Add($"«{line.ProductName}» بِيع بأقل من التكلفة — اعتُمد بصلاحية {currentUser.UserName}");
             }
             if ((belowMinimum || belowCost) && canOverride)
             {
@@ -259,10 +262,16 @@ public sealed class SaleService(
             if (posting.BalanceAfter < 0)
                 review.Add($"«{line.ProductName}»: بيعت {line.Quantity:0.###}{(line.UnitName is null ? "" : " " + line.UnitName)} والمخزون لم يكفِ (الرصيد الآن {posting.BalanceAfter:0.###})");
         }
-        if (review.Count > 0)
+        if (review.Count > 0 || approved.Count > 0)
         {
-            var note = string.Join('\n', review.Distinct());
+            var note = string.Join('\n', review.Concat(approved).Distinct());
             invoice.ReviewNote = note.Length > 1000 ? note[..1000] : note;
+            // Only what the seller approved themselves: reviewed now, by them. Anything else waits for a manager.
+            if (review.Count == 0)
+            {
+                invoice.ReviewedAt = now;
+                invoice.ReviewedById = currentUser.UserId;
+            }
         }
         invoice.TotalCost = invoice.Lines.Sum(l => l.Quantity * l.UnitCost);
 
@@ -298,7 +307,7 @@ public sealed class SaleService(
         await tx.CommitAsync(ct);
 
         await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), ct);
-        if (invoice.ReviewNote is not null)
+        if (invoice.ReviewNote is not null && invoice.ReviewedAt is null)
             push.Notify(PushTopics.Sales, new PushMessage($"فاتورة تحتاج مراجعة — {invoice.Number}", invoice.ReviewNote, $"/sales/{invoice.Id}",
                 $"review-{invoice.Id}"),
                 Permissions.SalesViewAll);
