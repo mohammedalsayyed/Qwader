@@ -163,18 +163,29 @@ export function snapshotAge(snapshot: OfflineSnapshot | null, now = Date.now()) 
   return { usable: hours < snapshot.maxHours, hours };
 }
 
+/** Each product's text without spaces, worked out once per copy of the product rather than at every letter typed. */
+const searchKeys = new WeakMap<OfflineProduct, string>();
+function searchKey(p: OfflineProduct): string {
+  let key = searchKeys.get(p);
+  if (key === undefined) {
+    key = p.search.replace(/\s+/g, '');
+    searchKeys.set(p, key);
+  }
+  return key;
+}
+
 export function searchProducts(snapshot: OfflineSnapshot, term: string, limit = 8): OfflineProduct[] {
   const raw = term.trim().toLowerCase();
   const words = normalizeArabic(term).split(' ').filter(Boolean);
   if (words.length === 0) return [];
   const isCode = (p: OfflineProduct) => p.sku.toLowerCase() === raw || p.barcode?.toLowerCase() === raw;
-  // As on the server: the words are looked up in the product's text with its spaces removed.
+  // As on the server: the words are looked up in the product's text with its spaces removed; an exact code first, then newest.
   const found = snapshot.products.filter((p) => {
     if (isCode(p)) return true;
-    const key = p.search.replace(/\s+/g, '');
+    const key = searchKey(p);
     return words.every((w) => key.includes(w));
   });
-  return found.sort((a, b) => Number(isCode(b)) - Number(isCode(a))).slice(0, limit);
+  return found.sort((a, b) => Number(isCode(b)) - Number(isCode(a)) || b.id - a.id).slice(0, limit);
 }
 
 export function findByCode(snapshot: OfflineSnapshot, code: string): OfflineProduct | undefined {
