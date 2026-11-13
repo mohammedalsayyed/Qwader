@@ -385,17 +385,19 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
   const p = parseNumber(price);
   const d = parseNumber(discount) ?? 0;
   const netUnit = q && p !== undefined && !Number.isNaN(p) ? (q * p - d) / q : NaN;
-  // Anyone may change the price; nobody may go under the minimum sale price (for wholesale, a lower wholesale price is the floor).
+  // Anyone may change the price. Under the minimum sale price (for wholesale, a lower wholesale price is the floor) or the cost
+  // only with the price-override permission — then it is allowed, and the invoice is marked for review.
+  const mayOverride = can(P.SalesPriceOverride);
   const minimum = minimumPrice(line, tier);
   const belowMinimum = !Number.isNaN(netUnit) && netUnit + 0.0001 < minimum;
-  const belowCost = !belowMinimum && line.cost != null && !Number.isNaN(netUnit) && netUnit + 0.0001 < line.cost;
+  const belowCost = line.cost != null && !Number.isNaN(netUnit) && netUnit + 0.0001 < line.cost;
 
   const save = () => {
     if (q === undefined || Number.isNaN(q) || q <= 0) return setError('أدخل كمية صحيحة');
     if (q > line.available) return setError(`المتوفر ${formatQuantity(line.available)} فقط`);
     if (p === undefined || Number.isNaN(p) || p < 0) return setError('أدخل سعرًا صحيحًا');
     if (Number.isNaN(d) || d < 0 || d > q * p) return setError('الخصم غير صحيح');
-    if (belowMinimum) return setError(`لا يمكن البيع بأقل من أقل سعر بيع (${formatMoney(minimum)})`);
+    if (belowMinimum && !mayOverride) return setError(`لا يمكن البيع بأقل من أقل سعر بيع (${formatMoney(minimum)})`);
     onSave({ quantity: q, unitPrice: p, customPrice: p !== listPrice, lineDiscount: round2(d) });
     onClose();
   };
@@ -417,7 +419,7 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
             {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={qty} onChange={(e) => setQty(e.target.value)} />}
           </Field>
           <Field label="سعر الوحدة" hint={`السعر المحدد ${formatMoney(listPrice)}${minimum > 0 ? ` · أقل سعر ${formatMoney(minimum)}` : ''}`}>
-            {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={price} invalid={belowMinimum}
+            {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" value={price} invalid={belowMinimum && !mayOverride}
               onChange={(e) => { setPrice(e.target.value); setError(undefined); }} />}
           </Field>
         </div>
@@ -426,12 +428,16 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
             {(id) => <Input id={id} inputMode="decimal" className="ltr" value={discount} onChange={(e) => setDiscount(e.target.value)} />}
           </Field>
         )}
-        {belowMinimum && (
+        {belowMinimum && (mayOverride ? (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+            السعر أقل من أقل سعر بيع ({formatMoney(minimum)}). لديك صلاحية البيع بهذا السعر؛ ستُعلَّم الفاتورة للمراجعة وتُسجَّل في سجل التدقيق.
+          </p>
+        ) : (
           <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">السعر أقل من أقل سعر بيع ({formatMoney(minimum)}) — لا يمكن الحفظ.</p>
-        )}
+        ))}
         {belowCost && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-            السعر أقل من التكلفة.{can(P.SalesPriceOverride) ? ' لديك صلاحية البيع بهذا السعر.' : ' لن يُقبل إلا بصلاحية خاصة.'}
+            السعر أقل من التكلفة.{mayOverride ? ' لديك صلاحية البيع بهذا السعر؛ ستُعلَّم الفاتورة للمراجعة.' : ' لن يُقبل إلا بصلاحية خاصة.'}
           </p>
         )}
       </div>

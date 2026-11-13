@@ -73,7 +73,14 @@ public sealed class MultiUnitTests(ApiFactory factory)
     {
         var (admin, product, dozen, cash) = await SetupAsync(opening: 20);
 
-        var belowFloor = await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 90, 0, dozen.Id)], [new(cash, 90)]));
+        // The dozen's own floor (100) refuses a seller; the price-override permission may go under it (marked for review).
+        var userName = TestData.Unique("seller");
+        (await admin.PostAsJsonAsync("/api/users", new Application.Users.CreateUserRequest(userName, "بائع", null, "Temp12345", [Domain.Identity.SystemRoles.Sales])))
+            .EnsureSuccessStatusCode();
+        var temp = await factory.LoginAsync(userName, "Temp12345");
+        (await temp.PostAsJsonAsync("/api/auth/change-password", new Application.Auth.ChangePasswordRequest("Temp12345", "Seller12345"))).EnsureSuccessStatusCode();
+        var seller = await factory.LoginAsync(userName, "Seller12345");
+        var belowFloor = await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 90, 0, dozen.Id)], [new(cash, 90)]));
         belowFloor.StatusCode.Should().Be((HttpStatusCode)422);
 
         var tooMany = await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 2, 110, 0, dozen.Id)], [new(cash, 220)]));

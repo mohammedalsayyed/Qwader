@@ -213,7 +213,7 @@ public sealed class SalesTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Any_seller_may_change_the_price_down_to_the_minimum_and_nobody_below_it()
+    public async Task Any_seller_may_change_the_price_down_to_the_minimum_and_only_the_override_permission_below_it()
     {
         var admin = await factory.LoginAsync();
         var settings = await admin.GetFromJsonAsync<SettingsDto>("/api/settings", TestJson.Options);
@@ -236,16 +236,24 @@ public sealed class SalesTests(ApiFactory factory)
         lowered.Lines[0].UnitPrice.Should().Be(100);
         (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 120)], [new(cash, 120)]))).StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Below the minimum: refused for the seller and for the administrator alike.
+        // Below the minimum: refused for a seller…
         var sellerBelow = await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 69)], [new(cash, 69)]));
         sellerBelow.StatusCode.Should().Be((HttpStatusCode)422);
         (await sellerBelow.Content.ReadAsStringAsync()).Should().Contain("أقل من أقل سعر بيع");
-        var adminCash = await AccountAsync(admin, "الصندوق النقدي");
-        (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 69)], [new(adminCash, 69)]))).StatusCode.Should().Be((HttpStatusCode)422);
+        (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 72)], [new(cash, 67)], invoiceDiscount: 5)))
+            .StatusCode.Should().Be((HttpStatusCode)422, "an invoice discount pushing the line under the minimum is refused too");
 
-        // An invoice discount that pushes the line under the minimum is refused too.
-        (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 72)], [new(adminCash, 67)], invoiceDiscount: 5)))
-            .StatusCode.Should().Be((HttpStatusCode)422);
+        // …allowed with the override permission («البيع بأقل من الحد الأدنى أو التكلفة»), even under the cost (50):
+        // the line is flagged and the invoice marked for review with who allowed it.
+        var adminCash = await AccountAsync(admin, "الصندوق النقدي");
+        foreach (var price in new[] { 69m, 40m })
+        {
+            var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, price)], [new(adminCash, price)]))).ReadAsync<SaleDetailDto>();
+            sale.Total.Should().Be(price);
+            sale.Lines[0].PriceOverridden.Should().BeTrue();
+            sale.ReviewNote.Should().Contain("أقل من أقل سعر بيع").And.Contain("اعتُمد بصلاحية");
+            if (price < 50) sale.ReviewNote.Should().Contain("أقل من التكلفة");
+        }
     }
 
     [Fact]

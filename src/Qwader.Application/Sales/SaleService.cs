@@ -156,12 +156,24 @@ public sealed class SaleService(
             var netUnit = line.NetTotal / line.Quantity;
             // A wholesale price set below the minimum is the floor for wholesale sales.
             var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(unit.MinSalePrice, unit.WholesalePrice) : unit.MinSalePrice;
-            if (netUnit + 0.0001m < minimum)
-                Breach($"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)");
-            if (netUnit + 0.0001m < p.AverageCost * unit.Factor)
+            // The price-override permission («البيع بأقل من الحد الأدنى أو التكلفة») may go under both the minimum and the cost;
+            // such a line is flagged, listed in the audit log and marked for review. Without it, both are refused.
+            var belowMinimum = netUnit + 0.0001m < minimum;
+            var belowCost = netUnit + 0.0001m < p.AverageCost * unit.Factor;
+            if (belowMinimum)
+            {
+                var text = $"سعر «{line.ProductName}» ({CostMath.RoundMoney(netUnit):0.##} ₪) أقل من أقل سعر بيع ({minimum:0.##} ₪)";
+                if (!canOverride) Breach(text);
+                else review.Add($"{text} — اعتُمد بصلاحية {currentUser.UserName}");
+            }
+            if (belowCost)
             {
                 if (!canOverride)
                     Breach($"سعر «{line.ProductName}» أقل من التكلفة؛ يحتاج صلاحية خاصة");
+                else review.Add($"«{line.ProductName}» بِيع بأقل من التكلفة — اعتُمد بصلاحية {currentUser.UserName}");
+            }
+            if ((belowMinimum || belowCost) && canOverride)
+            {
                 line.PriceOverridden = true;
                 overridden.Add(line.ProductName);
             }

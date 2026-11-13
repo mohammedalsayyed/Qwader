@@ -54,7 +54,7 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Purchase.Void"] = "إلغاء فاتورة شراء",
         ["Purchase.Return"] = "مردود مشتريات",
         ["Sale.Create"] = "فاتورة بيع",
-        ["Sale.PriceOverride"] = "بيع بأقل من التكلفة",
+        ["Sale.PriceOverride"] = "بيع بأقل من الحد الأدنى أو التكلفة",
         ["Sale.DiscountOverLimit"] = "خصم فوق الحد المسموح",
         ["Sale.Reviewed"] = "مراجعة فاتورة بدون إنترنت",
         ["Customer.Create"] = "إضافة عميل",
