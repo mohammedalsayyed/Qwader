@@ -200,7 +200,7 @@ function ReturnSheet({ purchase, onClose, onDone }: { purchase: Purchase; onClos
   };
 
   return (
-    <Sheet open onClose={onClose} title="مردود مشتريات" size="lg"
+    <Sheet submitOnEnter={false} open onClose={onClose} title="مردود مشتريات" size="lg"
       footer={<Button block size="lg" loading={save.isPending} onClick={submit}>تسجيل المردود ({formatMoney(total)})</Button>}>
       <div className="space-y-4">
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{error}</p>}

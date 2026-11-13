@@ -14,7 +14,7 @@ import { Badge, Card, EmptyState, ErrorState, PageHeader, Pagination, SearchInpu
 import { DateRangeFilter, resolveRange, type DateRangeValue } from '@/components/ui/DateRange';
 import { InfoList, StickyActions } from '@/components/ui/Layout';
 import { Picker } from '@/components/ui/Picker';
-import { Sheet } from '@/components/ui/Sheet';
+import { Sheet, enterSaves } from '@/components/ui/Sheet';
 import { useConfirm } from '@/components/ui/Confirm';
 import { useToast } from '@/components/ui/Toast';
 import { AccountChips, AttachmentPicker, PrintableVoucher, PrivateFileThumb } from '@/components/finance/FinanceBits';
@@ -180,7 +180,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const n = parseNumber(amount);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+    <div className="mx-auto max-w-2xl space-y-4 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0"
+      onKeyDown={(e) => { enterSaves(e, e.currentTarget, e.currentTarget); }}>
       <button type="button" onClick={() => navigate(-1)} className="flex h-10 items-center gap-1 text-sm text-muted"><ArrowRight className="size-4" /> رجوع</button>
       <PageHeader title={`${meta.one} جديد`} />
 

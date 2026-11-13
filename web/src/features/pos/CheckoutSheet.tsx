@@ -150,7 +150,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   };
 
   return (
-    <Sheet open onClose={onClose} title="إتمام البيع" size="lg"
+    <Sheet open onClose={onClose} title="إتمام البيع" size="lg" submitOnEnter={false}
       footer={
         <div className="space-y-2">
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-medium text-danger">{error}</p>}
