@@ -430,14 +430,14 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
         )}
         {belowMinimum && (mayOverride ? (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-            السعر أقل من أقل سعر بيع ({formatMoney(minimum)}). لديك صلاحية البيع بهذا السعر؛ ستُعلَّم الفاتورة للمراجعة وتُسجَّل في سجل التدقيق.
+            السعر أقل من أقل سعر بيع ({formatMoney(minimum)}). لديك صلاحية البيع بهذا السعر؛ يُكتب ذلك على الفاتورة وفي سجل التدقيق، ولا تحتاج مراجعة.
           </p>
         ) : (
           <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">السعر أقل من أقل سعر بيع ({formatMoney(minimum)}) — لا يمكن الحفظ.</p>
         ))}
         {belowCost && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-            السعر أقل من التكلفة.{mayOverride ? ' لديك صلاحية البيع بهذا السعر؛ ستُعلَّم الفاتورة للمراجعة.' : ' لن يُقبل إلا بصلاحية خاصة.'}
+            السعر أقل من التكلفة.{mayOverride ? ' لديك صلاحية البيع بهذا السعر؛ يُكتب ذلك على الفاتورة ولا تحتاج مراجعة.' : ' لن يُقبل إلا بصلاحية خاصة.'}
           </p>
         )}
       </div>
