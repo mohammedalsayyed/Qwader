@@ -262,6 +262,29 @@ public sealed class SalesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Money_received_leaves_out_voided_invoices_and_takes_off_refunds()
+    {
+        var admin = await factory.LoginAsync();
+        // A drawer of its own, so other tests' sales today do not count in it.
+        var drawer = (await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new Application.Finance.SaveAccountRequest(TestData.Unique("درج"), Domain.Finance.FinancialAccountType.Cash, null, null, null)))
+            .ReadAsync<Application.Finance.AccountDto>()).Id;
+        var product = await admin.CreateProductAsync(retail: 100, openingQuantity: 10, openingCost: 40);
+
+        var kept = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 100)], [new(drawer, 100)]))).ReadAsync<SaleDetailDto>();
+        var voided = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 100)], [new(drawer, 100)]))).ReadAsync<SaleDetailDto>();
+        await (await admin.PostAsJsonAsync($"/api/sales/{voided.Id}/void", new VoidRequest("خطأ"))).ReadAsync<SaleDetailDto>();
+        var partly = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 2, 100)], [new(drawer, 200)]))).ReadAsync<SaleDetailDto>();
+        await (await admin.PostAsJsonAsync($"/api/sales/{partly.Id}/returns", new SaleReturnRequest(Guid.NewGuid(), ReturnSettlement.Refund, drawer, null,
+            [new(partly.Lines[0].Id, 1, ReturnCondition.Sellable)]))).ReadAsync<SaleDetailDto>();
+
+        var summary = await admin.GetFromJsonAsync<SalesSummaryDto>("/api/sales/summary", TestJson.Options);
+        summary!.ReceivedByAccount.Single(a => a.AccountId == drawer).Amount.Should().Be(200, "100 kept + 200 − 100 refunded; the voided 100 is not money received");
+        (await BalanceAsync(drawer)).Should().Be(200);
+        kept.Total.Should().Be(100);
+    }
+
+    [Fact]
     public async Task Returns_restock_sellable_goods_refund_money_and_cannot_exceed_what_was_sold()
     {
         var admin = await factory.LoginAsync();
