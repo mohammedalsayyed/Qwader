@@ -313,13 +313,13 @@ export function PosPage() {
         <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} offline={offline} canSellOffline={!!snapshot && age.usable}
           onClose={() => setCheckout(false)}
           onDone={(sale, change) => {
-            setCheckout(false); reset(); setDone({ sale, change });
+            setCheckout(false); reset(); setQ(''); setDone({ sale, change });
             // The sold stock leaves the device's copy now, not at the next refresh.
             if (user) void applyOfflineChanges(user).catch(() => undefined);
           }} />
       )}
       {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}
-      {done && <SaleDoneSheet sale={done.sale} change={done.change} onClose={() => { setDone(null); searchRef.current?.querySelector('input')?.focus(); }} />}
+      {done && <SaleDoneSheet sale={done.sale} change={done.change} onClose={() => { setDone(null); setQ(''); searchRef.current?.querySelector('input')?.focus(); }} />}
     </div>
   );
 }
