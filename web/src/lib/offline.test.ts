@@ -21,7 +21,7 @@ const snapshot = {
 
 describe('offline till search', () => {
   it('matches every word after Arabic normalization, like the server', () => {
-    expect(searchProducts(snapshot, 'غلاية').map((p) => p.id)).toEqual([1, 3]);
+    expect(searchProducts(snapshot, 'غلاية').map((p) => p.id)).toEqual([3, 1]); // newest first, as on the server
     expect(searchProducts(snapshot, 'غلايه زجاج').map((p) => p.id)).toEqual([3]);
   });
 

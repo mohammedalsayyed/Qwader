@@ -688,11 +688,18 @@ public sealed class SaleService(
             Cost = g.Sum(r => r.Lines.Where(l => l.Condition == ReturnCondition.Sellable).Sum(l => l.Quantity * l.UnitCost)),
         }).FirstOrDefaultAsync(ct);
 
-        var received = db.AccountTransactions.AsNoTracking().Where(t => t.Date >= startUtc && t.Date < endUtc && t.Direction == MoneyDirection.In
-            && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection));
+        // Money kept from selling: payments at the sale and debt collected, less money given back on returns (on the day it was given).
+        // A voided invoice or receipt and its reversing entry cancel out, as in the cash-flow report: neither is money received.
+        var reversals = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
+        var received = db.AccountTransactions.AsNoTracking().Where(t => t.Date >= startUtc && t.Date < endUtc
+            && ((t.Direction == MoneyDirection.In
+                    && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection)
+                    && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
+                || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund)));
         if (ownOnly) received = received.Where(t => t.UserId == me);
         var sums = await received.GroupBy(t => t.FinancialAccountId)
-            .Select(g => new { AccountId = g.Key, Amount = g.Sum(t => t.Amount) }).ToListAsync(ct);
+            .Select(g => new { AccountId = g.Key, Amount = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) }).ToListAsync(ct);
+        sums = sums.Where(s => s.Amount != 0).ToList();
         var sumIds = sums.Select(s => s.AccountId).ToList();
         var names = await db.FinancialAccounts.AsNoTracking().Where(a => sumIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
         var byAccount = sums.Select(s => new AccountAmountDto(s.AccountId, names[s.AccountId], s.Amount)).OrderByDescending(a => a.Amount).ToList();

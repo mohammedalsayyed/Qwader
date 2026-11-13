@@ -19,7 +19,7 @@ import { formatMoney, formatQuantity } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
-import { findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
+import { applyOfflineChanges, findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
 import { formatDateTime } from '@/lib/format';
 import { cartTotals, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine } from './cart';
 import { useIsOffline } from './OfflineSales';
@@ -29,7 +29,7 @@ import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner'
 export function PosPage() {
   const { cart, add, update, remove, changeUnit, setTier, reset } = useCart();
   useLookups(); // load accounts early so checkout opens instantly
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canWholesale = can(P.SalesWholesale);
   // A cart saved by a manager on this device must not let a seller keep wholesale prices.
   useEffect(() => {
@@ -53,17 +53,23 @@ export function PosPage() {
   const { snapshot } = useOfflineState();
   const age = snapshotAge(snapshot);
   const canSellOffline = offline && age.usable && !!snapshot;
+  // The search runs on that copy with or without internet: results show as each letter is typed, with no wait for the
+  // server. At the till the copy is brought up to date every few seconds, and the server checks stock and prices on saving.
+  // Only a device with no usable copy yet asks the server.
+  const onDevice = age.usable && !!snapshot;
+  const typed = q.trim();
   const remote = useQuery({
     queryKey: ['pos-search', term],
     queryFn: ({ signal }) => productsApi.list({ search: term, pageSize: 8 }, signal),
-    enabled: term.length > 0 && !offline,
+    enabled: term.length > 0 && !offline && !onDevice,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
-  const localItems = canSellOffline && term ? searchProducts(snapshot, term) : [];
-  const results = offline
+  const localItems = onDevice && typed ? searchProducts(snapshot, typed) : [];
+  const results = offline || onDevice
     ? { data: { items: localItems }, isPending: false, isFetching: false }
     : remote;
+  const shownTerm = onDevice ? typed : term;
 
   const addProduct = (p: Parameters<typeof add>[0], unit: ProductUnit | null = null) => {
     const error = add(p, 1, unit);
@@ -116,7 +122,7 @@ export function PosPage() {
     }
   };
 
-  const showResults = term.length > 0;
+  const showResults = shownTerm.length > 0;
 
   return (
     <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0">
@@ -160,7 +166,7 @@ export function PosPage() {
             {results.isPending ? (
               <Spinner className="py-6" />
             ) : !results.data || results.data.items.length === 0 ? (
-              <EmptyState icon={<PackageX className="size-8" />} title={`لا توجد نتائج لـ «${term}»`} />
+              <EmptyState icon={<PackageX className="size-8" />} title={`لا توجد نتائج لـ «${shownTerm}»`} />
             ) : (
               <ul className={cn('divide-y divide-line', results.isFetching && 'opacity-60')}>
                 {results.data.items.map((p) => {
@@ -248,22 +254,11 @@ export function PosPage() {
                     ))}
                   </div>
                 )}
-                {/* The price is a visible button: sellers may change it (never under the minimum sale price). */}
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <button type="button" onClick={() => setEditing(l)} aria-label={`تعديل سعر ${l.name}`}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 text-sm text-brand-800 hover:bg-brand-100 active:bg-brand-100">
-                    <Pencil className="size-4" aria-hidden />
-                    <span className="tabular font-bold">{formatMoney(l.unitPrice)}</span>
-                    <span className="text-xs">{l.units.length > 0 ? `لكل ${l.unitName} · تعديل` : 'تعديل السعر'}</span>
-                  </button>
-                  {l.unitPrice < tierPrice(l, cart.tier) ? (
-                    <span className="text-xs font-semibold text-warning">خصم {formatMoney(round2(l.quantity * (tierPrice(l, cart.tier) - l.unitPrice)))}</span>
-                  ) : l.unitPrice > tierPrice(l, cart.tier) && <span className="text-xs font-semibold text-warning">معدَّل</span>}
-                  {l.lineDiscount > 0 && <span className="text-xs text-warning">خصم {formatMoney(l.lineDiscount)}</span>}
-                  {minimumPrice(l, cart.tier) > 0 && (
-                    <span className="whitespace-nowrap text-xs text-muted">أقل سعر <span className="tabular">{formatMoney(minimumPrice(l, cart.tier))}</span></span>
-                  )}
-                </div>
+                {/* The price: a button to type any price, and one tap for the lowest (minimum sale price) or the highest (the list price). */}
+                <PriceRow line={l} tier={cart.tier} onEdit={() => setEditing(l)}
+                  onPick={(unitPrice) => update(l.key, { unitPrice, customPrice: unitPrice !== tierPrice(l, cart.tier),
+                    // At the lowest price a line discount would take it under the minimum, so it goes.
+                    lineDiscount: unitPrice === minimumPrice(l, cart.tier) ? 0 : l.lineDiscount })} />
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
                     <IconButton label="إنقاص الكمية" className="border border-line"
@@ -317,7 +312,11 @@ export function PosPage() {
       {checkout && (
         <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} offline={offline} canSellOffline={!!snapshot && age.usable}
           onClose={() => setCheckout(false)}
-          onDone={(sale, change) => { setCheckout(false); reset(); setDone({ sale, change }); }} />
+          onDone={(sale, change) => {
+            setCheckout(false); reset(); setDone({ sale, change });
+            // The sold stock leaves the device's copy now, not at the next refresh.
+            if (user) void applyOfflineChanges(user).catch(() => undefined);
+          }} />
       )}
       {scanning && <BarcodeScannerSheet continuous title="مسح المنتجات" onDetected={(c) => void onScanned(c)} onClose={() => setScanning(false)} />}
       {done && <SaleDoneSheet sale={done.sale} change={done.change} onClose={() => { setDone(null); searchRef.current?.querySelector('input')?.focus(); }} />}
@@ -362,6 +361,52 @@ function Totals({ subtotal, discounts }: { subtotal: number; discounts: number }
 }
 
 /** The lowest price a line may be sold at; for wholesale, a wholesale price set below the minimum is the floor. */
+/** The cart line's price: «تعديل» opens the line to type a price; «الأقل» and «الأعلى» set it in one tap. */
+function PriceRow({ line: l, tier, onEdit, onPick }: { line: CartLine; tier: PriceTier; onEdit: () => void; onPick: (price: number) => void }) {
+  const highest = tierPrice(l, tier);
+  const lowest = minimumPrice(l, tier);
+  const choices = lowest > 0 && lowest < highest
+    ? [{ label: 'الأقل', price: lowest }, { label: 'الأعلى', price: highest }]
+    : [];
+  const reduction = round2(l.quantity * (highest - l.unitPrice));
+  return (
+    <div className="mt-2">
+      <div className="flex items-stretch gap-2">
+        <button type="button" onClick={onEdit} aria-label={`تعديل سعر ${l.name}`}
+          className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 text-brand-800 hover:bg-brand-100 active:bg-brand-100">
+          <span className="flex min-w-0 flex-col items-start leading-tight">
+            <span className="text-[11px] text-brand-700">{l.units.length > 0 ? `السعر لكل ${l.unitName}` : 'سعر القطعة'}</span>
+            <span className="tabular text-base font-bold">{formatMoney(l.unitPrice)}</span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><Pencil className="size-4" aria-hidden /> تعديل</span>
+        </button>
+        {choices.length > 0 && (
+          <div className="flex shrink-0 gap-1 rounded-xl bg-black/5 p-1" role="radiogroup" aria-label={`اختيار سعر ${l.name}`}>
+            {choices.map((c) => {
+              const active = Math.abs(l.unitPrice - c.price) < 0.005;
+              return (
+                <button key={c.label} type="button" role="radio" aria-checked={active} onClick={() => onPick(c.price)}
+                  className={cn('flex min-w-16 flex-col items-center justify-center rounded-lg px-2 leading-tight transition',
+                    active ? 'bg-surface text-brand-800 shadow-sm' : 'text-muted hover:text-ink')}>
+                  <span className="text-[11px]">{c.label}</span>
+                  <span className="tabular text-sm font-bold">{formatMoney(c.price)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {(reduction > 0.004 || l.unitPrice > highest + 0.004 || l.lineDiscount > 0) && (
+        <p className="mt-1 flex flex-wrap gap-x-3 text-xs font-semibold text-warning">
+          {reduction > 0.004 && <span>تخفيض {formatMoney(reduction)}</span>}
+          {l.unitPrice > highest + 0.004 && <span>سعر معدَّل (أعلى من المحدد)</span>}
+          {l.lineDiscount > 0 && <span>خصم {formatMoney(l.lineDiscount)}</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 const minimumPrice = (l: Pick<CartLine, 'minSalePrice' | 'wholesalePrice'>, tier: PriceTier) =>
   tier === 'Wholesale' ? Math.min(l.minSalePrice, l.wholesalePrice) : l.minSalePrice;
 
