@@ -54,6 +54,20 @@ public sealed class ProductListRequest : PagedRequest
     public bool Archived { get; set; }
     /// <summary>Only products whose purchase price was never entered (purchase price and average cost both 0). Needs cost permission.</summary>
     public bool NoCost { get; set; }
+    /// <summary>Retail (piece) price range, inclusive.</summary>
+    public decimal? PriceFrom { get; set; }
+    public decimal? PriceTo { get; set; }
+    public ProductSort Sort { get; set; } = ProductSort.Newest;
+}
+
+public enum ProductSort
+{
+    Newest = 0,
+    PriceAsc = 1,
+    PriceDesc = 2,
+    Name = 3,
+    QuantityDesc = 4,
+    QuantityAsc = 5,
 }
 
 public sealed record StockByWarehouseDto(int WarehouseId, string WarehouseName, decimal Quantity);

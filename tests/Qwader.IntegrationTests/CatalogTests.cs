@@ -95,6 +95,30 @@ public sealed class CatalogTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task The_list_filters_by_sale_price_range_and_sorts_by_price_name_or_quantity()
+    {
+        var admin = await factory.LoginAsync();
+        var marker = TestData.Unique("سعر");
+        var cheap = await admin.CreateProductAsync(name: $"ب {marker}", retail: 15, openingQuantity: 9);
+        var middle = await admin.CreateProductAsync(name: $"أ {marker}", retail: 40, openingQuantity: 1);
+        var dear = await admin.CreateProductAsync(name: $"ج {marker}", retail: 90, openingQuantity: 5);
+
+        async Task<List<int>> Ids(string query) =>
+            (await admin.GetFromJsonAsync<PagedResult<ProductListItemDto>>($"/api/products?search={marker}&{query}", TestJson.Options))!
+                .Items.Select(p => p.Id).ToList();
+
+        (await Ids("priceFrom=15&priceTo=40")).Should().BeEquivalentTo([cheap.Id, middle.Id]);
+        (await Ids("priceFrom=41")).Should().Equal(dear.Id);
+        (await Ids("priceTo=14.99")).Should().BeEmpty();
+        (await Ids("sort=PriceAsc")).Should().Equal(cheap.Id, middle.Id, dear.Id);
+        (await Ids("sort=PriceDesc")).Should().Equal(dear.Id, middle.Id, cheap.Id);
+        (await Ids("sort=Name")).Should().Equal(middle.Id, cheap.Id, dear.Id);
+        (await Ids("sort=QuantityDesc")).Should().Equal(cheap.Id, dear.Id, middle.Id);
+        (await Ids("sort=QuantityAsc")).Should().Equal(middle.Id, dear.Id, cheap.Id);
+        (await Ids("")).Should().Equal([dear.Id, middle.Id, cheap.Id], "newest first by default");
+    }
+
+    [Fact]
     public async Task The_default_alert_level_fills_imported_products_and_can_be_applied_to_all()
     {
         var admin = await factory.LoginAsync();

@@ -141,7 +141,13 @@ export interface ProductListParams {
   archived?: boolean;
   /** Only products with no purchase price entered (needs cost permission). */
   noCost?: boolean;
+  /** Retail (piece) price range, inclusive. */
+  priceFrom?: number;
+  priceTo?: number;
+  sort?: ProductSort;
 }
+
+export type ProductSort = 'Newest' | 'PriceAsc' | 'PriceDesc' | 'Name' | 'QuantityDesc' | 'QuantityAsc';
 
 export interface ImportResult {
   created: number;

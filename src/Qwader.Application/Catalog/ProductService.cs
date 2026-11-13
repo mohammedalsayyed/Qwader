@@ -45,6 +45,8 @@ public sealed class ProductService(
         if (request.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
         if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
         if (request.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
+        if (request.PriceFrom is { } from) query = query.Where(p => p.RetailPrice >= from);
+        if (request.PriceTo is { } to) query = query.Where(p => p.RetailPrice <= to);
         return request.Stock switch
         {
             StockFilter.Available => query.Where(p => (p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0) > p.ReorderLevel),
@@ -62,10 +64,19 @@ public sealed class ProductService(
         var withQty = query.Select(p => new { P = p, Qty = p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0 });
 
         var raw = request.Search?.Trim();
-        // Newest first (the id grows with every product added); a search still puts an exact code or barcode on top.
-        var ordered = string.IsNullOrEmpty(raw)
-            ? withQty.OrderByDescending(x => x.P.Id)
-            : withQty.OrderByDescending(x => x.P.Sku == raw || x.P.Barcode == raw).ThenByDescending(x => x.P.Id);
+        // A search puts an exact code or barcode on top; then the chosen order (newest first by default — the id grows with every product).
+        var first = string.IsNullOrEmpty(raw)
+            ? withQty.OrderBy(x => 0)
+            : withQty.OrderByDescending(x => x.P.Sku == raw || x.P.Barcode == raw);
+        var ordered = request.Sort switch
+        {
+            ProductSort.PriceAsc => first.ThenBy(x => x.P.RetailPrice).ThenByDescending(x => x.P.Id),
+            ProductSort.PriceDesc => first.ThenByDescending(x => x.P.RetailPrice).ThenByDescending(x => x.P.Id),
+            ProductSort.Name => first.ThenBy(x => x.P.Name).ThenBy(x => x.P.Id),
+            ProductSort.QuantityDesc => first.ThenByDescending(x => x.Qty).ThenByDescending(x => x.P.Id),
+            ProductSort.QuantityAsc => first.ThenBy(x => x.Qty).ThenByDescending(x => x.P.Id),
+            _ => first.ThenByDescending(x => x.P.Id),
+        };
 
         var canViewCost = CanViewCost;
         return await ordered.Select(x => new ProductListItemDto(
