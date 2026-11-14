@@ -65,7 +65,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
     {
         RuleFor(x => x.UserName).NotEmpty().WithMessage("اسم المستخدم مطلوب")
             .Length(3, 50).WithMessage("اسم المستخدم يجب أن يكون بين 3 و50 حرفًا")
-            .Matches(@"^\S+$").WithMessage("اسم المستخدم يجب ألا يحتوي على مسافات");
+            .Matches(@"^[\p{L}\p{N}._-]+$").WithMessage("اسم المستخدم: حروف وأرقام و . _ - فقط، بدون مسافات");
         RuleFor(x => x.FullName).NotEmpty().WithMessage("الاسم الكامل مطلوب").MaximumLength(100);
         RuleFor(x => x.PhoneNumber).MaximumLength(20).WithMessage("رقم الجوال طويل جدًا").Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
         RuleFor(x => x.Password).StrongPassword();

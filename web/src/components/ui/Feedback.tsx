@@ -63,6 +63,9 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
   return <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold', tones[tone])}>{children}</span>;
 }
 
+/** Longer search text would make the address too long for the web server (it answers with its own error page). */
+const SEARCH_MAX = 100;
+
 export function SearchInput({
   value,
   onChange,
@@ -77,7 +80,7 @@ export function SearchInput({
   return (
     <div className="relative">
       <Search className="pointer-events-none absolute start-3.5 top-1/2 size-5 -translate-y-1/2 text-muted" aria-hidden />
-      <input
+      <input maxLength={SEARCH_MAX}
         type="search"
         value={value}
         autoFocus={autoFocus}

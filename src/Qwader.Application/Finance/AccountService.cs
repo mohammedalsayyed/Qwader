@@ -71,6 +71,13 @@ public sealed class AccountService(
         var account = await db.FinancialAccounts.FirstOrDefaultAsync(a => a.Id == id, ct) ?? throw new NotFoundException("الحساب غير موجود");
         if (account.IsActive && !request.IsActive && account.CurrentBalance != 0)
             throw new BusinessRuleException($"لا يمكن تعطيل حساب رصيده {account.CurrentBalance:0.00} ₪؛ حوّل رصيده لحساب آخر أولًا");
+        // A pending transfer could no longer be confirmed into a disabled account.
+        if (account.IsActive && !request.IsActive
+            && await db.IncomingTransfers.AnyAsync(t => t.FinancialAccountId == id && t.Status == Domain.Finance.TransferStatus.Pending, ct))
+            throw new BusinessRuleException("على هذا الحساب حوالات بانتظار التحقق؛ أكّدها أو ارفضها أولًا");
+        // Cash or not decides whether a till payment is a transfer to verify: fixed once money has moved.
+        if (account.Type != request.Type && await db.AccountTransactions.AnyAsync(t => t.FinancialAccountId == id, ct))
+            throw new ValidationFailedException("type", "لا يمكن تغيير نوع حساب عليه حركات");
         var before = new { account.Name, account.Type, account.ProviderName, account.HolderName, account.IsActive };
         // Users without the numbers permission see a masked value; sending it back must not overwrite the real number.
         var keepNumber = !CanSeeNumbers || request.AccountNumber == Mask(account.AccountNumber);
@@ -121,17 +128,32 @@ public sealed class AccountService(
         var totalOut = await period.Where(t => t.Direction == MoneyDirection.Out).SumAsync(t => (decimal?)t.Amount, ct) ?? 0;
 
         var users = db.Users;
-        var page = await period.OrderByDescending(t => t.Id)
-            .Select(t => new { t.Id, t.Date, t.Direction, t.Amount, t.BalanceAfter, t.Category, t.SourceType, t.SourceId, t.SourceNumber, t.Description,
+        // By date (newest first), so an entry dated an earlier day sits on its day; each line's balance is worked out in that
+        // same order from the period's closing balance, not the balance stored when the entry was made.
+        var page = await period.OrderByDescending(t => t.Date).ThenByDescending(t => t.Id)
+            .Select(t => new { t.Id, t.Date, t.Direction, t.Amount, t.Category, t.SourceType, t.SourceId, t.SourceNumber, t.Description,
                 UserName = users.Where(u => u.Id == t.UserId).Select(u => u.FullName).FirstOrDefault() })
             .ToPagedAsync(paging, ct);
 
-        var movements = new PagedResult<AccountMovementDto>(
-            page.Items.Select(t => new AccountMovementDto(t.Id, t.Date, t.Direction, t.Amount, t.BalanceAfter, t.Category,
-                FinanceNames.Category(t.Category), t.SourceType, t.SourceId, t.SourceNumber, t.Description, t.UserName)).ToList(),
-            page.Page, page.PageSize, page.TotalCount);
+        var closing = opening + totalIn - totalOut;
+        var balance = closing;
+        if (page.Items.Count > 0)
+        {
+            // Entries newer than this page's first one (on earlier pages) are taken off the closing balance first.
+            var first = page.Items[0];
+            balance -= await period.Where(t => t.Date > first.Date || (t.Date == first.Date && t.Id > first.Id))
+                .SumAsync(t => (decimal?)(t.Direction == MoneyDirection.In ? t.Amount : -t.Amount), ct) ?? 0;
+        }
+        var lines = new List<AccountMovementDto>(page.Items.Count);
+        foreach (var t in page.Items)
+        {
+            lines.Add(new AccountMovementDto(t.Id, t.Date, t.Direction, t.Amount, balance, t.Category,
+                FinanceNames.Category(t.Category), t.SourceType, t.SourceId, t.SourceNumber, t.Description, t.UserName));
+            balance -= t.Direction == MoneyDirection.In ? t.Amount : -t.Amount;
+        }
+        var movements = new PagedResult<AccountMovementDto>(lines, page.Page, page.PageSize, page.TotalCount);
 
-        return new AccountStatementDto(account.Id, account.Name, from, end, opening, totalIn, totalOut, opening + totalIn - totalOut, movements);
+        return new AccountStatementDto(account.Id, account.Name, from, end, opening, totalIn, totalOut, closing, movements);
     }
 
     public async Task<PagedResult<AccountTransferDto>> TransfersAsync(PagedRequest request, CancellationToken ct = default)

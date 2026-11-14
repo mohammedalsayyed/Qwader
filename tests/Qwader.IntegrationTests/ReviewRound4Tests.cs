@@ -137,3 +137,94 @@ public sealed class ReviewRound4Tests(ApiFactory factory)
         sale.Total.Should().Be(sale.GrossTotal - sale.LineDiscountTotal - sale.InvoiceDiscount);
     }
 }
+
+/// <summary>Round 4, the rest: units, archived products, user names, accounts, transfers, statements.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class ReviewRound4MoreTests(ApiFactory factory)
+{
+    private async Task<int> AccountAsync(HttpClient admin, FinancialAccountType type = FinancialAccountType.Cash) =>
+        (await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new SaveAccountRequest(TestData.Unique("حساب"), type, null, null, null))).ReadAsync<AccountDto>()).Id;
+
+    [Fact]
+    public async Task A_products_unit_stays_once_stock_moved_and_wholesale_is_not_above_retail()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 20, openingCost: 4);
+        var other = (await admin.LookupsAsync()).Units.First(u => u.Id != product.UnitId).Id;
+        Application.Catalog.SaveProductRequest With(int unitId, decimal wholesale) => new(product.Name, product.Sku, null, product.CategoryId, null, unitId, null, null,
+            null, null, null, null, 4, wholesale, 10, 0, 2, null);
+        (await admin.PutAsJsonAsync($"/api/products/{product.Id}", With(other, 10))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await admin.PutAsJsonAsync($"/api/products/{product.Id}", With(product.UnitId, 20))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await admin.PutAsJsonAsync($"/api/products/{product.Id}", With(product.UnitId, 9))).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Nothing_moves_on_an_archived_product()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 3, openingCost: 4);
+        (await admin.PostAsync($"/api/products/{product.Id}/archive", null)).EnsureSuccessStatusCode();
+        (await admin.AdjustAsync(product.Id, Application.Inventory.AdjustmentKind.Found, 5)).StatusCode.Should().Be((HttpStatusCode)422);
+    }
+
+    [Fact]
+    public async Task A_user_name_takes_no_hidden_or_direction_characters()
+    {
+        var admin = await factory.LoginAsync();
+        // The direction character is taken out as the request comes in; the name stored is plain.
+        var created = await (await admin.PostAsJsonAsync("/api/users", new Application.Users.CreateUserRequest("qa‮test" + Random.Shared.Next(100000), "مخفي", null, "Temp12345",
+            [Domain.Identity.SystemRoles.Sales]))).ReadAsync<Application.Users.UserDto>();
+        created.UserName.Should().NotContain("‮").And.StartWith("qatest");
+        (await admin.PostAsJsonAsync("/api/users", new Application.Users.CreateUserRequest("qa test<b>" + Random.Shared.Next(100000), "مسافة", null, "Temp12345",
+            [Domain.Identity.SystemRoles.Sales]))).StatusCode.Should().Be(HttpStatusCode.BadRequest, "letters, digits, . _ - only");
+    }
+
+    [Fact]
+    public async Task Accounts_keep_their_type_once_used_and_stay_active_with_pending_transfers_and_cash_takes_no_transfers()
+    {
+        var admin = await factory.LoginAsync();
+        var wallet = await AccountAsync(admin, FinancialAccountType.Wallet);
+        var cash = await AccountAsync(admin);
+        (await admin.PostAsJsonAsync("/api/incoming-transfers", new CreateIncomingTransferRequest(Guid.NewGuid(), "مرسل", null, 30, null, cash, null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a transfer reaches a bank or a wallet");
+        (await admin.PostAsJsonAsync("/api/incoming-transfers", new CreateIncomingTransferRequest(Guid.NewGuid(), "مرسل", null, 30, null, wallet, null, null, null, null, null)))
+            .EnsureSuccessStatusCode();
+        var name = (await admin.GetFromJsonAsync<AccountDto>($"/api/financial-accounts/{wallet}", TestJson.Options))!.Name;
+        (await admin.PutAsJsonAsync($"/api/financial-accounts/{wallet}", new SaveAccountRequest(name, FinancialAccountType.Wallet, null, null, null, false)))
+            .StatusCode.Should().Be((HttpStatusCode)422, "a pending transfer waits on it");
+
+        await admin.FundAsync(cash, 50);
+        (await admin.PutAsJsonAsync($"/api/financial-accounts/{cash}", new SaveAccountRequest(TestData.Unique("حساب"), FinancialAccountType.Bank, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "money has moved through it");
+    }
+
+    [Fact]
+    public async Task Vouchers_refuse_a_third_decimal_or_a_missing_account_with_a_clear_message()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = await AccountAsync(admin);
+        await admin.FundAsync(cash, 50);
+        (await admin.PostAsJsonAsync("/api/payment-vouchers", new CreatePaymentRequest(Guid.NewGuid(), PaymentPurpose.Other, null, "مستفيد", 0.001m, cash, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var missing = await admin.PostAsJsonAsync("/api/payment-vouchers", new CreatePaymentRequest(Guid.NewGuid(), PaymentPurpose.Other, null, "مستفيد", 5, 999999, null, null, null));
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await missing.Content.ReadAsStringAsync()).Should().Contain("الحساب المالي غير موجود");
+    }
+
+    [Fact]
+    public async Task The_account_statement_runs_its_balance_in_date_order()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = await AccountAsync(admin);
+        await admin.FundAsync(cash, 100);
+        var category = (await admin.LookupsAsync()).ExpenseCategories[0].Id;
+        await (await admin.PostAsJsonAsync("/api/expenses", new CreateExpenseRequest(Guid.NewGuid(), category, "اليوم", 10, cash, null, null))).ReadAsync<ExpenseDto>();
+
+        var statement = await admin.GetFromJsonAsync<AccountStatementDto>($"/api/financial-accounts/{cash}/statement", TestJson.Options);
+        var lines = statement!.Movements.Items;
+        lines[0].BalanceAfter.Should().Be(statement.ClosingBalance, "the newest line ends at the closing balance");
+        for (var i = 0; i < lines.Count - 1; i++)
+            lines[i + 1].BalanceAfter.Should().Be(lines[i].BalanceAfter - (lines[i].Direction == MoneyDirection.In ? lines[i].Amount : -lines[i].Amount));
+    }
+}

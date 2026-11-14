@@ -10,8 +10,10 @@ import { ConfirmProvider } from '@/components/ui/Confirm';
 import { router } from '@/app/router';
 import { captureInstallPrompt, UpdatePrompt } from '@/app/pwa';
 import '@/styles/index.css';
+import { setArabicZodMessages } from '@/lib/zodArabic';
 
 captureInstallPrompt();
+setArabicZodMessages();
 
 const queryClient = new QueryClient({
   defaultOptions: {

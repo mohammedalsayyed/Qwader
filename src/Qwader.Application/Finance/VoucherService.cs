@@ -93,6 +93,9 @@ public sealed class VoucherService(
         await EnsureAttachmentAsync(request.AttachmentFileId, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // A missing account is a clear message, not a database error.
+        if (!await db.FinancialAccounts.AnyAsync(a => a.Id == request.FinancialAccountId && a.IsActive, ct))
+            throw new ValidationFailedException("financialAccountId", "الحساب المالي غير موجود أو معطّل");
         Customer? customer = null;
         if (request.CustomerId is { } customerId)
         {
@@ -277,6 +280,9 @@ public sealed class VoucherService(
         await EnsureAttachmentAsync(request.AttachmentFileId, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // A missing account is a clear message, not a database error.
+        if (!await db.FinancialAccounts.AnyAsync(a => a.Id == request.FinancialAccountId && a.IsActive, ct))
+            throw new ValidationFailedException("financialAccountId", "الحساب المالي غير موجود أو معطّل");
         Supplier? supplier = null;
         if (request.SupplierId is { } supplierId)
         {
@@ -434,6 +440,9 @@ public sealed class VoucherService(
             ?? throw new ValidationFailedException("expenseCategoryId", "نوع المصروف غير موجود");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // A missing account is a clear message, not a database error.
+        if (!await db.FinancialAccounts.AnyAsync(a => a.Id == request.FinancialAccountId && a.IsActive, ct))
+            throw new ValidationFailedException("financialAccountId", "الحساب المالي غير موجود أو معطّل");
         var expense = await PostExpenseAsync(category.Id, request.Description.Trim(), request.Amount, request.FinancialAccountId,
             await DocumentDates.ToUtcAsync(request.Date, clock, db, ct), ct, request.AttachmentFileId);
 

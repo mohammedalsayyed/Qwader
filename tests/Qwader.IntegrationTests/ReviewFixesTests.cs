@@ -177,10 +177,12 @@ public sealed class ReviewFixesTests(ApiFactory factory)
         var drawer = await DrawerAsync(admin);
         // A unit of its own, so switching it does not touch other tests' products.
         var unit = await (await admin.PostAsJsonAsync("/api/lookups/units", new { name = TestData.Unique("طقم") })).ReadAsync<Application.Lookups.LookupItem>();
-        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 5, openingCost: 4);
+        // The unit is set before any stock moves (afterwards it cannot change).
+        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 0, openingCost: 4);
         var request = new SaveProductRequest(product.Name, product.Sku, null, product.CategoryId, null, unit.Id, null, null,
             null, null, null, null, 4, 10, 10, 0, 2, null);
         await (await admin.PutAsJsonAsync($"/api/products/{product.Id}", request)).ReadAsync<ProductDetailDto>();
+        (await admin.AdjustAsync(product.Id, AdjustmentKind.Found, 5)).EnsureSuccessStatusCode();
 
         // Fractions allowed until the unit is switched (the default keeps today's behaviour).
         (await admin.PostAsJsonAsync("/api/sales", Sale(product.Id, 0.5m, 10, drawer, 5))).StatusCode.Should().Be(HttpStatusCode.OK);

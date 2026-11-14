@@ -76,6 +76,10 @@ public sealed class TransferService(
         var reference = Clean(request.ReferenceNo);
         await EnsureReferenceUnusedAsync(request.FinancialAccountId, reference, null, ct);
 
+        if (await db.FinancialAccounts.Where(a => a.Id == request.FinancialAccountId).Select(a => (FinancialAccountType?)a.Type).FirstOrDefaultAsync(ct) is not { } type)
+            throw new ValidationFailedException("financialAccountId", "الحساب غير موجود");
+        if (type == FinancialAccountType.Cash)
+            throw new ValidationFailedException("financialAccountId", "الحوالة تصل إلى بنك أو محفظة، لا إلى الصندوق النقدي");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var transfer = new IncomingTransfer
         {

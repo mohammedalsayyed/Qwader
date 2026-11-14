@@ -408,18 +408,7 @@ public sealed class SaleService(
 
         // Only the sale that crosses the line raises an alert, not every later sale of a product that is already low.
         var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity * l.UnitFactor));
-        var ids = sold.Keys.ToList();
-        var stock = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.ReorderLevel, Quantity = p.StockBalances.Sum(b => b.Quantity) }).ToListAsync(ct);
-        foreach (var p in stock)
-        {
-            var before = p.Quantity + sold[p.Id];
-            if (p.Quantity <= 0 && before > 0)
-                push.Notify(PushTopics.Stock, new PushMessage("نفد من المخزون", p.Name, $"/products/{p.Id}", $"stock-{p.Id}"), Permissions.InventoryView);
-            else if (p.Quantity <= p.ReorderLevel && before > p.ReorderLevel)
-                push.Notify(PushTopics.Stock, new PushMessage("قارب على النفاد", $"{p.Name} — باقي {p.Quantity:0.##}", $"/products/{p.Id}", $"stock-{p.Id}"),
-                    Permissions.InventoryView);
-        }
+        await Inventory.StockAlerts.NotifyCrossedAsync(db, push, sold, ct);
     }
 
     // ------------------------------------------------------------------ read

@@ -266,6 +266,12 @@ public sealed class ProductService(
             throw new ValidationFailedException("categoryId", "الصنف المختار غير فعّال");
         if (!await db.Units.AnyAsync(u => u.Id == r.UnitId, ct))
             throw new ValidationFailedException("unitId", "وحدة القياس غير موجودة");
+        // 20 pieces would silently become 20 metres: once stock has moved, the unit stays.
+        if (!isNew && product.UnitId != r.UnitId && await db.StockMovements.AnyAsync(m => m.ProductId == product.Id, ct))
+            throw new ValidationFailedException("unitId", "لا يمكن تغيير وحدة القياس لمنتج عليه حركات مخزون؛ أنشئ منتجًا جديدًا بالوحدة الصحيحة");
+        // L3: wholesale is the lower price.
+        if (r.WholesalePrice > r.RetailPrice)
+            throw new ValidationFailedException("wholesalePrice", "سعر الجملة يجب ألا يتجاوز سعر المفرق");
         if (r.DefaultSupplierId is { } supplierId && !await db.Suppliers.AnyAsync(s => s.Id == supplierId, ct))
             throw new ValidationFailedException("defaultSupplierId", "المورد غير موجود");
         if (r.ImageFileId is { } fileId && fileId != product.ImageFileId

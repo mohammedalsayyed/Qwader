@@ -71,14 +71,14 @@ export function DateRangeFilter({
         <div className="grid grid-cols-2 gap-2">
           <Field label="من تاريخ">
             {(id) => (
-              <Input id={id} type="date" max={today} value={custom.from}
-                onChange={(e) => { const next = { ...custom, from: e.target.value }; setCustom(next); onChange({ preset: 'custom', ...next }); }} />
+              <Input id={id} type="date" max={custom.to || today} value={custom.from}
+                onChange={(e) => { const next = { ...custom, from: e.target.value }; setCustom(next); if (!next.to || !next.from || next.from <= next.to) onChange({ preset: 'custom', ...next }); }} />
             )}
           </Field>
           <Field label="إلى تاريخ">
             {(id) => (
-              <Input id={id} type="date" max={today} value={custom.to}
-                onChange={(e) => { const next = { ...custom, to: e.target.value }; setCustom(next); onChange({ preset: 'custom', ...next }); }} />
+              <Input id={id} type="date" min={custom.from || undefined} max={today} value={custom.to}
+                onChange={(e) => { const next = { ...custom, to: e.target.value }; setCustom(next); if (!next.to || !next.from || next.from <= next.to) onChange({ preset: 'custom', ...next }); }} />
             )}
           </Field>
         </div>

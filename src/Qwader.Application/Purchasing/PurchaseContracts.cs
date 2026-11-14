@@ -27,7 +27,7 @@ public sealed record PostPurchaseRequest(Guid IdempotencyKey);
 public sealed record UpdatePurchaseDetailsRequest(string? Notes, string? SupplierInvoiceNo);
 
 /// <summary>A reason; for a sale void, the day it happened (today by default, or an earlier day).</summary>
-public sealed record VoidRequest(string Reason, DateOnly? Date = null);
+public sealed record VoidRequest(string Reason = "", DateOnly? Date = null);
 
 public sealed record ReturnLineInput(int PurchaseInvoiceLineId, decimal Quantity);
 

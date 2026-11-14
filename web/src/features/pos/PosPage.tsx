@@ -329,7 +329,7 @@ export function PosPage() {
                     lineDiscount: unitPrice === minimumPrice(l, cart.tier) ? 0 : l.lineDiscount })} />
                 <div className="mt-2 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1">
-                    <IconButton label="إنقاص الكمية" className="border border-line"
+                    <IconButton label={l.quantity <= 1 ? `حذف «${l.name}» من الفاتورة` : 'إنقاص الكمية'} className="border border-line"
                       onClick={() => (l.quantity <= 1 ? remove(l.key) : update(l.key, { quantity: l.quantity - 1 }))}>
                       {l.quantity <= 1 ? <Trash2 className="size-5 text-danger" /> : <Minus className="size-5" />}
                     </IconButton>
@@ -395,11 +395,17 @@ export function PosPage() {
 /** The cart's quantity, typed directly (big quantities) as well as with − and +; never more than in stock. */
 function QuantityInput({ line, onChange, onLimit }: { line: CartLine; onChange: (quantity: number) => void; onLimit: (message: string) => void }) {
   const [text, setText] = useState<string | null>(null);
+  // A unit counted whole (piece, set, carton) — set in the settings — takes no fractions here either.
+  const whole = useLookups().data?.units.find((u) => u.name === line.unitName)?.wholeNumbersOnly ?? false;
   const commit = () => {
     if (text === null) return;
     const n = parseNumber(text);
     setText(null);
     if (n === undefined || Number.isNaN(n) || n <= 0 || n === line.quantity) return;
+    if (whole && !Number.isInteger(n)) {
+      onLimit(`«${line.name}» يُباع بالـ${line.unitName} بدون كسور`);
+      return;
+    }
     if (n > line.available) {
       onLimit(`المتوفر من «${line.name}» ${formatQuantity(line.available)} ${line.unitName} فقط`);
       onChange(line.available);
@@ -443,7 +449,7 @@ function PriceRow({ line: l, tier, onEdit, onPick }: { line: CartLine; tier: Pri
         <button type="button" onClick={onEdit} aria-label={`تعديل سعر ${l.name}`}
           className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 text-brand-800 hover:bg-brand-100 active:bg-brand-100">
           <span className="flex min-w-0 flex-col items-start leading-tight">
-            <span className="text-[11px] text-brand-700">{l.units.length > 0 ? `السعر لكل ${l.unitName}` : 'سعر القطعة'}</span>
+            <span className="text-[11px] text-brand-700">{`السعر لكل ${l.unitName}`}</span>
             <span className="tabular text-base font-bold">{formatMoney(l.unitPrice)}</span>
           </span>
           <span className="flex shrink-0 items-center gap-1 text-xs font-semibold"><Pencil className="size-4" aria-hidden /> تعديل</span>

@@ -13,8 +13,8 @@ public sealed record AccountDto(
 
 public sealed record SaveAccountRequest(string Name, FinancialAccountType Type, string? ProviderName, string? HolderName, string? AccountNumber, bool IsActive = true);
 
-/// <summary>Sets the account's opening balance; the difference is posted as a documented «رصيد افتتاحي» movement.</summary>
-/// <summary>The new opening balance: required (a request without it never zeroes the balance).</summary>
+/// <summary>Sets the account's opening balance; the difference is posted as a documented «رصيد افتتاحي» movement.
+/// Required: a request without it never zeroes the balance.</summary>
 public sealed record SetOpeningBalanceRequest(decimal? OpeningBalance, string? Notes);
 
 public sealed record AccountMovementDto(long Id, DateTime Date, MoneyDirection Direction, decimal Amount, decimal BalanceAfter,
@@ -64,7 +64,7 @@ public sealed record CreateExpenseRequest(
     Guid IdempotencyKey, int ExpenseCategoryId, string Description, decimal Amount, int FinancialAccountId,
     DateOnly? Date, Guid? AttachmentFileId);
 
-public sealed record VoidDocumentRequest(string Reason);
+public sealed record VoidDocumentRequest(string Reason = "");
 
 public sealed record VoucherDto(
     int Id, string Number, DateTime Date, string PartyName, string? PartyPhone, int? CustomerId, int? SupplierId,
@@ -155,7 +155,8 @@ public sealed class CreateAccountTransferRequestValidator : AbstractValidator<Cr
     public CreateAccountTransferRequestValidator()
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
-        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.ToAccountId).NotEqual(x => x.FromAccountId).WithMessage("اختر حسابين مختلفين");
         RuleFor(x => x.Notes).MaximumLength(300);
     }
@@ -168,7 +169,8 @@ public sealed class CreateIncomingTransferRequestValidator : AbstractValidator<C
         RuleFor(x => x.IdempotencyKey).NotEmpty();
         RuleFor(x => x.SenderName).NotEmpty().WithMessage("اسم صاحب الحوالة مطلوب").MaximumLength(150);
         RuleFor(x => x.SenderPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
-        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.Channel).MaximumLength(100);
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب المستلم");
         RuleFor(x => x.ReferenceNo).MaximumLength(100);
@@ -191,7 +193,8 @@ public sealed class CreateReceiptRequestValidator : AbstractValidator<CreateRece
         RuleFor(x => x.PayerName).NotEmpty().When(x => x.CustomerId is null).WithMessage("اسم الدافع مطلوب");
         RuleFor(x => x.PayerName).MaximumLength(150);
         RuleFor(x => x.PayerPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);
-        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب المستلم");
         RuleFor(x => x.Reference).MaximumLength(100);
         RuleFor(x => x.Notes).MaximumLength(500);
@@ -209,7 +212,8 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
         RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose == PaymentPurpose.CustomerRefund).WithMessage("اختر العميل");
         RuleFor(x => x.BeneficiaryName).NotEmpty().When(x => x.SupplierId is null && x.CustomerId is null).WithMessage("اسم المستفيد مطلوب");
         RuleFor(x => x.BeneficiaryName).MaximumLength(150);
-        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب الذي ستخرج منه الأموال");
         RuleFor(x => x.Reference).MaximumLength(100);
         RuleFor(x => x.Notes).MaximumLength(500);
@@ -223,7 +227,8 @@ public sealed class CreateExpenseRequestValidator : AbstractValidator<CreateExpe
         RuleFor(x => x.IdempotencyKey).NotEmpty();
         RuleFor(x => x.ExpenseCategoryId).GreaterThan(0).WithMessage("اختر نوع المصروف");
         RuleFor(x => x.Description).NotEmpty().WithMessage("وصف المصروف مطلوب").MaximumLength(300);
-        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر");
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("المبلغ يجب أن يكون أكبر من صفر")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.FinancialAccountId).GreaterThan(0).WithMessage("اختر الحساب الذي دُفع منه");
     }
 }

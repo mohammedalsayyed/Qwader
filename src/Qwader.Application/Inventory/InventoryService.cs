@@ -125,7 +125,8 @@ public sealed class InventoryService(
     IIdempotencyService idempotency,
     ICurrentUser currentUser,
     IClock clock,
-    IAuditService audit) : IInventoryService
+    IAuditService audit,
+    Notifications.IPushNotifier push) : IInventoryService
 {
     private const string AdjustOperation = "Inventory.Adjust";
 
@@ -161,6 +162,8 @@ public sealed class InventoryService(
 
         var product = await db.Products.AsNoTracking().Where(p => p.Id == request.ProductId).Select(p => new { p.Id, p.IsArchived }).FirstOrDefaultAsync(ct)
             ?? throw new ValidationFailedException("productId", "المنتج غير موجود");
+        // Its stock was written off at archiving and it is out of the stock value: nothing moves on it until it is brought back.
+        if (product.IsArchived) throw new BusinessRuleException("المنتج مؤرشف؛ ألغِ أرشفته أولًا");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var warehouseId = request.WarehouseId ?? await DefaultWarehouseAsync(ct);
@@ -180,6 +183,8 @@ public sealed class InventoryService(
         audit.Log("Inventory.Adjust", "Product", product.Id.ToString(), null, new { number, request.Kind, request.Quantity, notes });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        if (request.Kind is AdjustmentKind.Damaged or AdjustmentKind.Lost)
+            await StockAlerts.NotifyCrossedAsync(db, push, new Dictionary<int, decimal> { [product.Id] = request.Quantity }, CancellationToken.None);
         return new StockAdjustmentResult(number, posting.BalanceAfter);
     }
 
@@ -346,6 +351,8 @@ public sealed class InventoryService(
         audit.Log("StockCount.Post", "StockCount", id.ToString(), null, new { count.Number });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        await StockAlerts.NotifyCrossedAsync(db, push, count.Lines.Where(l => l.CountedQuantity < l.ExpectedQuantity)
+            .ToDictionary(l => l.ProductId, l => l.ExpectedQuantity!.Value - l.CountedQuantity!.Value), CancellationToken.None);
         return await GetCountAsync(id, ct);
     }
 
