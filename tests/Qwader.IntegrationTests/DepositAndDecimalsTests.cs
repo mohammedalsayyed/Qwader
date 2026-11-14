@@ -142,3 +142,22 @@ public sealed class LineCentsTests(ApiFactory factory)
         sale.Lines.Sum(l => l.LineTotal).Should().Be(subtotal);
     }
 }
+
+/// <summary>A till whose lines came out a cent above the server's still gets the whole total it showed and was paid.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class CentApartTests(ApiFactory factory)
+{
+    [Fact]
+    public async Task A_whole_payment_a_few_agorot_above_the_count_keeps_the_total_the_till_showed()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        var product = await admin.CreateProductAsync(retail: 284.52m, openingQuantity: 5, openingCost: 1);
+        // The till counted 284.53 and discounted 4.53 to show 280; the server counts 284.52.
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 4.53m,
+            [new(product.Id, 1, 284.52m)], [new(cash, 280)], null))).ReadAsync<SaleDetailDto>();
+        sale.Total.Should().Be(280);
+        sale.InvoiceDiscount.Should().Be(4.52m);
+        sale.Remaining.Should().Be(0);
+    }
+}
