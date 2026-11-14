@@ -154,7 +154,11 @@ export function PosPage() {
           customer: customer && { id: customer.id, name: customer.name, phone: customer.phone, code: customer.code, balance: round2(customer.balance - sale.remaining) },
           walkInName: sale.isWalkIn && sale.customerName !== 'زبون نقدي' ? sale.customerName : null,
           walkInPhone: sale.isWalkIn ? sale.customerPhone : null,
-          payments: sale.payments.map((p) => ({ accountId: p.accountId, amount: p.amount, reference: p.reference })),
+          // What was paid, and the transfers still waiting for verification (they carry over to the new invoice when saved).
+          payments: [
+            ...sale.payments.map((p) => ({ accountId: p.accountId, amount: p.amount, reference: p.reference })),
+            ...sale.transfers.filter((t) => t.status === 'Pending' && t.accountId).map((t) => ({ accountId: t.accountId!, amount: t.amount, reference: t.reference })),
+          ],
           // The «instead of …» line the server adds is not carried into the next edit.
           notes: sale.notes?.replace(/^بدل الفاتورة \S+ \(تعديل\)( — )?/, '') || null,
         }, sale.lines.map((l) => {

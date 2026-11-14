@@ -374,10 +374,37 @@ public sealed class SaleService(
                 await vouchers.ApplyCreditAsync(customer.Id, invoice.Id, open, creditBefore, ct);
         }
 
+        // Editing: the transfers of the invoice being replaced carry over to this one — the same transfer (its number, reference
+        // and date), not a second one for the same money. A confirmed one stays confirmed; one waiting for verification (turned
+        // down by the void a moment ago) waits again. Only for the same account and amount, the same waiting or not.
+        var carry = replacing is null ? [] : await db.IncomingTransfers
+            .Where(t => t.SaleInvoiceId == replacing.Id && t.ReceiptVoucherId == null
+                && (t.Status == Domain.Finance.TransferStatus.Confirmed
+                    || (t.Status == Domain.Finance.TransferStatus.Rejected && t.RejectReason == VoidedTransferReason(replacing.Number))))
+            .OrderBy(t => t.Id).ToListAsync(ct);
+
         // Unverified transfers are recorded for review; until confirmed they remain part of the customer's debt.
         foreach (var (p, _, pending) in payments.Where(p => p.IsTransfer))
+        {
+            var same = carry.FirstOrDefault(t => t.FinancialAccountId == p.AccountId && t.Amount == p.Amount
+                && (pending ? t.Status == Domain.Finance.TransferStatus.Rejected : t.Status == Domain.Finance.TransferStatus.Confirmed));
+            if (same is not null)
+            {
+                carry.Remove(same);
+                same.SaleInvoiceId = invoice.Id;
+                same.CustomerId = customer.IsWalkIn ? null : customer.Id;
+                if (pending)
+                {
+                    same.Status = Domain.Finance.TransferStatus.Pending;
+                    same.RejectReason = null;
+                    same.ReviewedAt = null;
+                    same.ReviewedById = null;
+                }
+                continue;
+            }
             await transfers.AddForSaleAsync(invoice.Id, customer.IsWalkIn ? null : customer.Id, invoice.CustomerName, invoice.CustomerPhone,
                 p.AccountId, p.Amount, p.Reference, confirmed: !pending, ct);
+        }
 
         idempotency.Record(request.IdempotencyKey, CreateOperation, "SaleInvoice", invoice.Id.ToString());
         audit.Log("Sale.Create", "SaleInvoice", invoice.Id.ToString(), null, new
@@ -517,7 +544,7 @@ public sealed class SaleService(
             .Where(l => l.Condition == ReturnCondition.Sellable).Sum(l => l.Quantity * l.UnitCost), ct) ?? 0;
 
         var pendingTransfers = await db.IncomingTransfers.AsNoTracking().Where(t => t.SaleInvoiceId == id).OrderBy(t => t.Id)
-            .Select(t => new SalePendingTransferDto(t.Id, t.Number, t.Amount, t.FinancialAccount.Name, t.ReferenceNo, t.Status)).ToListAsync(ct);
+            .Select(t => new SalePendingTransferDto(t.Id, t.Number, t.Amount, t.FinancialAccount.Name, t.ReferenceNo, t.Status, t.FinancialAccountId)).ToListAsync(ct);
 
         var showCost = CanSeeProfit;
         var returnedTotal = returns.Sum(r => r.Total);

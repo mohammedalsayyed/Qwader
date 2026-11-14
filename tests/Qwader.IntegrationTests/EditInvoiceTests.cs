@@ -168,3 +168,78 @@ public sealed class EditInvoiceTests(ApiFactory factory)
         await IntegrityOkAsync(admin);
     }
 }
+
+/// <summary>Editing an invoice paid by transfer: the same transfer carries over to the new invoice, never a second one.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class EditCarriesTransfersTests(ApiFactory factory)
+{
+    private static async Task SetPendingAsync(HttpClient admin, bool pending)
+    {
+        var settings = await admin.GetFromJsonAsync<SettingsDto>("/api/settings", TestJson.Options);
+        (await admin.PutAsJsonAsync("/api/settings", settings! with { SaleTransfersPending = pending })).EnsureSuccessStatusCode();
+    }
+
+    private async Task<(HttpClient Admin, int Wallet, int ProductId, CustomerDto Customer)> SetupAsync()
+    {
+        var admin = await factory.LoginAsync();
+        var wallet = (await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new SaveAccountRequest(TestData.Unique("محفظة"), FinancialAccountType.Wallet, null, null, null))).ReadAsync<AccountDto>()).Id;
+        var product = await admin.CreateProductAsync(retail: 15, openingQuantity: 10, openingCost: 5);
+        var customer = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("حوالة"), "051" + Random.Shared.Next(1000000, 9999999), null, null)))
+            .ReadAsync<CustomerDto>();
+        return (admin, wallet, product.Id, customer);
+    }
+
+    private static async Task<List<IncomingTransferDto>> TransfersOfAsync(HttpClient admin, int wallet) =>
+        (await admin.GetFromJsonAsync<Application.Common.PagedResult<IncomingTransferDto>>($"/api/incoming-transfers?accountId={wallet}&pageSize=50", TestJson.Options))!.Items.ToList();
+
+    [Fact]
+    public async Task A_confirmed_transfer_moves_to_the_new_invoice_and_stays_one()
+    {
+        var (admin, wallet, productId, customer) = await SetupAsync();
+        await SetPendingAsync(admin, false);
+        try
+        {
+            var original = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+                [new(productId, 1, 15)], [new(wallet, 15, "REF-1")], null))).ReadAsync<SaleDetailDto>();
+            var transfer = (await TransfersOfAsync(admin, wallet)).Single();
+
+            var edited = await (await admin.PostAsJsonAsync($"/api/sales/{original.Id}/replace", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+                [new(productId, 1, 15)], [new(wallet, 15, "REF-1")], null))).ReadAsync<SaleDetailDto>();
+
+            var after = await TransfersOfAsync(admin, wallet);
+            after.Should().ContainSingle("the same transfer, not a second one");
+            after[0].Id.Should().Be(transfer.Id);
+            after[0].Status.Should().Be(TransferStatus.Confirmed);
+            after[0].SaleInvoiceId.Should().Be(edited.Id);
+            (await admin.GetFromJsonAsync<AccountDto>($"/api/financial-accounts/{wallet}", TestJson.Options))!.CurrentBalance.Should().Be(15);
+        }
+        finally { await SetPendingAsync(admin, true); }
+    }
+
+    [Fact]
+    public async Task A_transfer_waiting_for_verification_keeps_waiting_on_the_new_invoice()
+    {
+        var (admin, wallet, productId, customer) = await SetupAsync();
+        await SetPendingAsync(admin, true);
+        var original = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, customer.Id, null, null, 0,
+            [new(productId, 2, 15)], [new(wallet, 30)], null))).ReadAsync<SaleDetailDto>();
+        var transfer = (await TransfersOfAsync(admin, wallet)).Single();
+        transfer.Status.Should().Be(TransferStatus.Pending);
+
+        var edited = await (await admin.PostAsJsonAsync($"/api/sales/{original.Id}/replace", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, customer.Id, null, null, 0,
+            [new(productId, 2, 15)], [new(wallet, 30)], null))).ReadAsync<SaleDetailDto>();
+
+        var after = await TransfersOfAsync(admin, wallet);
+        after.Should().ContainSingle();
+        after[0].Id.Should().Be(transfer.Id);
+        after[0].Status.Should().Be(TransferStatus.Pending, "it still waits for verification");
+        after[0].SaleInvoiceId.Should().Be(edited.Id);
+        (await admin.GetFromJsonAsync<CustomerDto>($"/api/customers/{customer.Id}", TestJson.Options))!.Balance.Should().Be(30, "owed until the transfer is confirmed");
+
+        // Confirming it pays the new invoice.
+        await (await admin.PostAsync($"/api/incoming-transfers/{transfer.Id}/confirm", null)).ReadAsync<IncomingTransferDto>();
+        (await admin.GetFromJsonAsync<SaleDetailDto>($"/api/sales/{edited.Id}", TestJson.Options))!.Remaining.Should().Be(0);
+        (await admin.GetFromJsonAsync<CustomerDto>($"/api/customers/{customer.Id}", TestJson.Options))!.Balance.Should().Be(0);
+    }
+}

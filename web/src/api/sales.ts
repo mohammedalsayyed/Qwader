@@ -76,7 +76,7 @@ export interface Sale {
   /** Every return, cancelled ones too (voidedAt set): those count for nothing and are shown for the history only. */
   returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null;
     voidedAt: string | null; voidReason: string | null; refundAccountName: string | null }[];
-  transfers: { id: number; number: string; amount: number; accountName: string; reference: string | null; status: 'Pending' | 'Confirmed' | 'Rejected' }[];
+  transfers: { id: number; number: string; amount: number; accountName: string; reference: string | null; status: 'Pending' | 'Confirmed' | 'Rejected'; accountId?: number }[];
   soldOffline: boolean;
   /** What an offline sale broke (one problem per line), for a manager to review. */
   reviewNote: string | null;

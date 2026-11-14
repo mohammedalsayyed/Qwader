@@ -55,7 +55,7 @@ public sealed record SaleLineDto(
 
 public sealed record SalePaymentDto(int Id, int AccountId, string AccountName, decimal Amount, string? Reference);
 
-public sealed record SalePendingTransferDto(int Id, string Number, decimal Amount, string AccountName, string? Reference, Domain.Finance.TransferStatus Status);
+public sealed record SalePendingTransferDto(int Id, string Number, decimal Amount, string AccountName, string? Reference, Domain.Finance.TransferStatus Status, int AccountId = 0);
 
 public sealed record SaleReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason,
     DateTime? VoidedAt = null, string? VoidReason = null, string? RefundAccountName = null);
