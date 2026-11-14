@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, CloudOff, Plus, Printer, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
+import { CheckCircle2, CloudOff, Plus, Printer, Save, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
 import { ApiError } from '@/api/client';
 import { customersApi, salesApi, type CreateSaleInput, type CustomerListItem, type Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
@@ -14,7 +14,7 @@ import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { parseNumber, round2 } from '@/lib/numbers';
-import { useUnsavedChangesWarning } from '@/lib/hooks';
+import { useDebouncedValue, useUnsavedChangesWarning } from '@/lib/hooks';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import { queueSale, searchCustomers, useOfflineState } from '@/lib/offline';
 import { lineTotal, type Cart } from './cart';
@@ -59,6 +59,36 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   const [newName, setNewName] = useState(editing?.walkInName ?? '');
   const [newPhone, setNewPhone] = useState(editing?.walkInPhone ?? '');
   const [discount, setDiscount] = useState(editing && editing.invoiceDiscount > 0 ? String(editing.invoiceDiscount) : '');
+  // A phone typed for a new customer that is already registered brings their name (and the sale goes to them).
+  const [knownByPhone, setKnownByPhone] = useState<CustomerListItem | null>(null);
+  const typedPhone = useDebouncedValue(newPhone.replace(/\D/g, ''), 300);
+  useEffect(() => {
+    setKnownByPhone(null);
+    if (typedPhone.length < 9) return;
+    let stale = false;
+    const same = (phone: string | null | undefined) => !!phone && phone.replace(/\D/g, '').replace(/^0+/, '') === typedPhone.replace(/^0+/, '');
+    (async () => {
+      const found = offline
+        ? (snapshot ? searchCustomers(snapshot, typedPhone).map((c) => ({ ...c, isActive: true, isWalkIn: false })) : [])
+        : (await customersApi.list({ search: typedPhone, pageSize: 10, isActive: true })).items;
+      const match = found.find((c) => !c.isWalkIn && same(c.phone));
+      if (stale || !match) return;
+      setKnownByPhone(match);
+      setNewName(match.name);
+    })().catch(() => undefined);
+    return () => { stale = true; };
+  }, [typedPhone, offline, snapshot]);
+
+  // «حفظ العميل»: registers the new customer now and selects them, so they stay even if this window is closed.
+  const saveCustomer = useMutation({
+    mutationFn: () => customersApi.create({ name: newName.trim(), phone: newPhone.trim() || null, isActive: true }),
+    onSuccess: (c) => {
+      setCustomer({ id: c.id, code: c.code, name: c.name, phone: c.phone, balance: c.balance, isActive: true, isWalkIn: false });
+      setNewName(''); setNewPhone(''); setKnownByPhone(null); setError(undefined);
+      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
   // One payment of the whole total: the simple form; anything else (debt left, several accounts): the split form.
   const editSplit = !!editing && !(editing.payments.length === 1 && Math.abs(editPaid - subtotal + editing.invoiceDiscount) < 0.005);
   const [split, setSplit] = useState(editSplit);
@@ -236,6 +266,16 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
                   <Input aria-label="اسم العميل" placeholder="الاسم" value={newName} onChange={(e) => setNewName(e.target.value)} />
                   <Input aria-label="رقم الجوال" placeholder="رقم الجوال" type="tel" inputMode="tel" className="ltr" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
                 </div>
+                {knownByPhone ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-green-50 p-2.5 text-sm text-success">
+                    <span>عميل مسجّل بهذا الرقم: <b>{knownByPhone.name}</b></span>
+                    <Button size="sm" variant="secondary" onClick={() => { setCustomer(knownByPhone); setNewName(''); setNewPhone(''); setKnownByPhone(null); }}>اختياره</Button>
+                  </div>
+                ) : newName.trim() && newPhone.trim() && !offline && (
+                  <Button size="sm" variant="secondary" loading={saveCustomer.isPending} onClick={() => saveCustomer.mutate()}>
+                    <Save className="size-4" /> حفظ العميل
+                  </Button>
+                )}
                 <p className="text-xs text-muted">إذا كان رقم الجوال مسجلًا من قبل تُضاف الفاتورة لنفس العميل. اتركهما فارغين للبيع كـ«زبون نقدي».</p>
               </div>
             )
