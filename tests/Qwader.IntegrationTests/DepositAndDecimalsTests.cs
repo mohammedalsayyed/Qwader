@@ -248,27 +248,6 @@ public sealed class CustomerOldBalanceTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task The_owner_report_shows_debts_both_ways_and_the_payments_on_old_debts()
-    {
-        var admin = await factory.LoginAsync();
-        var cash = (await (await admin.PostAsJsonAsync("/api/financial-accounts",
-            new SaveAccountRequest(TestData.Unique("درج"), FinancialAccountType.Cash, null, null, null))).ReadAsync<AccountDto>()).Id;
-        var owes = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("عليه"), null, null, null))).ReadAsync<CustomerDto>();
-        var theirs = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("له"), null, null, null))).ReadAsync<CustomerDto>();
-        (await admin.PostAsJsonAsync($"/api/customers/{owes.Id}/old-balance", new CustomerOldBalanceRequest(100, true, null))).EnsureSuccessStatusCode();
-        (await admin.PostAsJsonAsync($"/api/customers/{theirs.Id}/old-balance", new CustomerOldBalanceRequest(30, false, null))).EnsureSuccessStatusCode();
-        (await admin.PostAsJsonAsync("/api/receipt-vouchers",
-            new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.DebtCollection, owes.Id, null, null, 40, cash, null, null, null))).EnsureSuccessStatusCode();
-
-        var report = await (await admin.GetAsync("/api/reports/owner")).ReadAsync<Application.Reports.OwnerReportDto>();
-        var paid = report.Collections!.Single(c => c.CustomerId == owes.Id);
-        (paid.Amount, paid.OwesNow).Should().Be((40m, 60m));
-        report.CustomerCredits.Should().BeGreaterThanOrEqualTo(30);
-        report.Period.Receivables.Should().BeGreaterThanOrEqualTo(60);
-        report.Period.Accounts!.Single(a => a.AccountId == cash).ClosingBalance.Should().Be(40);
-    }
-
-    [Fact]
     public async Task A_name_typed_with_Persian_letters_is_found_by_its_Arabic_spelling_even_when_stored_before()
     {
         var admin = await factory.LoginAsync();

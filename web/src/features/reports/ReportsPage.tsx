@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Download, FileText, Printer } from 'lucide-react';
+import { Download, Printer } from 'lucide-react';
 import { reportsApi, type ProductSort } from '@/api/reports';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -23,7 +23,6 @@ const SHORT = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month
 export function ReportsPage() {
   const { can } = useAuth();
   const toast = useToast();
-  const navigate = useNavigate();
   const [range, setRange] = useState<DateRangeValue>({ preset: 'today', ...resolveRange('today') });
   const [sort, setSort] = useState<ProductSort>('Revenue');
   const [take, setTake] = useState(10);
@@ -56,12 +55,7 @@ export function ReportsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="التقارير" subtitle={p ? (p.from === p.to ? formatDate(p.from) : `${formatDate(p.from)} — ${formatDate(p.to)}`) : undefined}
-        actions={
-          <div className="flex items-center gap-2 print:hidden">
-            {(profit || financial) && <Button variant="secondary" onClick={() => navigate('/reports/owner')}><FileText className="size-4" /> تقرير المالك</Button>}
-            <IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface"><Printer className="size-5" /></IconButton>
-          </div>
-        } />
+        actions={<IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface print:hidden"><Printer className="size-5" /></IconButton>} />
       <div className="print:hidden">
         <DateRangeFilter value={range} onChange={setRange} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'custom']} />
       </div>

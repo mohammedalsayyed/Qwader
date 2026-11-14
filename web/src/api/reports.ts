@@ -41,14 +41,6 @@ export interface PeriodReport {
   inventoryValue: number | null;
 }
 
-/** «تقرير المالك»: the period, plus what is owed both ways and the payments customers made on their debts. */
-export interface OwnerReport {
-  period: PeriodReport;
-  customerCredits: number | null;
-  supplierAdvances: number | null;
-  collections: { id: number; number: string; date: string; customerId: number; customerName: string; amount: number; accountName: string; owesNow: number }[] | null;
-}
-
 export interface DailyRow {
   day: string;
   invoices: number;
@@ -102,7 +94,6 @@ type Range = { from?: string; to?: string };
 
 export const reportsApi = {
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
-  owner: (r: Range) => api<OwnerReport>('/reports/owner', { query: r }),
   daily: (r: Range) => api<DailyRow[]>('/reports/daily', { query: r }),
   products: (r: Range, sort: ProductSort, take = 15, categoryId?: number) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take, categoryId } }),
   categories: (r: Range) => api<GroupRow[]>('/reports/categories', { query: r }),
