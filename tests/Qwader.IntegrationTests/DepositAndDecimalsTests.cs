@@ -267,4 +267,24 @@ public sealed class CustomerOldBalanceTests(ApiFactory factory)
         report.Period.Receivables.Should().BeGreaterThanOrEqualTo(60);
         report.Period.Accounts!.Single(a => a.AccountId == cash).ClosingBalance.Should().Be(40);
     }
+
+    [Fact]
+    public async Task A_name_typed_with_Persian_letters_is_found_by_its_Arabic_spelling_even_when_stored_before()
+    {
+        var admin = await factory.LoginAsync();
+        var tag = TestData.Unique("x");
+        var typed = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest($"محمد فایز {tag}", null, null, null))).ReadAsync<CustomerDto>();
+        var old = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest($"سامی کمال {tag}", null, null, null))).ReadAsync<CustomerDto>();
+        // As stored before the letters were folded: the search column kept the Persian ی and ک.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.Customers.Where(c => c.Id == old.Id).ExecuteUpdateAsync(c => c.SetProperty(x => x.NormalizedName, $"سامی کمال {tag}".ToLowerInvariant()));
+        }
+        async Task<IEnumerable<int>> Find(string q) =>
+            (await (await admin.GetAsync($"/api/customers?search={Uri.EscapeDataString(q)}")).ReadAsync<Application.Common.PagedResult<CustomerListItemDto>>()).Items.Select(c => c.Id);
+        (await Find($"محمد فايز {tag}")).Should().Contain(typed.Id);
+        (await Find($"سامي كمال {tag}")).Should().Contain(old.Id);
+        (await Find($"سامی {tag}")).Should().Contain(old.Id);
+    }
 }

@@ -8,6 +8,9 @@ const map: Record<string, string> = {
   'ى': 'ي',
   'ؤ': 'و',
   'ئ': 'ي',
+  'ی': 'ي',
+  'ک': 'ك',
+  'ھ': 'ه',
 };
 
 export function normalizeArabic(input: string | null | undefined): string {

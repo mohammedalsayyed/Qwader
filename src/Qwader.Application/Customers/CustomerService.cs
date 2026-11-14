@@ -121,7 +121,9 @@ public sealed class CustomerService(
             var raw = request.Search.Trim();
             var phone = PhoneNumbers.Normalize(raw);
             foreach (var term in ArabicText.Normalize(raw).Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                query = query.Where(c => c.NormalizedName.Contains(term) || c.Code == raw || (phone != null && c.Phone!.Contains(phone)));
+                // Names stored before Persian letters were folded (ی ک ھ) are matched as if they had been.
+                query = query.Where(c => c.NormalizedName.Replace("ی", "ي").Replace("ک", "ك").Replace("ھ", "ه").Contains(term)
+                    || c.Code == raw || (phone != null && c.Phone!.Contains(phone)));
         }
 
         return await query.OrderByDescending(c => c.IsWalkIn).ThenByDescending(c => c.Balance > 0).ThenBy(c => c.Name)

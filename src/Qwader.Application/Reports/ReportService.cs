@@ -119,7 +119,9 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var customerCredits = await db.Customers.Where(c => c.Balance < 0).SumAsync(c => (decimal?)-c.Balance, ct) ?? 0;
         var supplierAdvances = await db.Suppliers.Where(x => x.Balance < 0).SumAsync(x => (decimal?)-x.Balance, ct) ?? 0;
         var collections = await db.ReceiptVouchers.AsNoTracking()
-            .Where(v => v.Date >= start && v.Date < end && v.Status == VoucherStatus.Posted && v.Purpose == ReceiptPurpose.DebtCollection && v.CustomerId != null)
+            // Payments on what they owed from before — not a sale's own transfer confirmed later (that receipt carries its invoice).
+            .Where(v => v.Date >= start && v.Date < end && v.Status == VoucherStatus.Posted && v.Purpose == ReceiptPurpose.DebtCollection
+                && v.CustomerId != null && v.SaleInvoiceId == null)
             .OrderBy(v => v.Date).ThenBy(v => v.Id)
             .Select(v => new OwnerCollectionRow(v.Id, v.Number, v.Date, v.CustomerId!.Value, v.Customer!.Name, v.Amount, v.FinancialAccount.Name, v.Customer.Balance))
             .ToListAsync(ct);

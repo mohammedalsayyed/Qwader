@@ -24,6 +24,10 @@ public static class ArabicText
                 'ى' => 'ي',
                 'ؤ' => 'و',
                 'ئ' => 'ي',
+                // Persian keyboards' yeh, kaf and heh look the same as the Arabic letters: «فایز» is «فايز».
+                'ی' => 'ي',
+                'ک' => 'ك',
+                'ھ' => 'ه',
                 >= '٠' and <= '٩' => (char)('0' + (raw - '٠')),
                 >= '۰' and <= '۹' => (char)('0' + (raw - '۰')),
                 _ => char.ToLowerInvariant(raw),

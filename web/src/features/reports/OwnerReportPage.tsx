@@ -54,14 +54,49 @@ export function OwnerReportPage() {
             <p className="text-xs text-muted">أُعِدّ في {formatDate(localToday())}</p>
           </header>
 
-          {/* 1. Money in the accounts, as at the end of the period (today: right now). */}
+          {/* 1. Each account like a daily close: what it held when the period began, what came in and went out, and at its end. */}
           {p.accounts && (() => {
-            const held = p.accounts.filter((a) => a.closingBalance !== 0);
-            const total = held.reduce((s, a) => s + a.closingBalance, 0);
+            const rows = p.accounts.filter((a) => a.openingBalance !== 0 || a.in !== 0 || a.out !== 0 || a.closingBalance !== 0);
+            const t = (k: 'openingBalance' | 'in' | 'out' | 'closingBalance') => rows.reduce((s, a) => s + a[k], 0);
             return (
-              <Block title={isToday ? 'المصاري في الحسابات الآن' : `المصاري في الحسابات في ${formatDate(p.to)}`} total={total}>
-                {held.length === 0 ? <Empty>لا يوجد رصيد في أي حساب.</Empty> : <Lines rows={held.map((a) => [a.name, a.closingBalance])} />}
-              </Block>
+              <section className="break-inside-avoid">
+                <h2 className="mb-2 border-b border-ink pb-1 font-bold">{oneDay ? 'الحسابات اليوم' : 'الحسابات في الفترة'}</h2>
+                {rows.length === 0 ? <Empty>لا رصيد ولا حركة في أي حساب.</Empty> : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-sm">
+                      <thead className="text-muted">
+                        <tr className="border-b border-line">
+                          <th className="py-1.5 text-start font-semibold">الحساب</th>
+                          <th className="py-1.5 text-end font-semibold">{oneDay ? 'بداية اليوم' : 'بداية الفترة'}</th>
+                          <th className="py-1.5 text-end font-semibold">داخل</th>
+                          <th className="py-1.5 text-end font-semibold">خارج</th>
+                          <th className="py-1.5 text-end font-semibold">{oneDay ? 'نهاية اليوم' : 'نهاية الفترة'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="tabular">
+                        {rows.map((a) => (
+                          <tr key={a.accountId} className="border-b border-line/60">
+                            <td className="py-1.5">{a.name}</td>
+                            <td className="py-1.5 text-end">{formatMoney(a.openingBalance)}</td>
+                            <td className="py-1.5 text-end text-success">{a.in ? `+${formatMoney(a.in)}` : '—'}</td>
+                            <td className="py-1.5 text-end text-danger">{a.out ? `−${formatMoney(a.out)}` : '—'}</td>
+                            <td className={cn('py-1.5 text-end font-bold', a.closingBalance < 0 && 'text-danger')}>{formatMoney(a.closingBalance)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="tabular font-bold">
+                        <tr className="border-t-2 border-ink">
+                          <td className="py-1.5">المجموع</td>
+                          <td className="py-1.5 text-end">{formatMoney(t('openingBalance'))}</td>
+                          <td className="py-1.5 text-end text-success">+{formatMoney(t('in'))}</td>
+                          <td className="py-1.5 text-end text-danger">−{formatMoney(t('out'))}</td>
+                          <td className="py-1.5 text-end">{formatMoney(t('closingBalance'))}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </section>
             );
           })()}
 
@@ -115,8 +150,8 @@ export function OwnerReportPage() {
           )}
 
           {/* 6. What customers paid on what they owed. */}
-          {o.collections && (
-            <Block title="دفعات من العملاء على ديونهم" total={o.collections.reduce((s, c) => s + c.amount, 0)}>
+          {o.collections && o.collections.length > 0 && (
+            <Block title="دفعات من العملاء على ديون قديمة" total={o.collections.reduce((s, c) => s + c.amount, 0)}>
               {o.collections.length === 0 ? <Empty>لا دفعات على ديون في هذه الفترة.</Empty> : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[480px] text-sm">
@@ -197,8 +232,10 @@ function whatsappText(o: OwnerReport, store: string, period: string) {
   const m = formatMoney;
   const lines = [`*${store} — تقرير ${period}*`];
   if (p.accounts) {
-    const held = p.accounts.filter((a) => a.closingBalance !== 0);
-    lines.push('', '*المصاري في الحسابات:*', ...held.map((a) => `• ${a.name}: ${m(a.closingBalance)}`), `المجموع: ${m(held.reduce((s, a) => s + a.closingBalance, 0))}`);
+    const rows = p.accounts.filter((a) => a.openingBalance !== 0 || a.in !== 0 || a.out !== 0 || a.closingBalance !== 0);
+    lines.push('', '*الحسابات (بداية + داخل − خارج = نهاية):*',
+      ...rows.map((a) => `• ${a.name}: ${m(a.openingBalance)} + ${m(a.in)} − ${m(a.out)} = *${m(a.closingBalance)}*`),
+      `المجموع آخر الفترة: ${m(rows.reduce((s, a) => s + a.closingBalance, 0))}`);
   }
   lines.push('', `*المبيعات:* ${m(p.netSales)} (${p.invoiceCount} فاتورة)`);
   if (p.grossProfit != null) lines.push(`*الربح:* ${m(p.grossProfit)}`);
@@ -212,7 +249,7 @@ function whatsappText(o: OwnerReport, store: string, period: string) {
     lines.push(`علينا للموردين: ${m(p.payables)}`, `علينا للعملاء: ${m(o.customerCredits)}`);
   }
   if (o.collections?.length) {
-    lines.push('', `*دفعات من العملاء على ديونهم:* ${m(o.collections.reduce((s, c) => s + c.amount, 0))}`,
+    lines.push('', `*دفعات من العملاء على ديون قديمة:* ${m(o.collections.reduce((s, c) => s + c.amount, 0))}`,
       ...o.collections.map((c) => `• ${c.customerName}: ${m(c.amount)}${c.owesNow > 0 ? ` (باقي ${m(c.owesNow)})` : ' (سدّد)'}`));
   }
   return lines.join('\n');
