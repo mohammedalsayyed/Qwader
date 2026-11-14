@@ -58,7 +58,14 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     editing?.customer ? { ...editing.customer, isActive: true, isWalkIn: false } : null);
   const [newName, setNewName] = useState(editing?.walkInName ?? '');
   const [newPhone, setNewPhone] = useState(editing?.walkInPhone ?? '');
-  const [discount, setDiscount] = useState(editing && editing.invoiceDiscount > 0 ? String(editing.invoiceDiscount) : '');
+  // The discount starts with the total's agorot in it (the store's rule: no agorot left on an invoice), so the seller sees it
+  // and can change it; when editing, on top of the invoice's own discount.
+  const [discount, setDiscount] = useState(() => {
+    const typed = editing?.invoiceDiscount ?? 0;
+    const agorot = round2(subtotal - typed - Math.floor(subtotal - typed + 0.0001));
+    const start = round2(typed + agorot);
+    return start > 0 ? String(start) : '';
+  });
   // A phone typed for a new customer that is already registered brings their name (and the sale goes to them).
   const [knownByPhone, setKnownByPhone] = useState<CustomerListItem | null>(null);
   const typedPhone = useDebouncedValue(newPhone.replace(/\D/g, ''), 300);

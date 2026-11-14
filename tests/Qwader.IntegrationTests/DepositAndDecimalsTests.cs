@@ -116,3 +116,29 @@ public sealed class DepositAndDecimalsTests(ApiFactory factory)
         await IntegrityOkAsync(admin);
     }
 }
+
+/// <summary>The server's line totals are the till's: quantity × price charged, rounded once.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class LineCentsTests(ApiFactory factory)
+{
+    [Fact]
+    public async Task Lowered_prices_on_fractional_quantities_total_exactly_what_the_till_shows()
+    {
+        var admin = await factory.LoginAsync();
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        var products = new List<(int Id, decimal Quantity, decimal Price)>();
+        foreach (var (q, list, price) in new[] { (0.845m, 35m, 34.99m), (0.84m, 35m, 34.995m), (0.685m, 35m, 35m), (0.485m, 35m, 34.97m), (0.333m, 7m, 6.95m) })
+        {
+            var p = await admin.CreateProductAsync(retail: list, openingQuantity: 5, openingCost: 1);
+            products.Add((p.Id, q, Math.Round(price, 2)));
+        }
+        // What the till computes: each line quantity × price rounded once, then the whole shekels (agorot as discount).
+        var lines = products.Select(p => Math.Round(p.Quantity * p.Price, 2, MidpointRounding.AwayFromZero)).ToList();
+        var subtotal = lines.Sum();
+        var total = decimal.Floor(subtotal);
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, subtotal - total,
+            products.Select(p => new SaleLineInput(p.Id, p.Quantity, p.Price)).ToList(), [new(cash, total)], null))).ReadAsync<SaleDetailDto>();
+        sale.Total.Should().Be(total);
+        sale.Lines.Sum(l => l.LineTotal).Should().Be(subtotal);
+    }
+}

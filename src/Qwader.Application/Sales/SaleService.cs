@@ -133,7 +133,10 @@ public sealed class SaleService(
             if (l.LineDiscount > CostMath.RoundMoney(l.Quantity * l.UnitPrice))
                 throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
             var listPrice = request.PriceTier == PriceTier.Wholesale ? unit.WholesalePrice : unit.RetailPrice;
-            var lowered = l.UnitPrice < listPrice ? CostMath.RoundMoney(l.Quantity * (listPrice - l.UnitPrice)) : 0;
+            // The lowered amount is the line at the list price less the line at the price charged, each rounded as the till
+            // rounds it: the line's total is exactly quantity × price charged (rounded once), the same number the till shows.
+            // (Rounding the difference on its own could leave the line a cent off with fractional quantities.)
+            var lowered = l.UnitPrice < listPrice ? CostMath.RoundMoney(l.Quantity * listPrice) - CostMath.RoundMoney(l.Quantity * l.UnitPrice) : 0;
             var unitPrice = lowered > 0 ? listPrice : l.UnitPrice;
             var gross = CostMath.RoundMoney(l.Quantity * unitPrice);
             typedLineDiscounts += l.LineDiscount;
