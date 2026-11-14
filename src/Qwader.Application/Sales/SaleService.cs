@@ -453,22 +453,28 @@ public sealed class SaleService(
         var onCredit = invoice.Total - payments.Sum(p => p.Amount);
         if (onCredit > 0.004m) paid.Add($"آجل {PushMessage.Money(onCredit)}");
         // A sale made without internet notifies the same way, at the moment it reaches the server.
-        push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد — {PushMessage.Money(invoice.Total)}",
-            string.Join('\n', new[]
-            {
-                $"العميل: {invoice.CustomerName}",
-                $"الدفع: {string.Join(" · ", paid)}",
-                $"فاتورة {invoice.Number}{(seller is null ? "" : $" · الموظف: {seller}")}",
-            }), $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
-
-        foreach (var t in payments.Where(p => p.IsTransfer))
-            push.Notify(PushTopics.Transfers, new PushMessage($"حوالة {PushMessage.Money(t.Amount)} إلى {accountNames[t.AccountId]}",
+        // Paid by transfer: one notification — the transfer's, headed «بيع جديد» — for those following sales and those
+        // following transfers alike (each person once), instead of a sale notification and a transfer notification.
+        var transfersPaid = payments.Where(p => p.IsTransfer).ToList();
+        if (transfersPaid.Count == 0)
+            push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد — {PushMessage.Money(invoice.Total)}",
                 string.Join('\n', new[]
                 {
-                    $"من: {invoice.CustomerName}{(t.Reference is null ? "" : $" · مرجع {t.Reference}")}",
-                    $"فاتورة {invoice.Number} — {(t.Pending ? "بانتظار التحقق" : "سُجّلت مؤكدة")}",
+                    $"العميل: {invoice.CustomerName}",
+                    $"الدفع: {string.Join(" · ", paid)}",
+                    $"فاتورة {invoice.Number}{(seller is null ? "" : $" · الموظف: {seller}")}",
+                }), $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
+        else
+            push.NotifyOnce(new PushMessage(
+                $"بيع جديد — {string.Join(" + ", transfersPaid.Select(t => $"حوالة {PushMessage.Money(t.Amount)} إلى {accountNames[t.AccountId]}"))}",
+                string.Join('\n', new[]
+                {
+                    $"من: {invoice.CustomerName}{string.Concat(transfersPaid.Where(t => t.Reference is not null).Select(t => $" · مرجع {t.Reference}"))}",
+                    $"فاتورة {invoice.Number} — {(transfersPaid.Any(t => t.Pending) ? "بانتظار التحقق" : "سُجّلت مؤكدة")}"
+                        + (transfersPaid.Count < payments.Count || invoice.Total - payments.Sum(p => p.Amount) > 0.004m ? $" · الدفع: {string.Join(" · ", paid)}" : ""),
                     $"سجّلها: {seller ?? "—"}",
-                }), "/transfers"), Permissions.TransfersReview);
+                }), transfersPaid.Any(t => t.Pending) ? "/transfers" : $"/sales/{invoice.Id}"),
+                (PushTopics.Sales, [Permissions.SalesViewAll]), (PushTopics.Transfers, [Permissions.TransfersReview]));
 
         // Only the sale that crosses the line raises an alert, not every later sale of a product that is already low.
         var sold = invoice.Lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity * l.UnitFactor));

@@ -18,6 +18,12 @@ public interface IPushNotifier
     /// </summary>
     void Notify(PushTopics topic, PushMessage message, params string[] anyOfPermissions);
 
+    /// <summary>
+    /// One notification for several audiences (each a topic and the permissions it needs): a user or device in more than one
+    /// gets it once — a sale paid by transfer is one notification for those following sales and those following transfers.
+    /// </summary>
+    void NotifyOnce(PushMessage message, params (PushTopics Topic, string[] AnyOfPermissions)[] audiences);
+
     /// <summary>Queues a notification for all devices of one user (used by «send a test»).</summary>
     void NotifyUser(int userId, PushMessage message);
 }

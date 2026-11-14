@@ -17,7 +17,12 @@ using PushSubscription = Qwader.Domain.Notifications.PushSubscription;
 
 namespace Qwader.Infrastructure.Services;
 
-public sealed record PushJob(PushMessage Message, PushTopics Topic = PushTopics.None, string[]? Permissions = null, int? UserId = null);
+public sealed record PushJob(PushMessage Message, PushTopics Topic = PushTopics.None, string[]? Permissions = null, int? UserId = null,
+    IReadOnlyList<(PushTopics Topic, string[] Permissions)>? Audiences = null)
+{
+    /// <summary>Who it is for: its audiences, or the single topic and permissions.</summary>
+    public IReadOnlyList<(PushTopics Topic, string[] Permissions)> AllAudiences => Audiences ?? [(Topic, Permissions ?? [])];
+}
 
 /// <summary>In-memory hand-off from requests to the background sender. Bounded so a flood can never exhaust memory.</summary>
 public sealed class PushQueue
@@ -33,6 +38,9 @@ public sealed class PushNotifier(PushQueue queue) : IPushNotifier
         queue.Enqueue(new PushJob(message, topic, anyOfPermissions));
 
     public void NotifyUser(int userId, PushMessage message) => queue.Enqueue(new PushJob(message, UserId: userId));
+
+    public void NotifyOnce(PushMessage message, params (PushTopics Topic, string[] AnyOfPermissions)[] audiences) =>
+        queue.Enqueue(new PushJob(message, audiences.Aggregate(PushTopics.None, (t, a) => t | a.Topic), Audiences: audiences.ToList()));
 }
 
 public enum PushResult { Sent, Gone, Failed }
@@ -138,7 +146,7 @@ public sealed class PushDispatcher(PushQueue queue, IServiceScopeFactory scopes,
         var clock = scope.ServiceProvider.GetRequiredService<IClock>();
 
         // Everyone the notification is for keeps a copy in their list, phone notifications on or not («send a test» excepted).
-        var permissions = job.Permissions ?? [];
+        var permissions = job.AllAudiences.SelectMany(a => a.Permissions).Distinct().ToArray();
         var readers = job.UserId is { } one
             ? db.Users.Where(u => u.Id == one && u.IsActive).Select(u => u.Id)
             : db.Users.Where(u => u.IsActive && u.UserRoles.Any(ur => ur.Role.Permissions.Any(p => permissions.Contains(p.PermissionCode)))).Select(u => u.Id);
@@ -162,8 +170,13 @@ public sealed class PushDispatcher(PushQueue queue, IServiceScopeFactory scopes,
         }
         else
         {
-            query = query.Where(s => (s.Topics & job.Topic) != 0
-                && s.User.UserRoles.Any(ur => ur.Role.Permissions.Any(p => permissions.Contains(p.PermissionCode))));
+            // A device in any audience: following its topic, its user holding one of its permissions. Each device once.
+            var candidates = await query.Where(s => (s.Topics & job.Topic) != 0)
+                .Select(s => new { Subscription = s, Codes = s.User.UserRoles.SelectMany(ur => ur.Role.Permissions.Select(p => p.PermissionCode)).ToList() })
+                .ToListAsync(ct);
+            var chosen = candidates.Where(c => job.AllAudiences.Any(a => (c.Subscription.Topics & a.Topic) != 0 && c.Codes.Any(a.Permissions.Contains)))
+                .Select(c => c.Subscription.Id).ToHashSet();
+            query = query.Where(s => chosen.Contains(s.Id));
         }
         var targets = await query.ToListAsync(ct);
         if (targets.Count == 0) return;
