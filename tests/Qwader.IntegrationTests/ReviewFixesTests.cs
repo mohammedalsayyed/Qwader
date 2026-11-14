@@ -225,6 +225,32 @@ public sealed class ReviewFixesTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task A_document_cannot_be_dated_before_the_store_started_on_the_system()
+    {
+        var admin = await factory.LoginAsync();
+        var drawer = await DrawerAsync(admin);
+        await admin.FundAsync(drawer, 100);
+        var category = (await admin.LookupsAsync()).ExpenseCategories[0].Id;
+        var old = await admin.PostAsJsonAsync("/api/expenses", new CreateExpenseRequest(Guid.NewGuid(), category, "قديم", 5, drawer, new DateOnly(1990, 1, 1), null));
+        old.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await old.Content.ReadAsStringAsync()).Should().Contain("بداية العمل على النظام");
+        (await admin.PostAsJsonAsync("/api/expenses", new CreateExpenseRequest(Guid.NewGuid(), category, "اليوم", 5, drawer, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_product_whose_cost_is_zero_is_flagged_for_the_till_warning_without_telling_its_cost()
+    {
+        var admin = await factory.LoginAsync();
+        var free = await admin.CreateProductAsync(retail: 12, openingQuantity: 3, openingCost: 0);
+        var costed = await admin.CreateProductAsync(retail: 12, openingQuantity: 3, openingCost: 5);
+        (await admin.GetProductAsync(free.Id)).NoCost.Should().BeTrue();
+        (await admin.GetProductAsync(costed.Id)).NoCost.Should().BeFalse();
+        var list = await admin.GetFromJsonAsync<PagedResult<ProductListItemDto>>($"/api/products?search={Uri.EscapeDataString(free.Name)}", TestJson.Options);
+        list!.Items.Single(p => p.Id == free.Id).NoCost.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task The_product_list_finds_products_whose_cost_is_above_their_price()
     {
         var admin = await factory.LoginAsync();

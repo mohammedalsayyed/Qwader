@@ -138,6 +138,8 @@ export interface OfflineProduct {
   minSalePrice: number;
   averageCost: number | null;
   units?: ProductUnit[] | null;
+  /** Cost zero: the till warns when it is sold. */
+  noCost?: boolean;
 }
 
 export interface OfflineCustomer {

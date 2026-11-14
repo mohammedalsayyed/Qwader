@@ -93,7 +93,9 @@ public sealed record OfflineChangesDto(DateTime GeneratedAt, int MaxHours, Offli
 public sealed record OfflineProductDto(
     int Id, string Sku, string? Barcode, string DisplayName, string Search, string UnitName, Guid? ImageFileId,
     decimal Quantity, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice, decimal? AverageCost,
-    IReadOnlyList<Catalog.ProductUnitDto>? Units = null);
+    IReadOnlyList<Catalog.ProductUnitDto>? Units = null,
+    /// <summary>Cost zero: the till warns when it is sold.</summary>
+    bool NoCost = false);
 
 public sealed record OfflineCustomerDto(int Id, string Code, string Name, string? Phone, string Search, decimal Balance);
 

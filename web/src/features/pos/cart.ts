@@ -26,6 +26,8 @@ export interface CartLine {
   minSalePrice: number;
   /** Average cost when the viewer may see it; used only for warnings. */
   cost: number | null;
+  /** The product's cost is zero (no purchase price entered): warned about, never refused. */
+  noCost?: boolean;
   quantity: number;
   unitPrice: number;
   /** Price typed by hand; switching retail/wholesale leaves it alone. */
@@ -105,7 +107,7 @@ export function cartTotals(cart: Cart) {
   return { gross, lineDiscounts, priceReductions, subtotal: round2(gross - lineDiscounts), listTotal, items };
 }
 
-type ProductLike = Pick<ProductListItem, 'id' | 'displayName' | 'sku' | 'unitName' | 'imageFileId' | 'quantity' | 'retailPrice' | 'wholesalePrice' | 'minSalePrice' | 'averageCost' | 'units'>;
+type ProductLike = Pick<ProductListItem, 'id' | 'displayName' | 'sku' | 'unitName' | 'imageFileId' | 'quantity' | 'retailPrice' | 'wholesalePrice' | 'minSalePrice' | 'averageCost' | 'units' | 'noCost'>;
 
 export function toCartProduct(p: ProductDetail): ProductLike {
   return { ...p, averageCost: p.averageCost };
@@ -159,6 +161,7 @@ export function useCart() {
         wholesalePrice: choice.wholesalePrice,
         minSalePrice: choice.minSalePrice,
         cost: p.averageCost == null ? null : p.averageCost * choice.factor,
+        noCost: p.noCost ?? p.averageCost === 0,
         quantity,
         unitPrice: c.tier === 'Wholesale' ? choice.wholesalePrice : choice.retailPrice,
         customPrice: false,

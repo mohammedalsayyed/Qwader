@@ -87,7 +87,7 @@ public sealed class TransferService(
             Channel = Clean(request.Channel),
             FinancialAccountId = request.FinancialAccountId,
             ReferenceNo = reference,
-            TransferDate = DocumentDates.ToUtc(request.TransferDate, clock, "transferDate"),
+            TransferDate = await DocumentDates.ToUtcAsync(request.TransferDate, clock, db, ct, "transferDate"),
             ProofFileId = request.ProofFileId,
             CustomerId = request.CustomerId,
             Notes = Clean(request.Notes),

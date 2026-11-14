@@ -39,7 +39,9 @@ public sealed record ProductListItemDto(
     bool IsArchived,
     /// <summary>Null unless the caller may view costs.</summary>
     decimal? AverageCost,
-    IReadOnlyList<ProductUnitDto>? Units = null);
+    IReadOnlyList<ProductUnitDto>? Units = null,
+    /// <summary>Its cost is zero (no purchase price entered): selling it shows a warning. Told to everyone; the cost itself is not.</summary>
+    bool NoCost = false);
 
 /// <summary>An extra unit the product is sold/bought in: one of it = <see cref="Factor"/> base units.</summary>
 public sealed record ProductUnitDto(int Id, int UnitId, string UnitName, decimal Factor, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice);
@@ -112,7 +114,8 @@ public sealed record ProductDetailDto(
     DateTime CreatedAt,
     IReadOnlyList<StockByWarehouseDto> Stock,
     IReadOnlyList<ProductRefDto> Variants,
-    IReadOnlyList<ProductUnitDto>? Units = null);
+    IReadOnlyList<ProductUnitDto>? Units = null,
+    bool NoCost = false);
 
 public sealed record SaveProductRequest(
     string Name,

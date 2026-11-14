@@ -429,7 +429,7 @@ public sealed class VoucherService(
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var expense = await PostExpenseAsync(category.Id, request.Description.Trim(), request.Amount, request.FinancialAccountId,
-            DocumentDates.ToUtc(request.Date, clock), ct, request.AttachmentFileId);
+            await DocumentDates.ToUtcAsync(request.Date, clock, db, ct), ct, request.AttachmentFileId);
 
         idempotency.Record(request.IdempotencyKey, operation, "Expense", expense.Id.ToString());
         await db.SaveChangesAsync(ct);

@@ -75,6 +75,8 @@ export function PosPage() {
     const error = add(p, 1, unit);
     if (error) toast.error(error);
     else {
+      // Sold anyway; the warning is so the purchase price gets entered (its profit reads as the whole price until then).
+      if (p.noCost ?? p.averageCost === 0) toast.info(`تنبيه: تكلفة «${p.displayName}» صفر (لم يُدخَل سعر الشراء) — يكمل البيع عادي، لكن الربح لن يكون صحيحًا`);
       setFlash(p.id);
       setFlashKey(`${p.id}:${unit?.id ?? 0}`);
       setTimeout(() => { setFlash(null); setFlashKey(null); }, 600);
@@ -243,6 +245,7 @@ export function PosPage() {
             {cart.lines.map((l) => (
               <li key={l.key} className="rounded-card border border-line bg-surface p-3">
                 <button type="button" onClick={() => setEditing(l)} className="block w-full text-start font-semibold leading-snug">{l.name}</button>
+                {l.noCost && <p className="mt-0.5 text-xs font-semibold text-warning">تكلفته صفر — لم يُدخَل سعر الشراء</p>}
                 {l.units.length > 0 && (
                   <div className="mt-1.5 flex rounded-xl bg-black/5 p-1" role="radiogroup" aria-label={`وحدة البيع: ${l.name}`}>
                     {unitChoices(l).map((u) => (

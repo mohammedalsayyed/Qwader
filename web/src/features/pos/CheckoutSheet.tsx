@@ -49,7 +49,8 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   const canDiscount = can(P.SalesDiscount, P.SalesPriceOverride);
   useUnsavedChangesWarning(true); // an app update waits until checkout is finished
 
-  const [mode, setMode] = useState<CustomerMode>('walkin');
+  // «عميل (اسم وجوال)» first, so the name and phone get asked for; left empty, the sale goes to «زبون نقدي».
+  const [mode, setMode] = useState<CustomerMode>('customer');
   const [customer, setCustomer] = useState<CustomerListItem | null>(null);
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
@@ -213,7 +214,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
                   <Input aria-label="اسم العميل" placeholder="الاسم" value={newName} onChange={(e) => setNewName(e.target.value)} />
                   <Input aria-label="رقم الجوال" placeholder="رقم الجوال" type="tel" inputMode="tel" className="ltr" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
                 </div>
-                <p className="text-xs text-muted">إذا كان رقم الجوال مسجلًا من قبل تُضاف الفاتورة لنفس العميل.</p>
+                <p className="text-xs text-muted">إذا كان رقم الجوال مسجلًا من قبل تُضاف الفاتورة لنفس العميل. اتركهما فارغين للبيع كـ«زبون نقدي».</p>
               </div>
             )
           )}
@@ -234,6 +235,14 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
               <p className="mt-2 rounded-lg bg-red-50 p-2.5 text-xs leading-5 text-danger">الخصم ({discountPercent}%) أكبر من الحد المسموح ({maxDiscount}%) — لن تُقبل الفاتورة.</p>
             ))}
           </section>
+        )}
+
+        {/* Products sold without a cost: a warning only, the sale goes on. */}
+        {cart.lines.some((l) => l.noCost) && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm leading-6 text-amber-800">
+            <b>تنبيه:</b> تكلفة {cart.lines.filter((l) => l.noCost).map((l) => `«${l.name}»`).join('، ')} صفر (لم يُدخَل سعر الشراء).
+            يكمل البيع عادي، لكن ربح هذه المنتجات لن يكون صحيحًا حتى يُدخَل سعر شرائها.
+          </p>
         )}
 
         {/* Payment */}

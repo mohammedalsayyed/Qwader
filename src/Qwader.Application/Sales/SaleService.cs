@@ -535,7 +535,7 @@ public sealed class SaleService(
             }).ToListAsync(ct);
         return products.Select(p => new OfflineProductDto(p.Id, p.Sku, p.Barcode, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model),
             p.NormalizedName, p.Unit, p.ImageFileId, p.Quantity, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
-            showCost ? p.AverageCost : null, p.Units)).ToList();
+            showCost ? p.AverageCost : null, p.Units, p.AverageCost <= 0)).ToList();
     }
 
     // ------------------------------------------------------------------ returns

@@ -38,6 +38,8 @@ export interface ProductListItem {
   isArchived: boolean;
   averageCost: number | null;
   units?: ProductUnit[] | null;
+  /** Its cost is zero (no purchase price entered): the till warns when it is sold. */
+  noCost?: boolean;
 }
 
 /** Another unit the product is sold/bought in: one of it = `factor` base units (a dozen = 12 pieces). */
@@ -88,6 +90,8 @@ export interface ProductDetail {
   model: string | null;
   purchasePrice: number | null;
   averageCost: number | null;
+  /** Its cost is zero (no purchase price entered). */
+  noCost?: boolean;
   wholesalePrice: number;
   retailPrice: number;
   minSalePrice: number;

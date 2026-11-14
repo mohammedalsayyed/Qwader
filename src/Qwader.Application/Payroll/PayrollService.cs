@@ -230,7 +230,7 @@ public sealed class PayrollService(
         var employee = await db.Employees.Include(e => e.User).FirstOrDefaultAsync(e => e.Id == employeeId, ct) ?? throw new NotFoundException("العامل غير موجود");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var date = DocumentDates.ToUtc(request.Date, clock);
+        var date = await DocumentDates.ToUtcAsync(request.Date, clock, db, ct);
         var entry = new PayrollEntry { EmployeeId = employee.Id, Type = request.Type, Date = date, Amount = request.Amount, Notes = Clean(request.Notes) };
 
         // An advance is money handed over now, owed by the employee: it leaves the account, and becomes a salary

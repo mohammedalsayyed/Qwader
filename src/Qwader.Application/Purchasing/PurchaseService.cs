@@ -187,7 +187,7 @@ public sealed class PurchaseService(
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Posted) throw new BusinessRuleException("يمكن إرجاع البضاعة من فاتورة معتمدة فقط");
 
-        var date = DocumentDates.ToUtc(request.Date, clock);
+        var date = await DocumentDates.ToUtcAsync(request.Date, clock, db, ct);
         var ret = new PurchaseReturn
         {
             Number = await numbers.NextAsync(DocumentType.PurchaseReturn, ct),
@@ -262,7 +262,7 @@ public sealed class PurchaseService(
 
         invoice.SupplierId = r.SupplierId;
         invoice.WarehouseId = r.WarehouseId ?? await db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);
-        invoice.Date = DocumentDates.ToUtc(r.Date, clock);
+        invoice.Date = await DocumentDates.ToUtcAsync(r.Date, clock, db, ct);
         invoice.SupplierInvoiceNo = string.IsNullOrWhiteSpace(r.SupplierInvoiceNo) ? null : r.SupplierInvoiceNo.Trim();
         invoice.Notes = string.IsNullOrWhiteSpace(r.Notes) ? null : r.Notes.Trim();
 

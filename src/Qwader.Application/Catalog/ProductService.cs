@@ -89,7 +89,8 @@ public sealed class ProductService(
                 x.Qty <= 0 ? StockStatus.Out : x.Qty <= x.P.ReorderLevel ? StockStatus.Low : StockStatus.Available,
                 x.P.ImageFileId, x.P.IsArchived,
                 canViewCost ? x.P.AverageCost : null,
-                x.P.Units.OrderBy(u => u.Factor).Select(u => new ProductUnitDto(u.Id, u.UnitId, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)).ToList()))
+                x.P.Units.OrderBy(u => u.Factor).Select(u => new ProductUnitDto(u.Id, u.UnitId, u.Unit.Name, u.Factor, u.RetailPrice, u.WholesalePrice, u.MinSalePrice)).ToList(),
+                x.P.AverageCost <= 0))
             .ToPagedAsync(request, ct);
     }
 
@@ -154,7 +155,7 @@ public sealed class ProductService(
             CanViewCost ? product.PurchasePrice : null, CanViewCost ? product.AverageCost : null,
             product.WholesalePrice, product.RetailPrice, product.MinSalePrice, product.ReorderLevel,
             quantity, status, value, profit, margin, suggested,
-            product.ImageFileId, product.IsArchived, product.CreatedAt, p.Stock, variants, p.Units);
+            product.ImageFileId, product.IsArchived, product.CreatedAt, p.Stock, variants, p.Units, product.AverageCost <= 0);
     }
 
     public async Task<ProductDetailDto> CreateAsync(SaveProductRequest request, CancellationToken ct = default)
