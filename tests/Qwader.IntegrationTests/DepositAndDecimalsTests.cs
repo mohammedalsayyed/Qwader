@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Qwader.Application.Customers;
 using Qwader.Application.Finance;
 using Qwader.Application.Sales;
+using Qwader.Application.Purchasing;
 using Qwader.Application.Settings;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Sales;
@@ -213,5 +214,36 @@ public sealed class AccountLogoTests(ApiFactory factory)
         var before = await (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday:yyyy-MM-dd}")).ReadAsync<AccountsDayDto>();
         before.Accounts.Single(a => a.AccountId == drawer).Closing.Should().Be(0);
         (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday.AddDays(3):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+}
+
+/// <summary>An old balance from before the system, added to an existing customer: on them or theirs.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class CustomerOldBalanceTests(ApiFactory factory)
+{
+    [Fact]
+    public async Task An_existing_customer_takes_an_old_debt_or_an_old_credit_without_moving_any_account()
+    {
+        var admin = await factory.LoginAsync();
+        var customer = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("محمد فايز"), null, null, null))).ReadAsync<CustomerDto>();
+        var cashBefore = (await admin.GetFromJsonAsync<List<AccountDto>>("/api/financial-accounts", TestJson.Options))!.Sum(a => a.CurrentBalance);
+
+        (await (await admin.PostAsJsonAsync($"/api/customers/{customer.Id}/old-balance", new CustomerOldBalanceRequest(150, true, "دفتر قديم")))
+            .ReadAsync<CustomerDto>()).Balance.Should().Be(150);
+        (await (await admin.PostAsJsonAsync($"/api/customers/{customer.Id}/old-balance", new CustomerOldBalanceRequest(200, false, null)))
+            .ReadAsync<CustomerDto>()).Balance.Should().Be(-50);
+
+        var statement = await (await admin.GetAsync($"/api/customers/{customer.Id}/statement")).ReadAsync<StatementDto>();
+        statement.Lines.Should().HaveCount(2).And.OnlyContain(l => l.Type == "رصيد سابق");
+        statement.Lines[0].Description.Should().Contain("دفتر قديم");
+        (await admin.GetFromJsonAsync<List<AccountDto>>("/api/financial-accounts", TestJson.Options))!.Sum(a => a.CurrentBalance).Should().Be(cashBefore);
+
+        (await admin.PostAsJsonAsync($"/api/customers/{customer.Id}/old-balance", new CustomerOldBalanceRequest(0, true, null))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var walkIn = (await (await admin.GetAsync("/api/customers?search=زبون نقدي")).ReadAsync<Application.Common.PagedResult<CustomerListItemDto>>()).Items.Single(c => c.IsWalkIn);
+        (await admin.PostAsJsonAsync($"/api/customers/{walkIn.Id}/old-balance", new CustomerOldBalanceRequest(10, true, null))).IsSuccessStatusCode.Should().BeFalse();
+
+        // Found by name, each word anywhere in it.
+        var found = await (await admin.GetAsync($"/api/customers?search={Uri.EscapeDataString("فائز محمد")}")).ReadAsync<Application.Common.PagedResult<CustomerListItemDto>>();
+        found.Items.Should().Contain(c => c.Id == customer.Id);
     }
 }

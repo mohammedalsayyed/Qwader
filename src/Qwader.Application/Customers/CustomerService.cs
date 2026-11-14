@@ -15,6 +15,21 @@ public sealed record CustomerDto(
     int Id, string Code, string Name, string? Phone, string? Address, string? Notes, decimal Balance, bool IsActive, bool IsWalkIn,
     decimal TotalSales, decimal TotalReturns, int InvoiceCount, DateTime? LastPurchaseAt, DateTime CreatedAt);
 
+/// <summary>
+/// An old balance from before the system, added to an existing customer: a debt on them («عليه», Owes = true) or money
+/// that is theirs («له», Owes = false). It goes on their statement as «رصيد سابق».
+/// </summary>
+public sealed record CustomerOldBalanceRequest(decimal Amount, bool Owes, string? Notes);
+
+public sealed class CustomerOldBalanceRequestValidator : AbstractValidator<CustomerOldBalanceRequest>
+{
+    public CustomerOldBalanceRequestValidator()
+    {
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("أدخل مبلغًا أكبر من صفر").LessThanOrEqualTo(10_000_000).WithMessage("المبلغ كبير جدًا");
+        RuleFor(x => x.Notes).MaximumLength(300);
+    }
+}
+
 public sealed record SaveCustomerRequest(string Name, string? Phone, string? Address, string? Notes, bool IsActive = true, decimal OpeningBalance = 0);
 
 public sealed class CustomerListRequest : PagedRequest
@@ -31,6 +46,8 @@ public interface ICustomerService
     Task<CustomerDto> GetAsync(int id, CancellationToken ct = default);
     Task<CustomerDto> CreateAsync(SaveCustomerRequest request, CancellationToken ct = default);
     Task<CustomerDto> UpdateAsync(int id, SaveCustomerRequest request, CancellationToken ct = default);
+    /// <summary>Adds an old balance (on them or theirs) to an existing customer.</summary>
+    Task<CustomerDto> AddOldBalanceAsync(int id, CustomerOldBalanceRequest request, CancellationToken ct = default);
     Task<StatementDto> StatementAsync(int id, DateOnly? from, DateOnly? to, CancellationToken ct = default);
 
     /// <summary>Used by the till: an existing customer with this phone, or a new one. Must run inside the caller's transaction.</summary>
@@ -85,7 +102,7 @@ public sealed class CustomerService(
 {
     public static readonly IReadOnlyDictionary<CustomerEntryType, string> EntryNames = new Dictionary<CustomerEntryType, string>
     {
-        [CustomerEntryType.Opening] = "رصيد افتتاحي",
+        [CustomerEntryType.Opening] = "رصيد سابق",
         [CustomerEntryType.Sale] = "فاتورة بيع",
         [CustomerEntryType.Payment] = "دفعة من العميل",
         [CustomerEntryType.Return] = "مرتجع مبيعات",
@@ -150,6 +167,24 @@ public sealed class CustomerService(
         await EnsureUniquePhoneAsync(customer, ct);
         audit.Log("Customer.Update", "Customer", id.ToString(), before, new { customer.Name, customer.Phone, customer.Address, customer.IsActive });
         await db.SaveChangesAsync(ct);
+        return await GetAsync(id, ct);
+    }
+
+    public async Task<CustomerDto> AddOldBalanceAsync(int id, CustomerOldBalanceRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("Customers", id, ct);
+        var customer = await db.Customers.AsNoTracking().Where(c => c.Id == id).Select(c => new { c.Id, c.Code, c.IsWalkIn }).FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("العميل غير موجود");
+        if (customer.IsWalkIn) throw new BusinessRuleException("«زبون نقدي» لا يُسجَّل عليه رصيد");
+        var amount = Domain.Inventory.CostMath.RoundMoney(request.Amount);
+        var notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        var description = (request.Owes ? "دين سابق على العميل قبل استخدام النظام" : "رصيد سابق للعميل قبل استخدام النظام") + (notes is null ? "" : $" — {notes}");
+        await ledger.PostAsync(id, CustomerEntryType.Opening, request.Owes ? amount : 0, request.Owes ? 0 : amount,
+            new LedgerSource("Customer", id, customer.Code, description), clock.UtcNow, ct);
+        audit.Log("Customer.OldBalance", "Customer", id.ToString(), null, new { amount, request.Owes, notes });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return await GetAsync(id, ct);
     }
 

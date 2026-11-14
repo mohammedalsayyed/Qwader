@@ -89,4 +89,8 @@ public sealed class CustomersController(ICustomerService customers) : Controller
     [HttpPut("{id:int}")]
     [HasPermission(Permissions.CustomersManage)]
     public Task<CustomerDto> Update(int id, SaveCustomerRequest request, CancellationToken ct) => customers.UpdateAsync(id, request, ct);
+
+    [HttpPost("{id:int}/old-balance")]
+    [HasPermission(Permissions.CustomersManage)]
+    public Task<CustomerDto> OldBalance(int id, CustomerOldBalanceRequest request, CancellationToken ct) => customers.AddOldBalanceAsync(id, request, ct);
 }

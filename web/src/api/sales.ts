@@ -231,6 +231,9 @@ export const customersApi = {
   statement: (id: number, from?: string, to?: string) => api<Statement>(`/customers/${id}/statement`, { query: { from, to } }),
   create: (input: SaveCustomerInput) => api<Customer>('/customers', { method: 'POST', body: input }),
   update: (id: number, input: SaveCustomerInput) => api<Customer>(`/customers/${id}`, { method: 'PUT', body: input }),
+  /** An old balance from before the system: a debt on the customer (owes) or money that is theirs. */
+  oldBalance: (id: number, input: { amount: number; owes: boolean; notes: string | null }) =>
+    api<Customer>(`/customers/${id}/old-balance`, { method: 'POST', body: input }),
 };
 
 export const SALE_STATUS: Record<SaleStatus, { label: string; tone: 'success' | 'warning' | 'neutral' | 'danger' }> = {

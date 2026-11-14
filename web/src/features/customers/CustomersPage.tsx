@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowRight, HandCoins, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Undo2, Users } from 'lucide-react';
+import { ArrowRight, HandCoins, History, MessageCircle, Pencil, Phone, Plus, ShoppingCart, Undo2, Users } from 'lucide-react';
 import { ApiError } from '@/api/client';
 import { paymentsApi } from '@/api/finance';
 import { customersApi, salesApi, SALE_STATUS, type Customer } from '@/api/sales';
@@ -157,6 +157,7 @@ export function CustomerDetailPage() {
   const [tab, setTab] = useState<Tab>('invoices');
   const [editing, setEditing] = useState(false);
   const [refunding, setRefunding] = useState(false);
+  const [oldBalance, setOldBalance] = useState(false);
   const query = useQuery({ queryKey: ['customer', id], queryFn: () => customersApi.get(id) });
 
   if (query.isPending) return <Spinner />;
@@ -198,6 +199,9 @@ export function CustomerDetailPage() {
         {can(P.SalesCreate) && (
           <Link to="/pos" className="contents"><Button variant="outline"><ShoppingCart className="size-4" /> بيع جديد</Button></Link>
         )}
+        {can(P.CustomersManage) && !c.isWalkIn && (
+          <Button variant="outline" onClick={() => setOldBalance(true)}><History className="size-4" /> رصيد سابق (عليه / له)</Button>
+        )}
       </div>
       {(c.address || c.notes) && <Card className="px-4"><InfoList items={[c.address && { label: 'العنوان', value: c.address }, c.notes && { label: 'ملاحظات', value: c.notes }]} /></Card>}
 
@@ -210,7 +214,83 @@ export function CustomerDetailPage() {
       )}
       {editing && <CustomerSheet customer={c} onClose={() => setEditing(false)} />}
       {refunding && <RefundSheet customer={c} onClose={() => setRefunding(false)} />}
+      {oldBalance && <OldBalanceSheet customer={c} onClose={() => setOldBalance(false)} />}
     </div>
+  );
+}
+
+/**
+ * «رصيد سابق»: what stood between the store and the customer before the system — a debt on them («عليه») or money that
+ * is theirs («له»). No money moves in any account; it goes on their statement. A mistake is undone by the opposite entry.
+ */
+function OldBalanceSheet({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const [owes, setOwes] = useState<boolean | null>(null);
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const n = parseNumber(amount);
+  const after = owes == null || !n || Number.isNaN(n) ? null : customer.balance + (owes ? n : -n);
+
+  const save = useMutation({
+    mutationFn: () => customersApi.oldBalance(customer.id, { amount: n!, owes: owes!, notes: notes.trim() || null }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(['customer', saved.id], saved);
+      for (const k of ['customers', 'customer-statement']) void queryClient.invalidateQueries({ queryKey: [k] });
+      toast.success(owes ? `سُجّل دين سابق ${formatMoney(n)} على ${customer.name}` : `سُجّل رصيد سابق ${formatMoney(n)} لـ ${customer.name}`);
+      onClose();
+    },
+    onError: (e) => setErrors({ form: errorMessage(e) }),
+  });
+
+  const submit = async () => {
+    const e: Record<string, string> = {};
+    if (owes == null) e.owes = 'اختر: عليه أو له';
+    if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    const ok = await confirm({
+      title: owes ? 'تسجيل دين سابق على العميل' : 'تسجيل رصيد سابق للعميل',
+      message: `${owes ? 'عليه' : 'له'} ${formatMoney(n)} — يصبح ${after! >= 0 ? 'المستحق عليه' : 'رصيده له'} ${formatMoney(Math.abs(after!))}. لا تتحرك أموال في أي حساب.`,
+      confirmLabel: 'تسجيل',
+    });
+    if (ok) save.mutate();
+  };
+
+  return (
+    <Sheet open onClose={onClose} dirty={amount !== '' || owes != null} title="رصيد سابق للعميل"
+      footer={<Button block size="lg" loading={save.isPending} onClick={() => void submit()}>تسجيل</Button>}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          حساب قديم بين المعرض و{customer.name} من قبل استخدام النظام. يظهر في كشف حسابه باسم «رصيد سابق»، ولا يدخل أو يخرج مال من أي حساب.
+        </p>
+        <div>
+          <p className="mb-1.5 text-sm font-medium">الرصيد السابق</p>
+          <div className="grid grid-cols-2 gap-2">
+            {([[true, 'عليه (دين على العميل)'], [false, 'له (للعميل عندنا)']] as const).map(([v, label]) => (
+              <button key={label} type="button" onClick={() => setOwes(v)}
+                className={cn('h-12 rounded-control border text-sm font-semibold', owes === v ? (v ? 'border-danger bg-danger/10 text-danger' : 'border-success bg-success/10 text-success') : 'border-line bg-surface')}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {errors.owes && <p className="mt-1 text-sm text-danger">{errors.owes}</p>}
+        </div>
+        <Field label="المبلغ" required error={errors.amount}>
+          {(id) => <Input id={id} inputMode="decimal" className="ltr" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}
+        </Field>
+        <Field label="ملاحظة" hint="مثلًا: من دفتر الديون القديم">
+          {(id) => <Input id={id} value={notes} maxLength={300} onChange={(e) => setNotes(e.target.value)} />}
+        </Field>
+        <div className="rounded-control bg-canvas p-3 text-sm">
+          <p>الآن: {customer.balance >= 0 ? 'المستحق عليه' : 'رصيده له'} <b className="tabular">{formatMoney(Math.abs(customer.balance))}</b></p>
+          {after != null && <p>بعد التسجيل: {after >= 0 ? 'المستحق عليه' : 'رصيده له'} <b className="tabular">{formatMoney(Math.abs(after))}</b></p>}
+        </div>
+        {errors.form && <p className="text-sm text-danger">{errors.form}</p>}
+      </div>
+    </Sheet>
   );
 }
 
