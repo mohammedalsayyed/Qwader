@@ -17,6 +17,10 @@ public sealed class FinancialAccountsController(IAccountService accounts) : Cont
     [HttpGet("{id:int}")]
     public Task<AccountDto> Get(int id, CancellationToken ct) => accounts.GetAsync(id, ct);
 
+    [HttpGet("day")]
+    public Task<AccountsDayDto> Day([FromQuery] DateOnly? date, [FromServices] Application.Abstractions.IClock clock, CancellationToken ct) =>
+        accounts.DayAsync(date ?? clock.LocalToday, ct);
+
     [HttpGet("{id:int}/statement")]
     public Task<AccountStatementDto> Statement(int id, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to, [FromQuery] PagedRequest paging, CancellationToken ct) =>
         accounts.StatementAsync(id, from, to, paging, ct);

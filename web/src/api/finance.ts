@@ -15,6 +15,28 @@ export interface Account {
   logoFileId?: string | null;
 }
 
+/** One account over one day: opening + in − out = closing. */
+export interface AccountDay {
+  accountId: number;
+  name: string;
+  type: AccountType;
+  logoFileId: string | null;
+  isActive: boolean;
+  opening: number;
+  in: number;
+  out: number;
+  closing: number;
+}
+
+export interface AccountsDay {
+  day: string;
+  accounts: AccountDay[];
+  opening: number;
+  in: number;
+  out: number;
+  closing: number;
+}
+
 export interface SaveAccountInput {
   name: string;
   type: AccountType;
@@ -172,6 +194,8 @@ export const accountsApi = {
   update: (id: number, input: SaveAccountInput) => api<Account>(`/financial-accounts/${id}`, { method: 'PUT', body: input }),
   setOpening: (id: number, openingBalance: number, notes?: string | null) =>
     api<Account>(`/financial-accounts/${id}/opening-balance`, { method: 'POST', body: { openingBalance, notes } }),
+  /** How much every account held on a day (yyyy-mm-dd; today when left out). */
+  day: (date?: string) => api<AccountsDay>('/financial-accounts/day', { query: { date } }),
   statement: (id: number, params: { from?: string; to?: string; page?: number; pageSize?: number }) =>
     api<AccountStatement>(`/financial-accounts/${id}/statement`, { query: params }),
   transfers: (page = 1) => api<PagedResult<AccountTransfer>>('/account-transfers', { query: { page, pageSize: 20 } }),

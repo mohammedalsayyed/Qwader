@@ -191,4 +191,27 @@ public sealed class AccountLogoTests(ApiFactory factory)
         (await (await admin.PutAsJsonAsync($"/api/financial-accounts/{account.Id}",
             new SaveAccountRequest(account.Name, FinancialAccountType.Wallet, null, null, null, true, null))).ReadAsync<AccountDto>()).LogoFileId.Should().BeNull();
     }
+
+    [Fact]
+    public async Task A_day_shows_each_account_at_its_start_what_came_in_and_out_and_at_its_end()
+    {
+        var admin = await factory.LoginAsync();
+        var drawer = (await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new SaveAccountRequest(TestData.Unique("درج يوم"), FinancialAccountType.Cash, null, null, null))).ReadAsync<AccountDto>()).Id;
+        await admin.FundAsync(drawer, 100);
+        await admin.FundAsync(drawer, -30);
+
+        var today = await (await admin.GetAsync("/api/financial-accounts/day")).ReadAsync<AccountsDayDto>();
+        var row = today.Accounts.Single(a => a.AccountId == drawer);
+        (row.Opening, row.In, row.Out, row.Closing).Should().Be((0m, 100m, 30m, 70m));
+        row.Closing.Should().Be((await admin.GetFromJsonAsync<AccountDto>($"/api/financial-accounts/{drawer}", TestJson.Options))!.CurrentBalance);
+        today.In.Should().Be(today.Accounts.Sum(a => a.In));
+        today.Closing.Should().Be(today.Opening + today.In - today.Out);
+
+        // Yesterday the drawer held nothing; tomorrow cannot be asked yet.
+        var yesterday = DateOnly.FromDateTime(DateTime.Now).AddDays(-1);
+        var before = await (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday:yyyy-MM-dd}")).ReadAsync<AccountsDayDto>();
+        before.Accounts.Single(a => a.AccountId == drawer).Closing.Should().Be(0);
+        (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday.AddDays(3):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

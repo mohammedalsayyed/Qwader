@@ -15,7 +15,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatDateTime, formatMoney } from '@/lib/format';
+import { formatDateTime, formatMoney, localToday } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber } from '@/lib/numbers';
 import { AccountLogo } from '@/components/finance/FinanceBits';
@@ -74,6 +74,7 @@ export function AccountsPage() {
           );
         })}
       </ul>
+      <AccountsOnDay />
       {editing && <AccountSheet account={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {transferring && <TransferSheet accounts={active} onClose={() => setTransferring(false)} />}
       {showTransfers && <TransfersLogSheet onClose={() => setShowTransfers(false)} />}
@@ -172,6 +173,65 @@ function TransferSheet({ accounts, onClose }: { accounts: Account[]; onClose: ()
         <Field label="ملاحظات">{(id) => <Input id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
       </div>
     </Sheet>
+  );
+}
+
+/** «أرصدة الحسابات في يوم»: for a chosen day, how much each account held when it began, what came in and out, and at its end. */
+function AccountsOnDay() {
+  const [day, setDay] = useState(localToday());
+  const query = useQuery({ queryKey: ['accounts-day', day], queryFn: () => accountsApi.day(day), placeholderData: keepPreviousData });
+  const d = query.data;
+  return (
+    <section className="mt-6">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="font-bold">أرصدة الحسابات في يوم</h2>
+          <p className="text-sm text-muted">قديش كان في كل حساب: بداية اليوم + الداخل − الخارج = نهاية اليوم</p>
+        </div>
+        <Field label="اليوم" className="w-44">
+          {(id) => <Input id={id} type="date" max={localToday()} value={day} onChange={(e) => setDay(e.target.value || localToday())} />}
+        </Field>
+      </div>
+      {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : d && (
+        <div className={cn('overflow-x-auto rounded-card border border-line bg-surface', query.isFetching && 'opacity-60')}>
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="bg-canvas text-muted">
+              <tr>
+                <th className="px-3 py-2 text-start font-semibold">الحساب</th>
+                <th className="px-3 py-2 text-end font-semibold">بداية اليوم</th>
+                <th className="px-3 py-2 text-end font-semibold">الداخل</th>
+                <th className="px-3 py-2 text-end font-semibold">الخارج</th>
+                <th className="px-3 py-2 text-end font-semibold">نهاية اليوم</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {d.accounts.map((a) => (
+                <tr key={a.accountId} className={cn(!a.isActive && 'opacity-60')}>
+                  <td className="px-3 py-2">
+                    <Link to={`/accounts/${a.accountId}`} className="flex items-center gap-2 font-medium hover:text-brand-700">
+                      <AccountLogo fileId={a.logoFileId} type={a.type} size="sm" /> {a.name}
+                    </Link>
+                  </td>
+                  <td className="tabular px-3 py-2 text-end">{formatMoney(a.opening)}</td>
+                  <td className="tabular px-3 py-2 text-end text-success">{a.in > 0 ? `+${formatMoney(a.in)}` : '—'}</td>
+                  <td className="tabular px-3 py-2 text-end text-danger">{a.out > 0 ? `−${formatMoney(a.out)}` : '—'}</td>
+                  <td className={cn('tabular px-3 py-2 text-end font-bold', a.closing < 0 && 'text-danger')}>{formatMoney(a.closing)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2 border-line bg-canvas font-bold">
+              <tr>
+                <td className="px-3 py-2">المجموع</td>
+                <td className="tabular px-3 py-2 text-end">{formatMoney(d.opening)}</td>
+                <td className="tabular px-3 py-2 text-end text-success">+{formatMoney(d.in)}</td>
+                <td className="tabular px-3 py-2 text-end text-danger">−{formatMoney(d.out)}</td>
+                <td className="tabular px-3 py-2 text-end">{formatMoney(d.closing)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

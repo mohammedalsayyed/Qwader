@@ -11,6 +11,8 @@ namespace Qwader.Application.Finance;
 public interface IAccountService
 {
     Task<IReadOnlyList<AccountDto>> ListAsync(bool includeInactive, CancellationToken ct = default);
+    /// <summary>How much each account held on a day: at its start, what came in and went out, and at its end.</summary>
+    Task<AccountsDayDto> DayAsync(DateOnly day, CancellationToken ct = default);
     Task<AccountDto> GetAsync(int id, CancellationToken ct = default);
     Task<AccountDto> CreateAsync(SaveAccountRequest request, CancellationToken ct = default);
     Task<AccountDto> UpdateAsync(int id, SaveAccountRequest request, CancellationToken ct = default);
@@ -37,6 +39,37 @@ public sealed class AccountService(
 
     private static string? Mask(string? number) =>
         string.IsNullOrEmpty(number) ? null : number.Length <= 4 ? "••••" : "•••• " + number[^4..];
+
+    public async Task<AccountsDayDto> DayAsync(DateOnly day, CancellationToken ct = default)
+    {
+        if (day > clock.LocalToday) throw new ValidationFailedException("date", "اختر يومًا حتى اليوم");
+        var (start, end) = clock.LocalDaysToUtcRange(day, day);
+        // Every movement counts, as in each account's statement: what was there when the day began, what moved during it.
+        var before = await db.AccountTransactions.AsNoTracking().Where(t => t.Date < start).GroupBy(t => t.FinancialAccountId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var during = await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end).GroupBy(t => t.FinancialAccountId)
+            .Select(g => new
+            {
+                Id = g.Key,
+                In = g.Where(t => t.Direction == MoneyDirection.In).Sum(t => (decimal?)t.Amount) ?? 0,
+                Out = g.Where(t => t.Direction == MoneyDirection.Out).Sum(t => (decimal?)t.Amount) ?? 0,
+            }).ToDictionaryAsync(x => x.Id, ct);
+        var accounts = await db.FinancialAccounts.AsNoTracking().OrderBy(a => a.Type).ThenBy(a => a.Id)
+            .Select(a => new { a.Id, a.Name, a.Type, a.LogoFileId, a.IsActive }).ToListAsync(ct);
+        var rows = accounts
+            .Select(a =>
+            {
+                var opening = before.GetValueOrDefault(a.Id);
+                var moved = during.GetValueOrDefault(a.Id);
+                var @in = moved?.In ?? 0;
+                var @out = moved?.Out ?? 0;
+                return new AccountDayDto(a.Id, a.Name, a.Type, a.LogoFileId, a.IsActive, opening, @in, @out, opening + @in - @out);
+            })
+            // A disabled account is listed only if it held or moved money that day.
+            .Where(r => r.IsActive || r.Opening != 0 || r.In != 0 || r.Out != 0)
+            .ToList();
+        return new AccountsDayDto(day, rows, rows.Sum(r => r.Opening), rows.Sum(r => r.In), rows.Sum(r => r.Out), rows.Sum(r => r.Closing));
+    }
 
     public async Task<IReadOnlyList<AccountDto>> ListAsync(bool includeInactive, CancellationToken ct = default)
     {
