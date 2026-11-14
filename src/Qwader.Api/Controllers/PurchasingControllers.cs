@@ -57,6 +57,14 @@ public sealed class PurchasesController(IPurchaseService purchases) : Controller
     [HasPermission(Permissions.PurchasesManage)]
     public Task<PurchaseDetailDto> Void(int id, VoidRequest request, CancellationToken ct) => purchases.VoidAsync(id, request, ct);
 
+    [HttpPost("{id:int}/replace")]
+    [HasPermission(Permissions.PurchasesManage)]
+    public Task<PurchaseDetailDto> Replace(int id, SavePurchaseRequest request, CancellationToken ct) => purchases.ReplaceAsync(id, request, ct);
+
+    [HttpPatch("{id:int}/details")]
+    [HasPermission(Permissions.PurchasesManage)]
+    public Task<PurchaseDetailDto> UpdateDetails(int id, UpdatePurchaseDetailsRequest request, CancellationToken ct) => purchases.UpdateDetailsAsync(id, request, ct);
+
     [HttpPost("{id:int}/returns")]
     [HasPermission(Permissions.PurchasesManage)]
     public Task<PurchaseDetailDto> Return(int id, PurchaseReturnRequest request, CancellationToken ct) => purchases.ReturnAsync(id, request, ct);

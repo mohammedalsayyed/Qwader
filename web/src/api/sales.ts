@@ -42,6 +42,8 @@ export interface SaleLine {
   priceOverridden: boolean;
   /** Base units in one of this line's unit (12 for a dozen). */
   unitFactor?: number;
+  /** The extra unit it was sold in (a dozen); null: the base unit. */
+  productUnitId?: number | null;
 }
 
 export interface Sale {
@@ -169,6 +171,11 @@ export interface SalesSummary {
 
 export const salesApi = {
   create: (input: CreateSaleInput) => api<Sale>('/sales', { method: 'POST', body: input }),
+  /** Edits a sale: the old invoice is voided and this one made, together (one or neither). */
+  replace: (id: number, input: CreateSaleInput) => api<Sale>(`/sales/${id}/replace`, { method: 'POST', body: input }),
+  /** Notes, a walk-in's name and phone, or linking a walk-in invoice to a customer: no money or stock moves. */
+  updateDetails: (id: number, input: { notes: string | null; customerName?: string | null; customerPhone?: string | null; customerId?: number | null }) =>
+    api<Sale>(`/sales/${id}/details`, { method: 'PATCH', body: input }),
   list: (params: { page?: number; pageSize?: number; search?: string; from?: string; to?: string; status?: SaleStatus; customerId?: number; unpaid?: boolean; needsReview?: boolean }) =>
     api<PagedResult<SaleListItem>>('/sales', { query: params }),
   get: (id: number) => api<Sale>(`/sales/${id}`),

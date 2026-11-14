@@ -36,6 +36,14 @@ public sealed class SalesController(ISaleService sales) : ControllerBase
     [HasPermission(Permissions.SalesVoid)]
     public Task<SaleDetailDto> Void(int id, VoidRequest request, CancellationToken ct) => sales.VoidAsync(id, request, ct);
 
+    [HttpPost("{id:int}/replace")]
+    [HasPermission(Permissions.SalesVoid)]
+    public Task<SaleDetailDto> Replace(int id, CreateSaleRequest request, CancellationToken ct) => sales.ReplaceAsync(id, request, ct);
+
+    [HttpPatch("{id:int}/details")]
+    [HasPermission(Permissions.SalesCreate)]
+    public Task<SaleDetailDto> UpdateDetails(int id, UpdateSaleDetailsRequest request, CancellationToken ct) => sales.UpdateDetailsAsync(id, request, ct);
+
     [HttpPost("{id:int}/restore")]
     [HasPermission(Permissions.SalesVoid)]
     public Task<SaleDetailDto> Restore(int id, VoidRequest request, CancellationToken ct) => sales.RestoreAsync(id, request, ct);

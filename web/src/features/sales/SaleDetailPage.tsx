@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, Printer, RotateCcw, Share2, Undo2 } from 'lucide-react';
-import { salesApi, SALE_STATUS, type ReturnCondition, type Sale } from '@/api/sales';
+import { ArrowRight, Ban, FilePen, NotebookPen, Printer, RotateCcw, Share2, Undo2 } from 'lucide-react';
+import { customersApi, salesApi, SALE_STATUS, type CustomerListItem, type ReturnCondition, type Sale } from '@/api/sales';
+import { Picker } from '@/components/ui/Picker';
 import type { ReturnSettlement } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -59,6 +60,7 @@ export function SaleDetailPage() {
   const [returning, setReturning] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
   const [cancellingReturn, setCancellingReturn] = useState<Sale['returns'][number] | null>(null);
   const query = useQuery({ queryKey: ['sale', id], queryFn: () => salesApi.get(id) });
 
@@ -138,6 +140,11 @@ export function SaleDetailPage() {
           <Button variant="outline" onClick={() => window.print()}><Printer className="size-4" /> طباعة</Button>
           <Button variant="outline" onClick={() => void share()}><Share2 className="size-4" /> مشاركة</Button>
           {can(P.SalesReturn) && returnable && <Button variant="secondary" onClick={() => setReturning(true)}><Undo2 className="size-4" /> مرتجع</Button>}
+          {/* Editing: the till opens with this invoice; saving voids it and makes the new one together. */}
+          {can(P.SalesVoid) && can(P.SalesCreate) && s.status === 'Posted' && s.paidAmount <= s.payments.reduce((t, p) => t + p.amount, 0) + 0.004 && (
+            <Button variant="secondary" onClick={() => navigate(`/pos?edit=${s.id}`)}><FilePen className="size-4" /> تعديل الفاتورة</Button>
+          )}
+          {s.status !== 'Voided' && <Button variant="outline" onClick={() => setEditingDetails(true)}><NotebookPen className="size-4" /> تعديل البيانات</Button>}
           {can(P.SalesVoid) && s.status === 'Posted' && <Button variant="outline" onClick={() => setVoiding(true)}><Ban className="size-4 text-danger" /> إلغاء الفاتورة</Button>}
         </div>
 
@@ -228,6 +235,7 @@ export function SaleDetailPage() {
       {returning && <ReturnSheet sale={s} onClose={() => setReturning(false)} onDone={refresh} />}
       {voiding && <VoidSheet sale={s} onClose={() => setVoiding(false)} onDone={refresh} />}
       {restoring && <RestoreSheet sale={s} onClose={() => setRestoring(false)} onDone={refresh} />}
+      {editingDetails && <DetailsSheet sale={s} onClose={() => setEditingDetails(false)} onDone={refresh} />}
       {cancellingReturn && <CancelReturnSheet sale={s} ret={cancellingReturn} onClose={() => setCancellingReturn(null)} onDone={refresh} />}
     </div>
   );
@@ -430,6 +438,67 @@ function VoidSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => void;
           {(id, d) => <TextArea id={id} aria-describedby={d} rows={2} value={reason} onChange={(e) => { setReason(e.target.value); setError(undefined); }} />}
         </Field>
         <DayField label="تاريخ الإلغاء" sale={sale} value={date} onChange={setDate} />
+      </div>
+    </Sheet>
+  );
+}
+
+/**
+ * «تعديل البيانات»: what moves no money or stock — the notes; for a «زبون نقدي» invoice the name and phone written on it,
+ * or giving it to a registered customer (it then shows on their statement; paid in full, their balance does not move).
+ */
+function DetailsSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => void; onDone: (s: Sale) => void }) {
+  const toast = useToast();
+  const [notes, setNotes] = useState(sale.notes ?? '');
+  const [name, setName] = useState(sale.isWalkIn && sale.customerName !== 'زبون نقدي' ? sale.customerName : '');
+  const [phone, setPhone] = useState(sale.isWalkIn ? sale.customerPhone ?? '' : '');
+  const [customer, setCustomer] = useState<CustomerListItem | null>(null);
+  const [error, setError] = useState<string>();
+  const hasReturn = sale.lines.some((l) => l.returnedQuantity > 0);
+  const save = useMutation({
+    mutationFn: () => salesApi.updateDetails(sale.id, {
+      notes: notes.trim() || null,
+      customerName: sale.isWalkIn && !customer ? name.trim() || null : null,
+      customerPhone: sale.isWalkIn && !customer ? phone.trim() || null : null,
+      customerId: customer?.id ?? null,
+    }),
+    onSuccess: (s) => { onDone(s); toast.success(customer ? `أصبحت الفاتورة على «${customer.name}»` : 'تم حفظ البيانات'); onClose(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <Sheet open onClose={onClose} title={`بيانات الفاتورة ${sale.number}`}
+      footer={<Button block size="lg" loading={save.isPending} onClick={() => save.mutate()}>حفظ</Button>}>
+      <div className="space-y-4">
+        {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{error}</p>}
+        <p className="text-sm text-muted">هذه البيانات لا تغيّر المخزون ولا المبالغ. لتغيير المنتجات أو الأسعار أو الدفع استخدم «تعديل الفاتورة».</p>
+        {sale.isWalkIn && (
+          <>
+            <div>
+              <p className="mb-2 text-sm font-medium">ربط الفاتورة بعميل مسجّل</p>
+              {hasReturn ? <p className="text-sm text-muted">على الفاتورة مرتجع، فلا تُربط بعميل.</p> : (
+                <Picker<CustomerListItem>
+                  valueLabel={customer?.name ?? null}
+                  placeholder="ابحث عن العميل بالاسم أو الجوال"
+                  title="اختيار عميل"
+                  queryKey="details-customers"
+                  search={async (q, signal) => (await customersApi.list({ search: q, pageSize: 20, isActive: true }, signal)).items.filter((c) => !c.isWalkIn)}
+                  getKey={(c) => c.id}
+                  renderItem={(c) => <div><p className="font-semibold">{c.name}</p><p className="ltr text-xs text-muted">{c.phone ?? c.code}</p></div>}
+                  onSelect={setCustomer}
+                  onClear={() => setCustomer(null)}
+                />
+              )}
+              {customer && <p className="mt-2 text-xs text-muted">تظهر الفاتورة في كشف حسابه كبيع ودفعة بنفس المبلغ؛ رصيده لا يتغير.</p>}
+            </div>
+            {!customer && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="الاسم على الفاتورة">{(id) => <Input id={id} value={name} placeholder="زبون نقدي" onChange={(e) => setName(e.target.value)} />}</Field>
+                <Field label="الجوال">{(id) => <Input id={id} type="tel" inputMode="tel" className="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />}</Field>
+              </div>
+            )}
+          </>
+        )}
+        <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
       </div>
     </Sheet>
   );

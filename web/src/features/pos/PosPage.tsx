@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { CloudOff, Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2 } from 'lucide-react';
+import { CloudOff, FilePen, Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2, X } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 import { productsApi, type ProductUnit } from '@/api/catalog';
 import { ApiError } from '@/api/client';
-import type { PriceTier, Sale } from '@/api/sales';
+import { customersApi, salesApi, type PriceTier, type Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -27,7 +28,9 @@ import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
 export function PosPage() {
-  const { cart, add, update, remove, changeUnit, setTier, reset } = useCart();
+  const { cart, add, update, remove, changeUnit, setTier, reset, startEdit } = useCart();
+  const [params, setParams] = useSearchParams();
+  const [loadingEdit, setLoadingEdit] = useState(false);
   useLookups(); // load accounts early so checkout opens instantly
   const { can, user } = useAuth();
   const canWholesale = can(P.SalesWholesale);
@@ -126,6 +129,58 @@ export function PosPage() {
 
   const showResults = shownTerm.length > 0;
 
+  // «تعديل الفاتورة» opens the till with ?edit=<id>: the invoice is loaded into the cart as it was sold.
+  const editParam = Number(params.get('edit')) || 0;
+  useEffect(() => {
+    if (!editParam) return;
+    if (cart.editing?.saleId === editParam) { setParams({}, { replace: true }); return; }
+    let cancelled = false;
+    setLoadingEdit(true);
+    (async () => {
+      try {
+        const sale = await salesApi.get(editParam);
+        if (sale.status !== 'Posted') throw new Error('تُعدَّل الفاتورة المعتمدة التي ليس عليها مرتجع فقط');
+        const ids = [...new Set(sale.lines.map((l) => l.productId))];
+        const products = new Map((await Promise.all(ids.map((id) => productsApi.get(id)))).map((p) => [p.id, p]));
+        const customer = sale.isWalkIn ? null : await customersApi.get(sale.customerId);
+        if (cancelled) return;
+        // Its own quantities come back when it is saved, so they count as available while editing.
+        const own = (id: number) => sale.lines.filter((l) => l.productId === id).reduce((t, l) => t + l.quantity * (l.unitFactor ?? 1), 0);
+        startEdit(sale.priceTier, {
+          saleId: sale.id,
+          number: sale.number,
+          invoiceDiscount: sale.invoiceDiscount,
+          // Their balance without this invoice's own debt (it goes when the edit is saved).
+          customer: customer && { id: customer.id, name: customer.name, phone: customer.phone, code: customer.code, balance: round2(customer.balance - sale.remaining) },
+          walkInName: sale.isWalkIn && sale.customerName !== 'زبون نقدي' ? sale.customerName : null,
+          walkInPhone: sale.isWalkIn ? sale.customerPhone : null,
+          payments: sale.payments.map((p) => ({ accountId: p.accountId, amount: p.amount, reference: p.reference })),
+          // The «instead of …» line the server adds is not carried into the next edit.
+          notes: sale.notes?.replace(/^بدل الفاتورة \S+ \(تعديل\)( — )?/, '') || null,
+        }, sale.lines.map((l) => {
+          const product = toCartProduct(products.get(l.productId)!);
+          const net = l.lineTotal / l.quantity;
+          // The price it was sold at: one net price when it divides exactly, else the price and its discount.
+          const exact = Math.abs(round2(net) * l.quantity - l.lineTotal) < 0.005;
+          return {
+            p: { ...product, quantity: product.quantity + own(l.productId) },
+            unit: product.units?.find((u) => u.id === l.productUnitId) ?? null,
+            quantity: l.quantity,
+            unitPrice: exact ? round2(net) : l.unitPrice,
+            lineDiscount: exact ? 0 : l.lineDiscount,
+          };
+        }));
+        toast.info(`تعديل الفاتورة ${sale.number}: غيّر ما تريد ثم «اعتماد الفاتورة»`);
+      } catch (e) {
+        if (!cancelled) toast.error(errorMessage(e));
+      } finally {
+        if (!cancelled) { setLoadingEdit(false); setParams({}, { replace: true }); }
+      }
+    })();
+    return () => { cancelled = true; };
+    // Runs when the till is opened for an edit.
+  }, [editParam]);
+
   return (
     <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0">
       {/* ---------------- search & results ---------------- */}
@@ -142,6 +197,16 @@ export function PosPage() {
           </div>}
         </div>
 
+        {loadingEdit && <Spinner className="py-4" />}
+        {cart.editing && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <span className="flex items-center gap-2">
+              <FilePen className="size-5 shrink-0" />
+              <span>تعديل الفاتورة <b className="ltr inline-block">{cart.editing.number}</b>: عند الاعتماد تُلغى الأصلية وتُنشأ فاتورة جديدة بدلها (معًا).</span>
+            </span>
+            <Button size="sm" variant="outline" onClick={() => reset()}><X className="size-4" /> إلغاء التعديل</Button>
+          </div>
+        )}
         {offline && (canSellOffline ? (
           <p className="mb-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
             <CloudOff className="mt-0.5 size-4 shrink-0" />

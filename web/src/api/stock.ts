@@ -275,6 +275,11 @@ export const purchasesApi = {
   updateDraft: (id: number, input: SavePurchaseInput) => api<Purchase>(`/purchases/${id}`, { method: 'PUT', body: input }),
   post: (id: number, idempotencyKey: string) => api<Purchase>(`/purchases/${id}/post`, { method: 'POST', body: { idempotencyKey } }),
   void: (id: number, reason: string) => api<Purchase>(`/purchases/${id}/void`, { method: 'POST', body: { reason } }),
+  /** Edits a posted purchase: the old one is voided and this one posted, together (one or neither). */
+  replace: (id: number, input: SavePurchaseInput) => api<Purchase>(`/purchases/${id}/replace`, { method: 'POST', body: input }),
+  /** The notes and the supplier's own invoice number: no money or stock moves. */
+  updateDetails: (id: number, input: { notes: string | null; supplierInvoiceNo: string | null }) =>
+    api<Purchase>(`/purchases/${id}/details`, { method: 'PATCH', body: input }),
   return: (
     id: number,
     input: { idempotencyKey: string; settlement: ReturnSettlement; refundAccountId?: number | null; reason?: string | null; lines: { purchaseInvoiceLineId: number; quantity: number }[] },

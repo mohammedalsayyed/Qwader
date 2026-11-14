@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, CheckCircle2, Pencil, Printer, Undo2 } from 'lucide-react';
+import { ArrowRight, Ban, CheckCircle2, FilePen, NotebookPen, Pencil, Printer, Undo2 } from 'lucide-react';
 import { purchasesApi, type Purchase, type ReturnSettlement } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -31,6 +31,7 @@ export function PurchaseDetailPage() {
   const [postKey] = useIdempotencyKey();
   const [returning, setReturning] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
   const query = useQuery({ queryKey: ['purchase', id], queryFn: () => purchasesApi.get(id) });
 
   const refresh = (p: Purchase) => {
@@ -86,6 +87,10 @@ export function PurchaseDetailPage() {
               <Link to={`/purchases/${p.id}/edit`} className="contents"><Button variant="outline"><Pencil className="size-4" /> تعديل</Button></Link>
             </>
           )}
+          {p.status === 'Posted' && !p.lines.some((l) => l.returnedQuantity > 0) && (
+            <Link to={`/purchases/${p.id}/edit`} className="contents"><Button variant="secondary"><FilePen className="size-4" /> تعديل الفاتورة</Button></Link>
+          )}
+          {p.status !== 'Voided' && <Button variant="outline" onClick={() => setEditingDetails(true)}><NotebookPen className="size-4" /> تعديل البيانات</Button>}
           {p.status === 'Posted' && returnable && (
             <Button variant="secondary" onClick={() => setReturning(true)}><Undo2 className="size-4" /> مردود للمورد</Button>
           )}
@@ -155,6 +160,7 @@ export function PurchaseDetailPage() {
 
       {returning && <ReturnSheet purchase={p} onClose={() => setReturning(false)} onDone={refresh} />}
       {voiding && <VoidSheet purchase={p} onClose={() => setVoiding(false)} onDone={refresh} />}
+      {editingDetails && <PurchaseDetailsSheet purchase={p} onClose={() => setEditingDetails(false)} onDone={refresh} />}
     </div>
   );
 }
@@ -236,6 +242,30 @@ function ReturnSheet({ purchase, onClose, onDone }: { purchase: Purchase; onClos
           </Field>
         )}
         <Field label="السبب">{(id) => <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
+      </div>
+    </Sheet>
+  );
+}
+
+/** «تعديل البيانات»: the notes and the supplier's invoice number — nothing that moves stock or money. */
+function PurchaseDetailsSheet({ purchase, onClose, onDone }: { purchase: Purchase; onClose: () => void; onDone: (p: Purchase) => void }) {
+  const toast = useToast();
+  const [notes, setNotes] = useState(purchase.notes ?? '');
+  const [supplierNo, setSupplierNo] = useState(purchase.supplierInvoiceNo ?? '');
+  const [error, setError] = useState<string>();
+  const save = useMutation({
+    mutationFn: () => purchasesApi.updateDetails(purchase.id, { notes: notes.trim() || null, supplierInvoiceNo: supplierNo.trim() || null }),
+    onSuccess: (p) => { onDone(p); toast.success('تم حفظ البيانات'); onClose(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <Sheet open onClose={onClose} title={`بيانات الفاتورة ${purchase.number}`}
+      footer={<Button block size="lg" loading={save.isPending} onClick={() => save.mutate()}>حفظ</Button>}>
+      <div className="space-y-4">
+        {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{error}</p>}
+        <p className="text-sm text-muted">لا تغيّر المخزون ولا المبالغ. لتغيير المنتجات أو الأسعار أو الدفع استخدم «تعديل الفاتورة».</p>
+        <Field label="رقم فاتورة المورد">{(id) => <Input id={id} className="ltr" value={supplierNo} onChange={(e) => setSupplierNo(e.target.value)} />}</Field>
+        <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
       </div>
     </Sheet>
   );

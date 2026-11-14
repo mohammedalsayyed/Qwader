@@ -63,11 +63,25 @@ function withAvailability(lines: CartLine[]): CartLine[] {
   });
 }
 
+/** Editing an existing invoice: saving voids it and makes this one (together). */
+export interface CartEditing {
+  saleId: number;
+  number: string;
+  invoiceDiscount: number;
+  /** null: «زبون نقدي». */
+  customer: { id: number; name: string; phone: string | null; code: string; balance: number } | null;
+  walkInName: string | null;
+  walkInPhone: string | null;
+  payments: { accountId: number; amount: number; reference: string | null }[];
+  notes: string | null;
+}
+
 export interface Cart {
   /** Idempotency key of this sale: the same key on every retry, a new one after success. */
   key: string;
   tier: PriceTier;
   lines: CartLine[];
+  editing?: CartEditing | null;
 }
 
 const STORAGE_KEY = 'qwader.pos.cart.v1';
@@ -113,6 +127,35 @@ export function toCartProduct(p: ProductDetail): ProductLike {
   return { ...p, averageCost: p.averageCost };
 }
 
+/** A new cart line for `quantity` of the product in its base unit or in `unit`, at the tier's price. */
+function makeLine(p: ProductLike, unit: ProductUnit | null, quantity: number, tier: PriceTier): CartLine {
+  const base: UnitChoice = { productUnitId: null, unitName: p.unitName, factor: 1, retailPrice: p.retailPrice, wholesalePrice: p.wholesalePrice, minSalePrice: p.minSalePrice };
+  const choice = unit ? unitChoices({ base, units: p.units ?? [] }).find((u) => u.productUnitId === unit.id) ?? base : base;
+  return {
+    key: lineKey(p.id, unit?.id ?? null),
+    productId: p.id,
+    productUnitId: choice.productUnitId,
+    factor: choice.factor,
+    stock: p.quantity,
+    base,
+    units: p.units ?? [],
+    name: p.displayName,
+    sku: p.sku,
+    unitName: choice.unitName,
+    imageFileId: p.imageFileId,
+    available: 0,
+    retailPrice: choice.retailPrice,
+    wholesalePrice: choice.wholesalePrice,
+    minSalePrice: choice.minSalePrice,
+    cost: p.averageCost == null ? null : p.averageCost * choice.factor,
+    noCost: p.noCost ?? p.averageCost === 0,
+    quantity,
+    unitPrice: tier === 'Wholesale' ? choice.wholesalePrice : choice.retailPrice,
+    customPrice: false,
+    lineDiscount: 0,
+  };
+}
+
 /** Cart state kept in localStorage, so a reload or a dropped connection never loses a sale in progress. */
 export function useCart() {
   const [cart, setCart] = useState<Cart>(load);
@@ -124,6 +167,21 @@ export function useCart() {
       /* ignore: the cart still works in memory */
     }
   }, [cart]);
+
+  /**
+   * Opens an invoice for editing: its lines at the prices they were sold at, with the products' stock counted as if the
+   * invoice were already voided (its own quantities come back when it is saved).
+   */
+  const startEdit = useCallback((tier: PriceTier, editing: CartEditing,
+    items: { p: ProductLike; unit: ProductUnit | null; quantity: number; unitPrice: number; lineDiscount: number }[]) => {
+    setCart(() => {
+      const lines = items.map(({ p, unit, quantity, unitPrice, lineDiscount }) => {
+        const line = makeLine(p, unit, quantity, tier);
+        return { ...line, unitPrice, lineDiscount, customPrice: unitPrice !== tierPrice(line, tier) };
+      });
+      return { ...newCart(tier), lines: withAvailability(lines), editing };
+    });
+  }, []);
 
   /** Adds one (of the base unit, or of `unit`). Returns an Arabic message when stock does not allow it. */
   const add = useCallback((p: ProductLike, quantity = 1, unit: ProductUnit | null = null): string | null => {
@@ -142,32 +200,7 @@ export function useCart() {
         return c;
       }
       if (existing) return { ...c, lines: withAvailability(c.lines.map((l) => (l === existing ? { ...l, quantity: wanted, stock: p.quantity } : l))) };
-      const base: UnitChoice = { productUnitId: null, unitName: p.unitName, factor: 1, retailPrice: p.retailPrice, wholesalePrice: p.wholesalePrice, minSalePrice: p.minSalePrice };
-      const choice = unit ? unitChoices({ base, units: p.units ?? [] }).find((u) => u.productUnitId === unit.id) ?? base : base;
-      const line: CartLine = {
-        key,
-        productId: p.id,
-        productUnitId: choice.productUnitId,
-        factor: choice.factor,
-        stock: p.quantity,
-        base,
-        units: p.units ?? [],
-        name: p.displayName,
-        sku: p.sku,
-        unitName: choice.unitName,
-        imageFileId: p.imageFileId,
-        available: 0,
-        retailPrice: choice.retailPrice,
-        wholesalePrice: choice.wholesalePrice,
-        minSalePrice: choice.minSalePrice,
-        cost: p.averageCost == null ? null : p.averageCost * choice.factor,
-        noCost: p.noCost ?? p.averageCost === 0,
-        quantity,
-        unitPrice: c.tier === 'Wholesale' ? choice.wholesalePrice : choice.retailPrice,
-        customPrice: false,
-        lineDiscount: 0,
-      };
-      return { ...c, lines: withAvailability([line, ...c.lines]) };
+      return { ...c, lines: withAvailability([makeLine(p, unit, quantity, c.tier), ...c.lines]) };
     });
     return error;
   }, []);
@@ -214,5 +247,5 @@ export function useCart() {
   // A finished sale's price type is not carried to the next customer: every new invoice starts at retail («مفرق»).
   const reset = useCallback(() => setCart(() => newCart()), []);
 
-  return { cart, add, update, remove, changeUnit, setTier, reset };
+  return { cart, add, update, remove, changeUnit, setTier, reset, startEdit };
 }

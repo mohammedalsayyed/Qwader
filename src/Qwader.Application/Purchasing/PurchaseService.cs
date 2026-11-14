@@ -81,7 +81,7 @@ public sealed class PurchaseService(
         if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
             return await GetAsync(int.Parse(done.ResultId!), ct);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await TxScope.BeginAsync(db, ct);
         var invoice = new PurchaseInvoice { Number = await numbers.NextAsync(DocumentType.PurchaseInvoice, ct) };
         await ApplyAsync(invoice, request, ct);
         db.PurchaseInvoices.Add(invoice);
@@ -143,9 +143,13 @@ public sealed class PurchaseService(
         return await GetAsync(id, ct);
     }
 
-    public async Task<PurchaseDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default)
+    public Task<PurchaseDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default) => VoidCoreAsync(id, request, false, ct);
+
+    /// <param name="replacing">Editing: the goods may already be partly sold, so the stock may dip below zero until the new
+    /// invoice brings it back (checked at the end of the edit).</param>
+    private async Task<PurchaseDetailDto> VoidCoreAsync(int id, VoidRequest request, bool replacing, CancellationToken ct)
     {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await TxScope.BeginAsync(db, ct);
         await db.LockRowAsync("PurchaseInvoices", id, ct);
         var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
@@ -159,7 +163,7 @@ public sealed class PurchaseService(
             var source = new LedgerSource("PurchaseInvoice", invoice.Id, invoice.Number, $"إلغاء فاتورة الشراء: {request.Reason.Trim()}");
             foreach (var line in invoice.Lines.OrderBy(l => l.ProductId))
                 await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.PurchaseVoid,
-                    "PurchaseInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة شراء"), line.NetUnitCost / line.UnitFactor, ct);
+                    "PurchaseInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة شراء"), line.NetUnitCost / line.UnitFactor, ct, allowNegative: replacing);
 
             var now = clock.UtcNow;
             if (invoice.Total > 0) await suppliers.PostAsync(invoice.SupplierId, SupplierEntryType.Reversal, invoice.Total, 0, source, now, ct);
@@ -177,6 +181,62 @@ public sealed class PurchaseService(
         audit.Log("Purchase.Void", "PurchaseInvoice", id.ToString(), new { WasPosted = wasPosted }, new { invoice.Number }, request.Reason);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+        return await GetAsync(id, ct);
+    }
+
+    /// <summary>
+    /// Edits a posted purchase: in one transaction the invoice is voided (goods out at its cost, the supplier's balance and the
+    /// payment reversed) and the new one is posted from <paramref name="request"/>. Goods already sold may stay sold as long as the
+    /// new quantities cover them: no product may end below zero, or nothing happens.
+    /// </summary>
+    public async Task<PurchaseDetailDto> ReplaceAsync(int id, SavePurchaseRequest request, CancellationToken ct = default)
+    {
+        if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
+            return await GetAsync(int.Parse(done.ResultId!), ct);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PurchaseInvoices", id, ct);
+        var original = await db.PurchaseInvoices.AsNoTracking().Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
+            ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
+        if (original.Status != PurchaseStatus.Posted) throw new BusinessRuleException("تُعدَّل الفاتورة المعتمدة فقط (المسودة تُعدَّل مباشرة)");
+        if (original.Lines.Any(l => l.ReturnedQuantity > 0)) throw new BusinessRuleException("على الفاتورة مردود؛ ألغِ المردود أولًا ثم عدّلها");
+
+        var productIds = original.Lines.Select(l => l.ProductId).Concat(request.Lines.Select(l => l.ProductId)).Distinct().ToList();
+        async Task<Dictionary<int, decimal>> BalancesAsync() => await db.StockBalances.AsNoTracking()
+            .Where(b => productIds.Contains(b.ProductId) && b.WarehouseId == original.WarehouseId).ToDictionaryAsync(b => b.ProductId, b => b.Quantity, ct);
+        var before = await BalancesAsync();
+
+        await VoidCoreAsync(id, new VoidRequest("تعديل الفاتورة"), true, ct);
+        var created = await CreateAsync(request with { Post = true }, ct);
+
+        // Whatever was sold from the old quantities must still be covered by the new ones: no product ends below zero
+        // (or lower than it already was).
+        var after = await BalancesAsync();
+        foreach (var (productId, quantity) in after.Where(a => a.Value < 0 && a.Value < before.GetValueOrDefault(a.Key)))
+        {
+            var name = await db.Products.Where(p => p.Id == productId).Select(p => p.Name).FirstAsync(ct);
+            throw new BusinessRuleException($"بِيع من «{name}» أكثر من الكمية الجديدة (ينقص {-quantity:0.###})؛ صحّح الكمية");
+        }
+
+        var old = await db.PurchaseInvoices.FirstAsync(p => p.Id == id, ct);
+        old.VoidReason = $"تعديل الفاتورة — بدلها {created.Number}";
+        var made = await db.PurchaseInvoices.FirstAsync(p => p.Id == created.Id, ct);
+        made.Notes = $"بدل الفاتورة {original.Number} (تعديل)" + (string.IsNullOrWhiteSpace(made.Notes) ? "" : $" — {made.Notes}");
+        audit.Log("Purchase.Edit", "PurchaseInvoice", created.Id.ToString(), new { original.Number, original.Total }, new { created.Number, created.Total });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await GetAsync(created.Id, CancellationToken.None);
+    }
+
+    /// <summary>What does not touch money or stock: the notes and the supplier's own invoice number.</summary>
+    public async Task<PurchaseDetailDto> UpdateDetailsAsync(int id, UpdatePurchaseDetailsRequest request, CancellationToken ct = default)
+    {
+        var invoice = await db.PurchaseInvoices.FirstOrDefaultAsync(p => p.Id == id, ct) ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
+        var before = new { invoice.Notes, invoice.SupplierInvoiceNo };
+        invoice.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        invoice.SupplierInvoiceNo = string.IsNullOrWhiteSpace(request.SupplierInvoiceNo) ? null : request.SupplierInvoiceNo.Trim();
+        audit.Log("Purchase.UpdateDetails", "PurchaseInvoice", id.ToString(), before, new { invoice.Notes, invoice.SupplierInvoiceNo });
+        await db.SaveChangesAsync(ct);
         return await GetAsync(id, ct);
     }
 

@@ -25,6 +25,9 @@ public sealed record CreateSaleRequest(
     /// <summary>Set by a device that sold without internet: when the sale happened. Rules it broke are recorded for review instead of refusing it.</summary>
     DateTime? SoldOfflineAt = null);
 
+/// <summary>Details that move no money or stock. <see cref="CustomerId"/> links a «زبون نقدي» invoice to a registered customer.</summary>
+public sealed record UpdateSaleDetailsRequest(string? Notes, string? CustomerName, string? CustomerPhone, int? CustomerId);
+
 public sealed record SaleReturnLineInput(int SaleInvoiceLineId, decimal Quantity, ReturnCondition Condition = ReturnCondition.Sellable);
 
 public sealed record SaleReturnRequest(
@@ -46,7 +49,9 @@ public sealed record SaleListItemDto(
 
 public sealed record SaleLineDto(
     int Id, int ProductId, string Sku, string ProductName, string UnitName, decimal Quantity, decimal UnitPrice, decimal LineDiscount,
-    decimal LineTotal, decimal NetTotal, decimal ReturnedQuantity, decimal? UnitCost, bool PriceOverridden, decimal UnitFactor = 1);
+    decimal LineTotal, decimal NetTotal, decimal ReturnedQuantity, decimal? UnitCost, bool PriceOverridden, decimal UnitFactor = 1,
+    /// <summary>The extra unit it was sold in (a dozen); null: the base unit.</summary>
+    int? ProductUnitId = null);
 
 public sealed record SalePaymentDto(int Id, int AccountId, string AccountName, decimal Amount, string? Reference);
 
@@ -116,6 +121,10 @@ public interface ISaleService
     Task<SaleDetailDto> VoidAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
     /// <summary>Brings a voided invoice back: goods out, money in, debt on the customer again, as when it was made.</summary>
     Task<SaleDetailDto> RestoreAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
+    /// <summary>Edits a sale: voids it and makes the new one in one transaction (see the service).</summary>
+    Task<SaleDetailDto> ReplaceAsync(int id, CreateSaleRequest request, CancellationToken ct = default);
+    /// <summary>Notes, a walk-in's name and phone, or linking a walk-in invoice to a registered customer.</summary>
+    Task<SaleDetailDto> UpdateDetailsAsync(int id, UpdateSaleDetailsRequest request, CancellationToken ct = default);
     /// <summary>Cancels a return: its goods leave again, the money refunded comes back to the account it left, the balance as before.</summary>
     Task<SaleDetailDto> VoidReturnAsync(int id, int returnId, Purchasing.VoidRequest request, CancellationToken ct = default);
     Task<SalesSummaryDto> SummaryAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);

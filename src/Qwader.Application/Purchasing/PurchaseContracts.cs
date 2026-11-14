@@ -23,6 +23,9 @@ public sealed record SavePurchaseRequest(
 
 public sealed record PostPurchaseRequest(Guid IdempotencyKey);
 
+/// <summary>Details that move no money or stock.</summary>
+public sealed record UpdatePurchaseDetailsRequest(string? Notes, string? SupplierInvoiceNo);
+
 /// <summary>A reason; for a sale void, the day it happened (today by default, or an earlier day).</summary>
 public sealed record VoidRequest(string Reason, DateOnly? Date = null);
 
@@ -71,6 +74,9 @@ public interface IPurchaseService
     Task<PurchaseDetailDto> UpdateDraftAsync(int id, SavePurchaseRequest request, CancellationToken ct = default);
     Task<PurchaseDetailDto> PostAsync(int id, PostPurchaseRequest request, CancellationToken ct = default);
     Task<PurchaseDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default);
+    /// <summary>Edits a posted purchase: voids it and posts the new one in one transaction (see the service).</summary>
+    Task<PurchaseDetailDto> ReplaceAsync(int id, SavePurchaseRequest request, CancellationToken ct = default);
+    Task<PurchaseDetailDto> UpdateDetailsAsync(int id, UpdatePurchaseDetailsRequest request, CancellationToken ct = default);
     Task<PurchaseDetailDto> ReturnAsync(int id, PurchaseReturnRequest request, CancellationToken ct = default);
 }
 

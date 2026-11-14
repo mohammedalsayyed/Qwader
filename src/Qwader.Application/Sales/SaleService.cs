@@ -41,7 +41,10 @@ public sealed class SaleService(
 
     // ------------------------------------------------------------------ create
 
-    public async Task<SaleDetailDto> CreateAsync(CreateSaleRequest request, CancellationToken ct = default)
+    public Task<SaleDetailDto> CreateAsync(CreateSaleRequest request, CancellationToken ct = default) => CreateCoreAsync(request, null, ct);
+
+    /// <param name="replacing">Editing: the voided invoice this one replaces; it keeps that invoice's date and salesperson.</param>
+    private async Task<SaleDetailDto> CreateCoreAsync(CreateSaleRequest request, SaleInvoice? replacing, CancellationToken ct)
     {
         // A double tap or a retried request after a dropped connection returns the invoice already made.
         if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
@@ -203,7 +206,7 @@ public sealed class SaleService(
         var pendingTotal = payments.Where(p => p.Pending).Sum(p => p.Input.Amount);
         if (paid + pendingTotal > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await TxScope.BeginAsync(db, ct);
 
         // ---- customer
         Customer customer;
@@ -231,10 +234,12 @@ public sealed class SaleService(
         var now = clock.UtcNow;
         if (request.SoldOfflineAt is { } soldAt)
             now = new[] { new[] { soldAt.ToUniversalTime(), now.AddDays(-7) }.Max(), now }.Min();
+        // An edited invoice stays on its day (reports by day keep it where it was sold); its movements are dated now.
+        var invoiceDate = replacing?.Date ?? now;
         var invoice = new SaleInvoice
         {
             Number = await numbers.NextAsync(DocumentType.SaleInvoice, ct),
-            Date = now,
+            Date = invoiceDate,
             CustomerId = customer.Id,
             CustomerName = customer.IsWalkIn && !string.IsNullOrWhiteSpace(request.CustomerName) ? request.CustomerName.Trim() : customer.Name,
             CustomerPhone = customer.Phone,
@@ -245,8 +250,9 @@ public sealed class SaleService(
             InvoiceDiscount = request.InvoiceDiscount,
             Total = total,
             PaidAmount = paid,
-            SalespersonId = currentUser.RequiredUserId,
-            Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim(),
+            SalespersonId = replacing?.SalespersonId ?? currentUser.RequiredUserId,
+            Notes = replacing is null ? (string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim())
+                : $"بدل الفاتورة {replacing.Number} (تعديل)" + (string.IsNullOrWhiteSpace(request.Notes) ? "" : $" — {request.Notes.Trim()}"),
             SoldOffline = offline,
         };
         foreach (var line in lines) invoice.Lines.Add(line);
@@ -436,7 +442,7 @@ public sealed class SaleService(
                 Lines = x.Lines.OrderBy(l => l.Id).Select(l => new
                 {
                     l.Id, l.ProductId, l.Product.Sku, l.ProductName, Unit = l.UnitName ?? l.Product.Unit.Name, l.Quantity, l.UnitPrice, l.LineDiscount,
-                    l.LineTotal, l.NetTotal, l.ReturnedQuantity, l.UnitCost, l.PriceOverridden, l.UnitFactor,
+                    l.LineTotal, l.NetTotal, l.ReturnedQuantity, l.UnitCost, l.PriceOverridden, l.UnitFactor, l.ProductUnitId,
                 }).ToList(),
                 Payments = x.Payments.OrderBy(p => p.Id)
                     .Select(p => new SalePaymentDto(p.Id, p.FinancialAccountId, p.FinancialAccount.Name, p.Amount, p.Reference)).ToList(),
@@ -470,7 +476,7 @@ public sealed class SaleService(
             invoice.GrossTotal, invoice.LineDiscountTotal, invoice.InvoiceDiscount, invoice.Total, invoice.PaidAmount + invoice.CollectedAmount, remaining,
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
-                l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden, l.UnitFactor)).ToList(),
+                l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden, l.UnitFactor, l.ProductUnitId)).ToList(),
             s.Payments, allReturns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer, invoice.RestoredAt);
     }
 
@@ -638,7 +644,7 @@ public sealed class SaleService(
 
     public async Task<SaleDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default)
     {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await TxScope.BeginAsync(db, ct);
         await db.LockRowAsync("SaleInvoices", id, ct);
         var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Payments).Include(s => s.Customer)
             .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
@@ -817,6 +823,83 @@ public sealed class SaleService(
         ret.VoidedById = currentUser.UserId;
         ret.VoidReason = reason;
         audit.Log("Sale.ReturnVoid", "SaleInvoice", id.ToString(), null, new { ret.Number, ret.Total, ret.Settlement }, reason);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await GetAsync(id, ct);
+    }
+
+    // ------------------------------------------------------------------ edit
+
+    /// <summary>
+    /// Edits a sale: in one transaction the invoice is voided (goods back, money back out of the accounts it went into, the
+    /// customer's debt off) and a new invoice is made from <paramref name="request"/> under every rule of a new sale (stock,
+    /// prices, discounts, payments). Either both happen or neither. The new one keeps the old one's day and salesperson.
+    /// </summary>
+    public async Task<SaleDetailDto> ReplaceAsync(int id, CreateSaleRequest request, CancellationToken ct = default)
+    {
+        if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
+            return await GetAsync(int.Parse(done.ResultId!), ct);
+        if (request.SoldOfflineAt is not null) throw new BusinessRuleException("تعديل الفاتورة يحتاج اتصالًا بالإنترنت");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
+        var original = await db.SaleInvoices.AsNoTracking().Include(s => s.Lines).FirstOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw new NotFoundException("الفاتورة غير موجودة");
+        if (!CanSeeAll && original.SalespersonId != currentUser.UserId) throw new NotFoundException("الفاتورة غير موجودة");
+        if (original.Status == SaleStatus.Voided) throw new BusinessRuleException("الفاتورة ملغاة؛ لا تُعدَّل");
+        if (original.Lines.Any(l => l.ReturnedQuantity > 0))
+            throw new BusinessRuleException("على الفاتورة مرتجع؛ ألغِ المرتجع أولًا ثم عدّلها");
+        if (original.CollectedAmount > 0)
+            throw new BusinessRuleException("دُفع على هذه الفاتورة بعد البيع (سند قبض أو حوالة)؛ لا تُعدَّل. ألغِها وأنشئ فاتورة جديدة إن لزم");
+
+        await VoidAsync(id, new VoidRequest("تعديل الفاتورة"), ct);
+        var created = await CreateCoreAsync(request, original, ct);
+
+        var old = await db.SaleInvoices.FirstAsync(s => s.Id == id, ct);
+        old.VoidReason = $"تعديل الفاتورة — بدلها {created.Number}";
+        audit.Log("Sale.Edit", "SaleInvoice", created.Id.ToString(), new { original.Number, original.Total }, new { created.Number, created.Total });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await GetAsync(created.Id, CancellationToken.None);
+    }
+
+    /// <summary>What does not touch money or stock: notes; a walk-in's name and phone; or the walk-in invoice given to a registered customer.</summary>
+    public async Task<SaleDetailDto> UpdateDetailsAsync(int id, UpdateSaleDetailsRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
+        var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Customer).FirstOrDefaultAsync(s => s.Id == id, ct)
+            ?? throw new NotFoundException("الفاتورة غير موجودة");
+        if (!CanSeeAll && invoice.SalespersonId != currentUser.UserId) throw new NotFoundException("الفاتورة غير موجودة");
+        var before = new { invoice.Notes, invoice.CustomerId, invoice.CustomerName, invoice.CustomerPhone };
+
+        invoice.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        if (invoice.Customer.IsWalkIn)
+        {
+            if (request.CustomerId is { } customerId)
+            {
+                // Paid in full at the till (a walk-in owes nothing): the sale and its payment go on the customer's statement,
+                // their balance does not move.
+                if (invoice.Status == SaleStatus.Voided) throw new BusinessRuleException("الفاتورة ملغاة");
+                if (invoice.Lines.Any(l => l.ReturnedQuantity > 0)) throw new BusinessRuleException("على الفاتورة مرتجع؛ لا تُربط بعميل");
+                var customer = await db.Customers.FirstOrDefaultAsync(c => c.Id == customerId && !c.IsWalkIn && c.IsActive, ct)
+                    ?? throw new ValidationFailedException("customerId", "العميل غير موجود أو غير فعّال");
+                var source = new LedgerSource("SaleInvoice", invoice.Id, invoice.Number, $"فاتورة بيع — ربط بالعميل (كانت زبون نقدي)");
+                var now = clock.UtcNow;
+                await customers.PostAsync(customer.Id, CustomerEntryType.Sale, invoice.Total, 0, source, now, ct);
+                if (invoice.PaidAmount > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, invoice.PaidAmount, source with { Description = "مدفوع عند البيع" }, now, ct);
+                invoice.CustomerId = customer.Id;
+                invoice.CustomerName = customer.Name;
+                invoice.CustomerPhone = customer.Phone;
+            }
+            else
+            {
+                invoice.CustomerName = string.IsNullOrWhiteSpace(request.CustomerName) ? invoice.Customer.Name : request.CustomerName.Trim();
+                invoice.CustomerPhone = string.IsNullOrWhiteSpace(request.CustomerPhone) ? null : request.CustomerPhone.Trim();
+            }
+        }
+        audit.Log("Sale.UpdateDetails", "SaleInvoice", id.ToString(), before,
+            new { invoice.Notes, invoice.CustomerId, invoice.CustomerName, invoice.CustomerPhone });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await GetAsync(id, ct);

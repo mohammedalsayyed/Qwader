@@ -50,7 +50,9 @@ export function PurchaseFormPage() {
 
   if ((editId && existing.isPending) || (presetSupplierId && presetSupplier.isPending)) return <Spinner />;
   if (existing.isError) return <ErrorState message={errorMessage(existing.error)} onRetry={() => void existing.refetch()} />;
-  if (existing.data && existing.data.status !== 'Draft') return <ErrorState message="لا يمكن تعديل فاتورة معتمدة أو ملغاة" />;
+  if (existing.data && existing.data.status === 'Voided') return <ErrorState message="لا يمكن تعديل فاتورة ملغاة" />;
+  if (existing.data && existing.data.lines.some((l) => l.returnedQuantity > 0))
+    return <ErrorState message="على الفاتورة مردود للمورد؛ ألغِ المردود أولًا ثم عدّلها" />;
 
   return (
     <PurchaseForm
@@ -71,7 +73,9 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   const [supplier, setSupplier] = useState(initialSupplier);
   const [date, setDate] = useState(existing ? existing.date.slice(0, 10) : localToday());
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState(existing?.supplierInvoiceNo ?? '');
-  const [notes, setNotes] = useState(existing?.notes ?? '');
+  // Editing a posted invoice: saving voids it and posts the new one together. The «instead of …» line is the server's.
+  const posted = existing?.status === 'Posted';
+  const [notes, setNotes] = useState((existing?.notes ?? '').replace(/^بدل الفاتورة \S+ \(تعديل\)( — )?/, ''));
   const [discount, setDiscount] = useState(existing?.discount ? String(existing.discount) : '');
   const [paid, setPaid] = useState(existing?.paidAmount ? String(existing.paidAmount) : '');
   const [accountId, setAccountId] = useState(existing?.paymentAccountId ? String(existing.paymentAccountId) : '');
@@ -172,6 +176,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
         lines: lines.map((l) => ({ productId: l.productId, quantity: parseNumber(l.quantity)!, unitCost: parseNumber(l.unitCost)!, lineDiscount: parseNumber(l.lineDiscount) ?? 0, productUnitId: l.productUnitId })),
         post,
       };
+      if (existing && posted) return purchasesApi.replace(existing.id, { ...input, post: true });
       return existing ? purchasesApi.updateDraft(existing.id, input) : purchasesApi.create(input);
     },
     onSuccess: (saved, post) => {
@@ -182,7 +187,8 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       void queryClient.invalidateQueries({ queryKey: ['supplier', saved.supplierId] });
       void queryClient.invalidateQueries({ queryKey: ['notifications'] });
       queryClient.setQueryData(['purchase', saved.id], saved);
-      toast.success(post ? `تم اعتماد الفاتورة ${saved.number} وإضافة البضاعة للمخزون` : `تم حفظ المسودة ${saved.number}`);
+      toast.success(posted ? `تم تعديل الفاتورة: أُلغيت ${existing!.number} وأصبحت ${saved.number}`
+        : post ? `تم اعتماد الفاتورة ${saved.number} وإضافة البضاعة للمخزون` : `تم حفظ المسودة ${saved.number}`);
       navigate(`/purchases/${saved.id}`, { replace: true });
     },
     onError: (e) => {
@@ -194,7 +200,13 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   const submit = async (post: boolean) => {
     const problem = validate();
     if (problem) return toast.error(problem);
-    if (post && !(await confirm({
+    if (posted && !(await confirm({
+      title: 'حفظ تعديل الفاتورة',
+      message: `تُلغى الفاتورة ${existing!.number} (تخرج بضاعتها وتُعكس دفعتها ومستحق المورد) وتُعتمد بدلها فاتورة جديدة بإجمالي ${formatMoney(computed.total)}، معًا. `
+        + 'ما بِيع من البضاعة يبقى مبيعًا، بشرط ألا تقل الكمية الجديدة عنه.',
+      confirmLabel: 'حفظ التعديل',
+    }))) return;
+    if (post && !posted && !(await confirm({
       title: 'اعتماد فاتورة الشراء',
       message: `سيُضاف ${lines.length} بند إلى المخزون بإجمالي ${formatMoney(computed.total)}${computed.remaining > 0 ? `، ويُسجَّل ${formatMoney(computed.remaining)} مستحقًا للمورد` : ''}. لا يمكن تعديل الفاتورة بعد الاعتماد.`,
       confirmLabel: 'اعتماد',
@@ -207,7 +219,12 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       <button type="button" onClick={() => navigate(-1)} className="flex h-10 items-center gap-1 text-sm text-muted">
         <ArrowRight className="size-4" /> رجوع
       </button>
-      <PageHeader title={existing ? `تعديل المسودة ${existing.number}` : 'فاتورة شراء جديدة'} />
+      <PageHeader title={posted ? `تعديل الفاتورة ${existing!.number}` : existing ? `تعديل المسودة ${existing.number}` : 'فاتورة شراء جديدة'} />
+      {posted && (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          تعديل فاتورة معتمدة: عند الحفظ تُلغى الأصلية وتُعتمد فاتورة جديدة بدلها (معًا، أو لا شيء). المخزون ومستحق المورد والدفعة تُحسب من جديد.
+        </p>
+      )}
 
       <Card className="space-y-4 p-5">
         <Field label="المورد" required error={errors.supplier}>
@@ -309,11 +326,13 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
             <span className={computed.remaining > 0 ? 'text-danger' : 'text-muted'}>المتبقي للمورد: <b className="tabular">{formatMoney(Math.max(0, computed.remaining))}</b></span>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="lg" className="flex-1" loading={save.isPending && save.variables === false} disabled={save.isPending} onClick={() => void submit(false)}>
-              مسودة
-            </Button>
+            {!posted && (
+              <Button variant="outline" size="lg" className="flex-1" loading={save.isPending && save.variables === false} disabled={save.isPending} onClick={() => void submit(false)}>
+                مسودة
+              </Button>
+            )}
             <Button size="lg" className="flex-[2] whitespace-nowrap" loading={save.isPending && save.variables === true} disabled={save.isPending} onClick={() => void submit(true)}>
-              اعتماد الفاتورة
+              {posted ? 'حفظ التعديل' : 'اعتماد الفاتورة'}
             </Button>
           </div>
         </div>

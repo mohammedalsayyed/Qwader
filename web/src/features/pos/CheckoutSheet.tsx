@@ -50,19 +50,27 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   useUnsavedChangesWarning(true); // an app update waits until checkout is finished
 
   // «عميل (اسم وجوال)» first, so the name and phone get asked for; left empty, the sale goes to «زبون نقدي».
-  const [mode, setMode] = useState<CustomerMode>('customer');
-  const [customer, setCustomer] = useState<CustomerListItem | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [discount, setDiscount] = useState('');
-  const [split, setSplit] = useState(false);
+  // Editing an invoice: everything starts as it was on it (customer, discount, payments).
+  const editing = cart.editing ?? null;
+  const editPaid = editing ? round2(editing.payments.reduce((s, p) => s + p.amount, 0)) : 0;
+  const [mode, setMode] = useState<CustomerMode>(editing && !editing.customer && !editing.walkInName ? 'walkin' : 'customer');
+  const [customer, setCustomer] = useState<CustomerListItem | null>(
+    editing?.customer ? { ...editing.customer, isActive: true, isWalkIn: false } : null);
+  const [newName, setNewName] = useState(editing?.walkInName ?? '');
+  const [newPhone, setNewPhone] = useState(editing?.walkInPhone ?? '');
+  const [discount, setDiscount] = useState(editing && editing.invoiceDiscount > 0 ? String(editing.invoiceDiscount) : '');
+  // One payment of the whole total: the simple form; anything else (debt left, several accounts): the split form.
+  const editSplit = !!editing && !(editing.payments.length === 1 && Math.abs(editPaid - subtotal + editing.invoiceDiscount) < 0.005);
+  const [split, setSplit] = useState(editSplit);
   // Until the user picks one, the cash account is the default (also once the account list arrives after opening).
-  const [pickedAccount, setFullAccount] = useState('');
+  const [pickedAccount, setFullAccount] = useState(editing && !editSplit ? String(editing.payments[0].accountId) : '');
   const fullAccount = pickedAccount || cashId;
   const fullAccountType = accounts.find((a) => String(a.id) === fullAccount)?.type;
   const [fullRef, setFullRef] = useState('');
   const [tendered, setTendered] = useState('');
-  const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [rows, setRows] = useState<PaymentRow[]>(editSplit
+    ? editing!.payments.map((p) => ({ key: crypto.randomUUID(), accountId: String(p.accountId), amount: String(p.amount), reference: p.reference ?? '' }))
+    : []);
   const [error, setError] = useState<string>();
 
   const discountN = parseNumber(discount) ?? 0;
@@ -117,8 +125,11 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
 
   const submit = useMutation({
     mutationFn: async () => {
+      if (editing && offline) throw new Error('تعديل الفاتورة يحتاج اتصالًا بالإنترنت');
       if (offline) return saveOffline();
       try {
+        // Editing: the old invoice is voided and this one made, together.
+        if (editing) return await salesApi.replace(editing.saleId, { ...input(), notes: editing.notes });
         return await salesApi.create(input());
       } catch (e) {
         // The connection dropped while sending: keep it on the device (same key, so it is never saved twice).
