@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, HandCoins, Paperclip, Plus, Printer, ReceiptText } from 'lucide-react';
+import { ArrowRight, Ban, HandCoins, Paperclip, Plus, Printer, ReceiptText, UserPlus } from 'lucide-react';
 import { paymentsApi, receiptsApi, type PaymentPurpose, type ReceiptPurpose, type Voucher } from '@/api/finance';
 import { ApiError } from '@/api/client';
 import { customersApi, type CustomerListItem } from '@/api/sales';
@@ -209,7 +209,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
               {(id) => (
                 <Picker<CustomerListItem> id={id} invalid={!!errors.party} valueLabel={customer ? customer.name : null} placeholder="ابحث بالاسم أو الجوال" title="اختيار العميل"
                   queryKey={purpose === 'deposit' ? 'deposit-customers' : 'receipt-customers'} search={async (q, signal) => (await customersApi.list({ search: q, pageSize: 20, withBalance: purpose !== 'deposit', excludeWalkIn: true }, signal)).items}
-                  getKey={(c) => c.id} renderItem={(c) => <span className="flex justify-between gap-2"><span>{c.name} <span className="ltr text-xs text-muted">{c.phone}</span></span><span className="tabular text-danger">{formatMoney(c.balance)}</span></span>}
+                  getKey={(c) => c.id} renderItem={(c) => <span className="flex justify-between gap-2"><span>{c.name} <span className="ltr text-xs text-muted">{c.phone}</span></span><BalanceTag balance={c.balance} /></span>}
                   onSelect={(c) => { setCustomer(c); if (!amount && purpose === 'party') setAmount(String(c.balance)); }} onClear={() => setCustomer(null)} />
               )}
             </Field>
@@ -228,6 +228,12 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
             <Field label={`اسم ${meta.party}`} required error={errors.name}>{(id) => <Input id={id} value={name} invalid={!!errors.name} onChange={(e) => setName(e.target.value)} />}</Field>
             {kind === 'receipt' && <Field label="الجوال">{(id) => <Input id={id} type="tel" inputMode="tel" className="ltr" value={phone} onChange={(e) => setPhone(e.target.value)} />}</Field>}
           </div>
+        )}
+        {purpose === 'deposit' && !customer && (
+          <NewCustomerInline onCreated={(c) => { setCustomer(c); setErrors((e) => ({ ...e, party: '' })); }} />
+        )}
+        {purpose === 'deposit' && customer && (
+          <p className="rounded-xl bg-canvas p-3 text-sm">رصيد العميل الآن: <BalanceTag balance={customer.balance} /></p>
         )}
         {purpose === 'party' && party && (
           <p className="rounded-xl bg-canvas p-3 text-sm">
@@ -331,6 +337,70 @@ export function VoucherDetailPage({ kind }: { kind: Kind }) {
             <Field label="سبب الإلغاء" required>{(id) => <TextArea id={id} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
           </div>
         </Sheet>
+      )}
+    </div>
+  );
+}
+
+/** A customer's balance in words: «عليه» what they owe (red), «له» what the store owes them (green), or nothing. */
+function BalanceTag({ balance }: { balance: number }) {
+  if (balance > 0.004) return <span className="tabular shrink-0 font-semibold text-danger">عليه {formatMoney(balance)}</span>;
+  if (balance < -0.004) return <span className="tabular shrink-0 font-semibold text-success">له {formatMoney(-balance)}</span>;
+  return <span className="tabular shrink-0 text-muted">{formatMoney(0)}</span>;
+}
+
+/**
+ * A customer not yet registered, added from the voucher: name and phone. A phone already registered brings that customer's
+ * name and offers to pick them instead of adding a second one.
+ */
+function NewCustomerInline({ onCreated }: { onCreated: (c: CustomerListItem) => void }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [known, setKnown] = useState<CustomerListItem | null>(null);
+  const [error, setError] = useState<string>();
+  const typed = useDebouncedValue(phone.replace(/\D/g, ''), 300);
+  useEffect(() => {
+    setKnown(null);
+    if (typed.length < 9) return;
+    let stale = false;
+    const same = (p: string | null | undefined) => !!p && p.replace(/\D/g, '').replace(/^0+/, '') === typed.replace(/^0+/, '');
+    customersApi.list({ search: typed, pageSize: 10, isActive: true })
+      .then((r) => {
+        const match = r.items.find((c) => !c.isWalkIn && same(c.phone));
+        if (stale || !match) return;
+        setKnown(match);
+        setName(match.name);
+      })
+      .catch(() => undefined);
+    return () => { stale = true; };
+  }, [typed]);
+  const save = useMutation({
+    mutationFn: () => customersApi.create({ name: name.trim(), phone: phone.trim() || null, isActive: true }),
+    onSuccess: (c) => {
+      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      onCreated({ id: c.id, code: c.code, name: c.name, phone: c.phone, balance: c.balance, isActive: true, isWalkIn: false });
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <div className="space-y-2 rounded-xl border border-dashed border-line p-3">
+      <p className="text-sm font-medium">أو عميل جديد</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Input aria-label="اسم العميل الجديد" placeholder="الاسم" value={name} onChange={(e) => { setName(e.target.value); setError(undefined); }} />
+        <Input aria-label="جوال العميل الجديد" placeholder="رقم الجوال" type="tel" inputMode="tel" className="ltr" value={phone}
+          onChange={(e) => { setPhone(e.target.value); setError(undefined); }} />
+      </div>
+      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {known ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-green-50 p-2 text-sm text-success">
+          <span>عميل مسجّل بهذا الرقم: <b>{known.name}</b></span>
+          <Button size="sm" variant="secondary" onClick={() => onCreated(known)}>اختياره</Button>
+        </div>
+      ) : (
+        <Button size="sm" variant="secondary" disabled={!name.trim() || !phone.trim()} loading={save.isPending} onClick={() => save.mutate()}>
+          <UserPlus className="size-4" /> حفظ العميل واختياره
+        </Button>
       )}
     </div>
   );

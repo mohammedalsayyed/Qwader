@@ -262,7 +262,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
                   renderItem={(c) => (
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0"><p className="truncate font-semibold">{c.name}</p><p className="ltr text-xs text-muted">{c.phone ?? c.code}</p></div>
-                      {c.balance > 0 && <span className="tabular shrink-0 text-sm text-warning">{formatMoney(c.balance)}</span>}
+                      {c.balance > 0 && <span className="tabular shrink-0 text-sm text-danger">عليه {formatMoney(c.balance)}</span>}
                       {c.balance < 0 && <span className="tabular shrink-0 text-sm text-success">له {formatMoney(-c.balance)}</span>}
                     </div>
                   )}
