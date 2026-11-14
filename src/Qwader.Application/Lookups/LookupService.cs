@@ -8,7 +8,7 @@ namespace Qwader.Application.Lookups;
 
 public sealed record LookupItem(int Id, string Name);
 
-public sealed record AccountLookupItem(int Id, string Name, FinancialAccountType Type);
+public sealed record AccountLookupItem(int Id, string Name, FinancialAccountType Type, Guid? LogoFileId = null);
 
 /// <summary>A unit of measure; <see cref="WholeNumbersOnly"/>: no fractions of it (a piece, a set).</summary>
 public sealed record UnitLookupItem(int Id, string Name, bool WholeNumbersOnly);
@@ -68,5 +68,5 @@ public sealed class LookupService(IAppDbContext db, IAuditService audit) : ILook
         await db.Categories.Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct),
         // Names and types only; account numbers are never part of lookups.
         await db.FinancialAccounts.Where(a => a.IsActive).OrderBy(a => a.Type).ThenBy(a => a.Id)
-            .Select(a => new AccountLookupItem(a.Id, a.Name, a.Type)).ToListAsync(ct));
+            .Select(a => new AccountLookupItem(a.Id, a.Name, a.Type, a.LogoFileId)).ToListAsync(ct));
 }

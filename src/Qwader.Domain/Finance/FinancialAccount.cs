@@ -16,6 +16,8 @@ public class FinancialAccount : AuditableEntity
     public string? ProviderName { get; set; }
     public string? HolderName { get; set; }
     public string? AccountNumber { get; set; }
+    /// <summary>Its logo (an uploaded image), shown on the account's buttons at the till and in vouchers.</summary>
+    public Guid? LogoFileId { get; set; }
     public decimal OpeningBalance { get; set; }
 
     /// <summary>Cached: OpeningBalance + Σ transactions. Only ever changed by the ledger service inside a transaction.</summary>

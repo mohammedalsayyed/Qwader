@@ -63,7 +63,7 @@ async function downscale(file: File, maxSide = 1280): Promise<Blob> {
 }
 
 /** Product photo from the camera or the gallery. */
-export function ImagePicker({ value, onChange }: { value: string | null; onChange: (fileId: string | null) => void }) {
+export function ImagePicker({ value, onChange, purpose = 'ProductImage' }: { value: string | null; onChange: (fileId: string | null) => void; purpose?: 'ProductImage' | 'AccountLogo' }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -74,7 +74,7 @@ export function ImagePicker({ value, onChange }: { value: string | null; onChang
     setUploading(true);
     try {
       const blob = await downscale(file);
-      const uploaded = await filesApi.upload(blob, file.name.replace(/\.\w+$/, '') + '.jpg', 'ProductImage');
+      const uploaded = await filesApi.upload(blob, file.name.replace(/\.\w+$/, '') + '.jpg', purpose);
       onChange(uploaded.id);
     } catch (e) {
       toast.error(errorMessage(e));

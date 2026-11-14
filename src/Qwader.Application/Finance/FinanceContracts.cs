@@ -9,9 +9,10 @@ namespace Qwader.Application.Finance;
 public sealed record AccountDto(
     int Id, string Name, FinancialAccountType Type, string? ProviderName, string? HolderName,
     /// <summary>Masked («•••• 1234») unless the caller may view account numbers.</summary>
-    string? AccountNumber, decimal OpeningBalance, decimal CurrentBalance, bool IsActive, decimal PendingTransfers);
+    string? AccountNumber, decimal OpeningBalance, decimal CurrentBalance, bool IsActive, decimal PendingTransfers, Guid? LogoFileId = null);
 
-public sealed record SaveAccountRequest(string Name, FinancialAccountType Type, string? ProviderName, string? HolderName, string? AccountNumber, bool IsActive = true);
+public sealed record SaveAccountRequest(string Name, FinancialAccountType Type, string? ProviderName, string? HolderName, string? AccountNumber, bool IsActive = true,
+    Guid? LogoFileId = null);
 
 /// <summary>Sets the account's opening balance; the difference is posted as a documented «رصيد افتتاحي» movement.
 /// Required: a request without it never zeroes the balance.</summary>

@@ -18,6 +18,7 @@ import { useDebouncedValue, useUnsavedChangesWarning } from '@/lib/hooks';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import { queueSale, searchCustomers, useOfflineState } from '@/lib/offline';
 import { lineTotal, type Cart } from './cart';
+import { AccountLogo } from '@/components/finance/FinanceBits';
 
 type CustomerMode = 'walkin' | 'customer';
 interface PaymentRow {
@@ -322,9 +323,10 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
               <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="الحساب المستلم">
                 {accounts.map((a) => (
                   <button key={a.id} type="button" role="radio" aria-checked={fullAccount === String(a.id)} onClick={() => setFullAccount(String(a.id))}
-                    className={cn('min-h-12 rounded-xl border px-2 text-sm font-semibold leading-tight',
+                    className={cn('flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-sm font-semibold leading-tight',
                       fullAccount === String(a.id) ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-line')}>
-                    {a.name}
+                    <AccountLogo fileId={a.logoFileId} type={a.type} size="sm" />
+                    <span>{a.name}</span>
                   </button>
                 ))}
               </div>

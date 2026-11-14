@@ -114,7 +114,8 @@ export interface Lookups {
   warehouses: LookupItem[];
   expenseCategories: LookupItem[];
   categories: LookupItem[];
-  accounts: (LookupItem & { type: AccountType })[];
+  /** logoFileId: the account's logo, shown on its buttons. */
+  accounts: (LookupItem & { type: AccountType; logoFileId?: string | null })[];
 }
 
 export const settingsApi = {

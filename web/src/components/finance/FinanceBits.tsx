@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, FileText, ImagePlus, Loader2, Paperclip, Trash2 } from 'lucide-react';
+import { Banknote, Camera, FileText, ImagePlus, Landmark, Loader2, Paperclip, Smartphone, Trash2 } from 'lucide-react';
 import { filesApi, type FilePurpose } from '@/api/catalog';
 import { useQuery } from '@tanstack/react-query';
 import { accountsApi, fetchPrivateFile } from '@/api/finance';
@@ -12,6 +12,18 @@ import { errorMessage } from '@/lib/forms';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { amountInWords } from '@/lib/tafqeet';
 
+const ACCOUNT_ICON = { Cash: Banknote, Bank: Landmark, Wallet: Smartphone } as const;
+
+/** An account's logo (uploaded in the account's settings), or its type's icon (cash, bank, wallet) when it has none. */
+export function AccountLogo({ fileId, type, size = 'md' }: { fileId?: string | null; type: AccountType; size?: 'sm' | 'md' | 'lg' }) {
+  const [failed, setFailed] = useState(false);
+  const box = size === 'lg' ? 'size-11' : size === 'sm' ? 'size-6' : 'size-8';
+  const Icon = ACCOUNT_ICON[type];
+  if (!fileId || failed)
+    return <span className={cn('flex shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700', box)}><Icon className={size === 'sm' ? 'size-3.5' : 'size-5'} /></span>;
+  return <img src={filesApi.url(fileId)} alt="" loading="lazy" onError={() => setFailed(true)} className={cn('shrink-0 rounded-lg bg-white object-contain', box)} />;
+}
+
 export function AccountChips({
   accounts,
   value,
@@ -19,7 +31,7 @@ export function AccountChips({
   label = 'الحساب',
   error,
 }: {
-  accounts: { id: number; name: string; type: AccountType }[];
+  accounts: { id: number; name: string; type: AccountType; logoFileId?: string | null }[];
   value: number | null;
   onChange: (id: number) => void;
   label?: string;
@@ -42,7 +54,7 @@ export function AccountChips({
           <button key={a.id} type="button" role="radio" aria-checked={value === a.id} onClick={() => onChange(a.id)}
             className={cn('min-h-12 rounded-xl border px-2 text-sm font-semibold leading-tight',
               value === a.id ? 'border-brand-700 bg-brand-50 text-brand-800' : error ? 'border-danger' : 'border-line')}>
-            <span className="block">{a.name}</span>
+            <span className="flex items-center justify-center gap-1.5"><AccountLogo fileId={a.logoFileId} type={a.type} size="sm" /><span>{a.name}</span></span>
             {balanceOf(a.id) !== undefined && (
               <span className={cn('tabular mt-0.5 block text-xs font-normal', balanceOf(a.id)! <= 0 ? 'text-danger' : 'text-muted')}>{formatMoney(balanceOf(a.id)!)}</span>
             )}

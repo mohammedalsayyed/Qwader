@@ -161,3 +161,34 @@ public sealed class CentApartTests(ApiFactory factory)
         sale.Remaining.Should().Be(0);
     }
 }
+
+/// <summary>An account's logo: uploaded, set on the account, listed with it, and shown to the till.</summary>
+[Collection(ApiCollection.Name)]
+public sealed class AccountLogoTests(ApiFactory factory)
+{
+    private sealed record Uploaded(Guid Id, string Url);
+
+    [Fact]
+    public async Task An_account_takes_a_logo_that_the_lists_carry_and_anyone_at_the_till_can_load()
+    {
+        var admin = await factory.LoginAsync();
+        byte[] png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52];
+        var logo = await (await admin.PostAsync("/api/files?purpose=AccountLogo",
+            new MultipartFormDataContent { { new ByteArrayContent(png), "file", "palpay.png" } })).ReadAsync<Uploaded>();
+
+        var account = await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new SaveAccountRequest(TestData.Unique("بال بي"), FinancialAccountType.Wallet, null, null, null, true, logo.Id))).ReadAsync<AccountDto>();
+        account.LogoFileId.Should().Be(logo.Id);
+        (await admin.LookupsAsync()).Accounts.Single(a => a.Id == account.Id).LogoFileId.Should().Be(logo.Id);
+        (await factory.CreateClient().GetAsync(logo.Url)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Not just any file: a transfer proof cannot be an account's logo.
+        var proof = await (await admin.PostAsync("/api/files?purpose=TransferProof",
+            new MultipartFormDataContent { { new ByteArrayContent(png), "file", "proof.png" } })).ReadAsync<Uploaded>();
+        (await admin.PutAsJsonAsync($"/api/financial-accounts/{account.Id}",
+            new SaveAccountRequest(account.Name, FinancialAccountType.Wallet, null, null, null, true, proof.Id))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // And it can be removed.
+        (await (await admin.PutAsJsonAsync($"/api/financial-accounts/{account.Id}",
+            new SaveAccountRequest(account.Name, FinancialAccountType.Wallet, null, null, null, true, null))).ReadAsync<AccountDto>()).LogoFileId.Should().BeNull();
+    }
+}

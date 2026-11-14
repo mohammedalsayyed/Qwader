@@ -18,6 +18,8 @@ import { errorMessage } from '@/lib/forms';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber } from '@/lib/numbers';
+import { AccountLogo } from '@/components/finance/FinanceBits';
+import { ImagePicker } from '@/components/catalog/CatalogBits';
 
 const TYPE_LABEL: Record<AccountType, string> = { Cash: 'نقدي', Bank: 'بنك', Wallet: 'محفظة' };
 const TYPE_ICON = { Cash: Banknote, Bank: Landmark, Wallet: Smartphone } as const;
@@ -59,7 +61,8 @@ export function AccountsPage() {
           return (
             <li key={a.id}>
               <Link to={`/accounts/${a.id}`} className={cn('flex items-center gap-3 rounded-card border border-line bg-surface p-4 hover:border-brand-200', !a.isActive && 'opacity-60')}>
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="size-5" /></span>
+                {a.logoFileId ? <AccountLogo fileId={a.logoFileId} type={a.type} size="lg" />
+                  : <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="size-5" /></span>}
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 font-semibold"><span className="truncate">{a.name}</span>{!a.isActive && <Badge tone="danger">معطّل</Badge>}</p>
                   <p className="text-xs text-muted">{TYPE_LABEL[a.type]}{a.accountNumber && <> · <span className="ltr inline-block">{a.accountNumber}</span></>}</p>
@@ -87,11 +90,12 @@ function AccountSheet({ account, onClose }: { account: Account | null; onClose: 
   const [holder, setHolder] = useState(account?.holderName ?? '');
   const [number, setNumber] = useState(account?.accountNumber ?? '');
   const [active, setActive] = useState(account?.isActive ?? true);
+  const [logo, setLogo] = useState<string | null>(account?.logoFileId ?? null);
   const [error, setError] = useState<string>();
 
   const save = useMutation({
     mutationFn: () => {
-      const input = { name: name.trim(), type, providerName: provider.trim() || null, holderName: holder.trim() || null, accountNumber: number.trim() || null, isActive: active };
+      const input = { name: name.trim(), type, providerName: provider.trim() || null, holderName: holder.trim() || null, accountNumber: number.trim() || null, isActive: active, logoFileId: logo };
       return account ? accountsApi.update(account.id, input) : accountsApi.create(input);
     },
     onSuccess: () => { invalidateMoney(queryClient); toast.success('تم حفظ الحساب'); onClose(); },
@@ -113,6 +117,10 @@ function AccountSheet({ account, onClose }: { account: Account | null; onClose: 
             </Select>
           )}
         </Field>
+        <div>
+          <p className="mb-2 text-sm font-medium">لوقو الحساب <span className="font-normal text-muted">(يظهر على زر الحساب عند البيع وفي السندات)</span></p>
+          <ImagePicker value={logo} onChange={setLogo} purpose="AccountLogo" />
+        </div>
         <Field label="البنك أو مزود الخدمة">{(id) => <Input id={id} value={provider} onChange={(e) => setProvider(e.target.value)} />}</Field>
         <Field label="اسم صاحب الحساب">{(id) => <Input id={id} value={holder} onChange={(e) => setHolder(e.target.value)} />}</Field>
         <Field label="رقم الحساب / المحفظة">{(id) => <Input id={id} className="ltr" value={number} onChange={(e) => setNumber(e.target.value)} />}</Field>

@@ -34,6 +34,7 @@ public sealed class FilesController(IFileStorage storage, IAppDbContext db, ICur
     private static readonly Dictionary<FilePurpose, string[]> UploadPermissions = new()
     {
         [FilePurpose.ProductImage] = [Permissions.ProductsManage],
+        [FilePurpose.AccountLogo] = [Permissions.AccountsManage],
         [FilePurpose.TransferProof] = [Permissions.TransfersCreate],
         [FilePurpose.VoucherAttachment] = [Permissions.VouchersCreate],
         [FilePurpose.ExpenseAttachment] = [Permissions.ExpensesManage],
@@ -62,13 +63,15 @@ public sealed class FilesController(IFileStorage storage, IAppDbContext db, ICur
     {
         var opened = await storage.OpenAsync(id, ct);
         if (opened is not { } found) return NotFound();
-        if (found.File.Purpose != FilePurpose.ProductImage && User.Identity?.IsAuthenticated != true)
+        // Product photos and account logos are shown to everyone at the till (and kept by the browser); other files are private.
+        var shown = found.File.Purpose is FilePurpose.ProductImage or FilePurpose.AccountLogo;
+        if (!shown && User.Identity?.IsAuthenticated != true)
         {
             await found.Content.DisposeAsync();
             return Unauthorized();
         }
 
-        Response.Headers.CacheControl = found.File.Purpose == FilePurpose.ProductImage ? "public, max-age=31536000, immutable" : "private, no-store";
+        Response.Headers.CacheControl = shown ? "public, max-age=31536000, immutable" : "private, no-store";
         Response.Headers.XContentTypeOptions = "nosniff";
         return File(found.Content, found.File.ContentType);
     }

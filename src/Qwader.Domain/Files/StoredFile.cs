@@ -6,6 +6,8 @@ public enum FilePurpose
     TransferProof = 2,
     VoucherAttachment = 3,
     ExpenseAttachment = 4,
+    /// <summary>A financial account's logo (the wallet's, the bank's), shown on its payment buttons.</summary>
+    AccountLogo = 5,
 }
 
 /// <summary>Metadata of an uploaded file. The bytes live outside wwwroot under a random name.</summary>

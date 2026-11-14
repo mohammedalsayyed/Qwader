@@ -12,6 +12,7 @@ export interface Account {
   currentBalance: number;
   isActive: boolean;
   pendingTransfers: number;
+  logoFileId?: string | null;
 }
 
 export interface SaveAccountInput {
@@ -21,6 +22,8 @@ export interface SaveAccountInput {
   holderName?: string | null;
   accountNumber?: string | null;
   isActive: boolean;
+  /** The account's logo (an uploaded «AccountLogo» image); null removes it. */
+  logoFileId?: string | null;
 }
 
 export interface AccountMovement {

@@ -58,6 +58,7 @@ public sealed class AccountService(
     public async Task<AccountDto> CreateAsync(SaveAccountRequest request, CancellationToken ct = default)
     {
         var account = new FinancialAccount();
+        await EnsureLogoAsync(request.LogoFileId, ct);
         Apply(account, request);
         await EnsureUniqueNameAsync(account, ct);
         db.FinancialAccounts.Add(account);
@@ -82,6 +83,7 @@ public sealed class AccountService(
         // Users without the numbers permission see a masked value; sending it back must not overwrite the real number.
         var keepNumber = !CanSeeNumbers || request.AccountNumber == Mask(account.AccountNumber);
         var storedNumber = account.AccountNumber;
+        await EnsureLogoAsync(request.LogoFileId, ct);
         Apply(account, request);
         if (keepNumber) account.AccountNumber = storedNumber;
         await EnsureUniqueNameAsync(account, ct);
@@ -230,6 +232,14 @@ public sealed class AccountService(
         account.HolderName = string.IsNullOrWhiteSpace(r.HolderName) ? null : r.HolderName.Trim();
         account.AccountNumber = string.IsNullOrWhiteSpace(r.AccountNumber) ? null : r.AccountNumber.Trim();
         account.IsActive = r.IsActive;
+        account.LogoFileId = r.LogoFileId;
+    }
+
+    /// <summary>The logo must be an uploaded account logo (not some other file of the store).</summary>
+    private async Task EnsureLogoAsync(Guid? fileId, CancellationToken ct)
+    {
+        if (fileId is { } id && !await db.StoredFiles.AnyAsync(f => f.Id == id && f.Purpose == Domain.Files.FilePurpose.AccountLogo, ct))
+            throw new ValidationFailedException("logoFileId", "الصورة غير موجودة، أعد رفعها");
     }
 
     private async Task EnsureUniqueNameAsync(FinancialAccount account, CancellationToken ct)
@@ -240,5 +250,5 @@ public sealed class AccountService(
 
     private static AccountDto ToDto(FinancialAccount a, decimal pending, bool showNumbers) =>
         new(a.Id, a.Name, a.Type, a.ProviderName, a.HolderName, showNumbers ? a.AccountNumber : Mask(a.AccountNumber),
-            a.OpeningBalance, a.CurrentBalance, a.IsActive, pending);
+            a.OpeningBalance, a.CurrentBalance, a.IsActive, pending, a.LogoFileId);
 }

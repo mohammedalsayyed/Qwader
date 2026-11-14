@@ -194,7 +194,7 @@ export const productsApi = {
   },
 };
 
-export type FilePurpose = 'ProductImage' | 'TransferProof' | 'VoucherAttachment' | 'ExpenseAttachment';
+export type FilePurpose = 'ProductImage' | 'TransferProof' | 'VoucherAttachment' | 'ExpenseAttachment' | 'AccountLogo';
 
 export const filesApi = {
   upload: (file: Blob, name: string, purpose: FilePurpose) => {
