@@ -27,12 +27,17 @@ public interface ISupplierLedger
 
 public sealed class AccountLedger(IAppDbContext db, ICurrentUser currentUser) : IAccountLedger
 {
+    /// <summary>The largest single amount of money accepted: far above any real document, it stops a typo of extra zeros.</summary>
+    public const decimal MaxAmount = 100_000_000m;
+
     public async Task<decimal> PostAsync(int accountId, MoneyDirection direction, decimal amount, AccountTransactionCategory category,
         LedgerSource source, DateTime date, CancellationToken ct = default, bool requireFunds = false)
     {
         if (db.Database.CurrentTransaction is null)
             throw new InvalidOperationException("Account postings must run inside a database transaction.");
         if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
+        if (amount != Math.Round(amount, 2)) throw new BusinessRuleException($"المبلغ ({amount}) يُكتب بمنزلتين عشريتين على الأكثر (قروش)");
+        if (amount > MaxAmount) throw new BusinessRuleException($"المبلغ أكبر من الحد المسموح ({MaxAmount:#,0} ₪)؛ تأكد من الرقم");
 
         var delta = direction == MoneyDirection.In ? amount : -amount;
 

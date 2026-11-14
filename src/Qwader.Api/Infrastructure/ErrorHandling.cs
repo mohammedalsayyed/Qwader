@@ -54,15 +54,29 @@ public static class ProblemWriter
     }
 }
 
-/// <summary>Runs the FluentValidation validator for every action argument that has one.</summary>
+/// <summary>
+/// Runs the FluentValidation validator for every action argument that has one, and refuses a date range whose end is
+/// before its start (a «from»/«to» pair, as query values or on a filter object) instead of answering with an empty list.
+/// </summary>
 public sealed class ValidationFilter(IServiceProvider services) : IAsyncActionFilter
 {
+    private static void CheckRange(object? from, object? to)
+    {
+        if (from is DateOnly f && to is DateOnly t && t < f)
+            throw new ValidationFailedException("to", "تاريخ النهاية قبل تاريخ البداية");
+    }
+
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        foreach (var argument in context.ActionArguments.Values)
+        var args = context.ActionArguments;
+        CheckRange(args.TryGetValue("from", out var from) ? from : null, args.TryGetValue("to", out var to) ? to : null);
+        foreach (var argument in args.Values)
         {
             if (argument is null) continue;
-            var validatorType = typeof(IValidator<>).MakeGenericType(argument.GetType());
+            var type = argument.GetType();
+            if (type.GetProperty("From")?.PropertyType == typeof(DateOnly?) && type.GetProperty("To")?.PropertyType == typeof(DateOnly?))
+                CheckRange(type.GetProperty("From")!.GetValue(argument), type.GetProperty("To")!.GetValue(argument));
+            var validatorType = typeof(IValidator<>).MakeGenericType(type);
             if (services.GetService(validatorType) is not IValidator validator) continue;
 
             var result = await validator.ValidateAsync(new ValidationContext<object>(argument), context.HttpContext.RequestAborted);

@@ -141,6 +141,8 @@ export interface ProductListParams {
   archived?: boolean;
   /** Only products with no purchase price entered (needs cost permission). */
   noCost?: boolean;
+  /** Only products whose average cost is above their retail price (needs cost permission). */
+  costAbovePrice?: boolean;
   /** Retail (piece) price range, inclusive. */
   priceFrom?: number;
   priceTo?: number;

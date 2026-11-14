@@ -28,6 +28,10 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 
+// Validation messages a rule does not word itself (empty, out of range…) come in Arabic, with Arabic field names.
+FluentValidation.ValidatorOptions.Global.LanguageManager.Culture = new System.Globalization.CultureInfo("ar");
+FluentValidation.ValidatorOptions.Global.DisplayNameResolver = (_, member, _) => member is null ? null
+    : Qwader.Api.Infrastructure.FieldNames.Arabic.GetValueOrDefault(member.Name, "هذا الحقل");
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>())
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 

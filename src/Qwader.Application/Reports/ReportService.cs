@@ -12,7 +12,8 @@ namespace Qwader.Application.Reports;
 
 public sealed record NamedAmount(string Name, decimal Amount);
 
-public sealed record AccountBalanceDto(int AccountId, string Name, decimal In, decimal Out, decimal ClosingBalance);
+/// <summary>One account over the period: OpeningBalance + In − Out = ClosingBalance, always.</summary>
+public sealed record AccountBalanceDto(int AccountId, string Name, decimal In, decimal Out, decimal ClosingBalance, decimal OpeningBalance = 0);
 
 /// <summary>
 /// One period, every figure. Fields the caller may not see are null:
@@ -191,12 +192,17 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             collections = flows.Where(f => f.Category == AccountTransactionCategory.DebtCollection && f.Direction == MoneyDirection.In).Sum(f => f.Amount);
             newDebt = (s?.Net ?? 0) - (s?.Paid ?? 0);
 
-            // Per account: money in/out during the period (all movements) and the balance at the end of the period.
-            // In and out over the period, like the cash flow above: a voided document and its reversal are left out.
-            // The closing balance counts every movement, so it always matches the account.
+            // Per account: the balance at the start of the period, money in/out during it (every movement: opening balances,
+            // transfers, advances…) and the balance at its end, so that start + in − out = end. A voided document and its
+            // reversal are left out only when both fall inside the period (they cancel out); one dated before the period is
+            // already in the starting balance, so its reversal inside the period counts as a movement.
+            var inPeriod = db.AccountTransactions.Where(x => x.Date >= start && x.Date < end);
             var moves = await db.AccountTransactions.AsNoTracking()
-                .Where(t => t.Date >= start && t.Date < end && t.Category != AccountTransactionCategory.Reversal
-                    && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
+                .Where(t => t.Date >= start && t.Date < end
+                    && !(t.Category != AccountTransactionCategory.Reversal
+                        && inPeriod.Any(r => r.Category == AccountTransactionCategory.Reversal && r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
+                    && !(t.Category == AccountTransactionCategory.Reversal
+                        && inPeriod.Any(o => o.Category != AccountTransactionCategory.Reversal && o.SourceType == t.SourceType && o.SourceId == t.SourceId && o.FinancialAccountId == t.FinancialAccountId)))
                 .GroupBy(t => t.FinancialAccountId)
                 .Select(g => new
                 {
@@ -220,7 +226,8 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             accounts = accountNames.Select(a =>
             {
                 var p = perAccount.FirstOrDefault(x => x.AccountId == a.Id);
-                return new AccountBalanceDto(a.Id, a.Name, p?.In ?? 0, p?.Out ?? 0, p?.Closing ?? 0);
+                var closing = p?.Closing ?? 0;
+                return new AccountBalanceDto(a.Id, a.Name, p?.In ?? 0, p?.Out ?? 0, closing, closing - (p?.In ?? 0) + (p?.Out ?? 0));
             }).ToList();
 
             var pending = await db.IncomingTransfers.AsNoTracking().Where(t => t.Status == TransferStatus.Pending)
@@ -256,10 +263,16 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             ? (await db.Expenses.AsNoTracking().Where(e => e.Date >= start && e.Date < end && e.Status == VoucherStatus.Posted).Select(e => new { e.Date, e.Amount }).ToListAsync(ct))
                 .Concat(await SettledAdvancesQuery(start, end).Select(s => new { s.Date, Amount = s.AdvanceExpense }).ToListAsync(ct)).ToList()
             : [];
+        // Money received: sales, collections and other income, less refunds on returns. A voided document and its reversing
+        // entry cancel out (as on the home screen and in the cash flow): a receipt voided later is not money received.
+        var reversalEntries = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
         var received = Financial
-            ? await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end && t.Direction == MoneyDirection.In
-                    && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection || t.Category == AccountTransactionCategory.OtherIncome))
-                .Select(t => new { t.Date, t.Amount }).ToListAsync(ct)
+            ? await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end
+                    && ((t.Direction == MoneyDirection.In && (t.Category == AccountTransactionCategory.SaleReceipt
+                            || t.Category == AccountTransactionCategory.DebtCollection || t.Category == AccountTransactionCategory.OtherIncome))
+                        || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund))
+                    && !reversalEntries.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
+                .Select(t => new { t.Date, Amount = t.Direction == MoneyDirection.In ? t.Amount : -t.Amount }).ToListAsync(ct)
             : [];
 
         DateOnly Day(DateTime utc) => DateOnly.FromDateTime(clock.ToLocal(utc));
@@ -285,7 +298,9 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
     {
         var sold = await db.SaleInvoiceLines.AsNoTracking()
             .Where(l => l.SaleInvoice.Date >= start && l.SaleInvoice.Date < end && l.SaleInvoice.Status != SaleStatus.Voided)
-            .Select(l => new { l.ProductId, l.Product.CategoryId, l.SaleInvoice.SalespersonId, Quantity = l.Quantity * l.UnitFactor, l.NetTotal, Cost = l.Quantity * l.UnitCost, l.SaleInvoiceId })
+            .Select(l => new { l.ProductId, l.Product.CategoryId, l.SaleInvoice.SalespersonId, Quantity = l.Quantity * l.UnitFactor, l.NetTotal, Cost = l.Quantity * l.UnitCost,
+                // A fully returned invoice sold nothing in the end: it is not counted as an invoice.
+                SaleInvoiceId = l.SaleInvoice.Status == SaleStatus.Returned ? 0 : l.SaleInvoiceId })
             .ToListAsync(ct);
         var returned = await db.SaleReturnLines.AsNoTracking()
             .Where(l => l.SaleReturn.Date >= start && l.SaleReturn.Date < end)

@@ -208,7 +208,8 @@ export function useCart() {
     [],
   );
 
-  const reset = useCallback(() => setCart((c) => newCart(c.tier)), []);
+  // A finished sale's price type is not carried to the next customer: every new invoice starts at retail («مفرق»).
+  const reset = useCallback(() => setCart(() => newCart()), []);
 
   return { cart, add, update, remove, changeUnit, setTier, reset };
 }

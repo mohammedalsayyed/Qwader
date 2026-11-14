@@ -112,6 +112,8 @@ public sealed class IdempotencyService(AppDbContext db, ICurrentUser currentUser
 {
     public async Task<IdempotencyRecord?> FindAsync(Guid key, string operation, CancellationToken ct = default)
     {
+        // Without a key the first call would be recorded under the empty key and every later one taken for a repeat.
+        if (key == Guid.Empty) throw new ValidationFailedException("idempotencyKey", "مفتاح العملية مطلوب؛ أعد تحميل الصفحة وحاول مجددًا");
         var record = await db.IdempotencyRecords.AsNoTracking().FirstOrDefaultAsync(r => r.Key == key, ct);
         if (record is not null && (record.Operation != operation || record.UserId != currentUser.UserId))
             throw new ConflictException("مفتاح العملية مستخدم لعملية أخرى، أعد تحميل الصفحة وحاول مجددًا");

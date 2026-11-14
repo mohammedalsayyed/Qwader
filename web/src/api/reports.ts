@@ -30,7 +30,8 @@ export interface PeriodReport {
   netCashFlow: number | null;
   inByCategory: NamedAmount[] | null;
   outByCategory: NamedAmount[] | null;
-  accounts: { accountId: number; name: string; in: number; out: number; closingBalance: number }[] | null;
+  /** openingBalance + in − out = closingBalance. */
+  accounts: { accountId: number; name: string; in: number; out: number; closingBalance: number; openingBalance: number }[] | null;
   newDebt: number | null;
   collections: number | null;
   pendingTransferCount: number;

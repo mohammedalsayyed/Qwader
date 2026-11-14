@@ -19,7 +19,7 @@ import { formatMoney } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { useLookups } from '@/lib/queries';
 
-type Filter = StockFilter | 'Archived' | 'NoCost';
+type Filter = StockFilter | 'Archived' | 'NoCost' | 'CostAbovePrice';
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'All', label: 'الكل' },
   { value: 'Available', label: 'متوفر' },
@@ -29,6 +29,8 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 /** Products whose purchase price was never entered: their profit and stock value read as zero until it is. */
 const NO_COST: { value: Filter; label: string } = { value: 'NoCost', label: 'بدون سعر شراء' };
+/** Products sold at a loss at their own price: usually a cost typed wrong (fix it with «تصحيح التكلفة»). */
+const COST_ABOVE: { value: Filter; label: string } = { value: 'CostAbovePrice', label: 'تكلفة أعلى من السعر' };
 
 const SORTS: { value: ProductSort; label: string }[] = [
   { value: 'Newest', label: 'الأحدث أولًا' },
@@ -107,9 +109,10 @@ export function ProductsPage() {
     priceFrom,
     priceTo,
     sort: sort === 'Newest' ? undefined : sort,
-    stock: filter === 'Archived' || filter === 'NoCost' ? undefined : filter,
+    stock: filter === 'Archived' || filter === 'NoCost' || filter === 'CostAbovePrice' ? undefined : filter,
     archived: filter === 'Archived',
     noCost: filter === 'NoCost' || undefined,
+    costAbovePrice: filter === 'CostAbovePrice' || undefined,
   };
 
   const query = useQuery({
@@ -185,7 +188,7 @@ export function ProductsPage() {
         )}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
-            <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST] : FILTERS} />
+            <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST, COST_ABOVE] : FILTERS} />
           </div>
           <div className="sm:w-64">
             <CategoryPicker

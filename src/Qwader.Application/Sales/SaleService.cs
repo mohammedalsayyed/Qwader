@@ -252,6 +252,18 @@ public sealed class SaleService(
         db.SaleInvoices.Add(invoice);
         await db.SaveChangesAsync(ct);
 
+        // A product on several lines (a piece and a dozen, or typed twice): one clear message for the whole quantity, instead of
+        // the second line reading «available 0» after the first took the stock.
+        if (!offline)
+            foreach (var g in invoice.Lines.GroupBy(l => l.ProductId).Where(g => g.Count() > 1))
+            {
+                var wanted = g.Sum(l => l.Quantity * l.UnitFactor);
+                var onHand = await db.StockBalances.Where(b => b.ProductId == g.Key && b.WarehouseId == invoice.WarehouseId)
+                    .Select(b => (decimal?)b.Quantity).FirstOrDefaultAsync(ct) ?? 0;
+                if (wanted > onHand)
+                    throw new BusinessRuleException($"«{g.First().ProductName}» في {g.Count()} بنود: المطلوب {wanted:0.###} والمتوفر {onHand:0.###}");
+            }
+
         // ---- stock: ascending product order keeps lock order consistent between concurrent sales
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId).ThenBy(l => l.Id))
         {
@@ -629,8 +641,9 @@ public sealed class SaleService(
             await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.SaleVoid,
                 "SaleInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة بيع", now), line.UnitCost / line.UnitFactor, ct);
 
+        // The money must still be in the account it was paid into: an account never goes below zero.
         foreach (var payment in invoice.Payments)
-            await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, moneySource, now, ct);
+            await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, moneySource, now, ct, requireFunds: true);
 
         if (!invoice.Customer.IsWalkIn)
         {

@@ -54,6 +54,8 @@ public sealed class ProductListRequest : PagedRequest
     public bool Archived { get; set; }
     /// <summary>Only products whose purchase price was never entered (purchase price and average cost both 0). Needs cost permission.</summary>
     public bool NoCost { get; set; }
+    /// <summary>Only products whose average cost is above their retail price (sold at a loss: usually a wrong cost). Needs cost permission.</summary>
+    public bool CostAbovePrice { get; set; }
     /// <summary>Retail (piece) price range, inclusive.</summary>
     public decimal? PriceFrom { get; set; }
     public decimal? PriceTo { get; set; }

@@ -63,7 +63,10 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
             .Select(a => new { a.Id, a.Name, a.CurrentBalance, Computed = sums.GetValueOrDefault(a.Id) }).ToList();
         return Check("أرصدة الحسابات المالية", "رصيد كل حساب (الصندوق، البنك، المحافظ) = مجموع ما دخله − مجموع ما خرج منه",
             rows.Count, rows.Where(r => Math.Abs(r.CurrentBalance - r.Computed) > Money)
-                .Select(r => new IntegrityIssue(r.Name, r.CurrentBalance, r.Computed, $"/accounts/{r.Id}")));
+                .Select(r => new IntegrityIssue(r.Name, r.CurrentBalance, r.Computed, $"/accounts/{r.Id}"))
+                // Money cannot be below nothing: a negative account means money left that was never there.
+                .Concat(rows.Where(r => r.CurrentBalance < -Money)
+                    .Select(r => new IntegrityIssue($"{r.Name}: الرصيد بالسالب", r.CurrentBalance, 0, $"/accounts/{r.Id}"))));
     }
 
     private async Task<IntegrityCheck> CustomersAsync(CancellationToken ct)
@@ -145,8 +148,10 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
             if (Math.Abs(s.Total - s.Lines) > Money) issues.Add(new($"{s.Number}: الإجمالي = مجموع البنود", s.Total, s.Lines, link));
             if (Math.Abs(s.PaidAmount - s.Payments) > Money) issues.Add(new($"{s.Number}: المدفوع عند البيع = مجموع الدفعات", s.PaidAmount, s.Payments, link));
             if (Math.Abs(s.CollectedAmount - s.Allocated) > Money) issues.Add(new($"{s.Number}: المحصّل لاحقًا = مجموع السندات", s.CollectedAmount, s.Allocated, link));
-            if (s.Status != SaleStatus.Voided && s.PaidAmount + s.CollectedAmount + s.ReturnedOnBalance > s.Total + Money)
-                issues.Add(new($"{s.Number}: المدفوع والمحصّل والمرتجع أكبر من الإجمالي", s.PaidAmount + s.CollectedAmount + s.ReturnedOnBalance, s.Total, link));
+            // Paid at the till and collected later never exceed the total. A return credited to the balance of a paid invoice
+            // is not an overpayment: it leaves the customer a credit.
+            if (s.Status != SaleStatus.Voided && s.PaidAmount + s.CollectedAmount > s.Total + Money)
+                issues.Add(new($"{s.Number}: المدفوع والمحصّل أكبر من الإجمالي", s.PaidAmount + s.CollectedAmount, s.Total, link));
         }
         return Check("فواتير البيع", "إجمالي كل فاتورة = بنودها، والمدفوع = دفعاتها، والمحصّل لاحقًا = سنداتها، ولا يتجاوز المدفوع الإجمالي",
             rows.Count, issues);

@@ -52,7 +52,7 @@ export function validateUnitRows(rows: UnitRow[], baseUnitId: number): { rows: U
  * «يُباع أيضًا بـ»: the same product sold (and bought) in a bigger unit — a dozen of 12 pieces. Stock stays in the base unit;
  * the dozen's price is typed, with a suggestion of 12 × the piece's price.
  */
-export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, baseWholesale, baseCost, disabled }: {
+export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, baseWholesale, baseCost, baseMin = 0, disabled }: {
   rows: UnitRow[];
   onChange: (rows: UnitRow[]) => void;
   baseUnitId: number;
@@ -60,6 +60,8 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
   baseWholesale: number;
   /** Cost of one base unit; 0 when unknown or hidden from this user. */
   baseCost: number;
+  /** The piece's minimum sale price (0 = none). */
+  baseMin?: number;
   disabled?: boolean;
 }) {
   const units = useLookups().data?.units ?? [];
@@ -129,6 +131,19 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
                     ? <>سعر {unitName} أقل من تكلفتها بـ <b className="tabular">{formatMoney(-profit)}</b></>
                     : <>الربح: <b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</>}
                 </p>
+              );
+            })()}
+            {(() => {
+              // The piece has a floor but this unit has none: a seller could sell the carton for anything.
+              const typedMin = parseNumber(row.minSalePrice);
+              if (disabled || !(baseMin > 0) || !factor || Number.isNaN(factor) || factor <= 1 || (typedMin != null && !Number.isNaN(typedMin) && typedMin > 0)) return null;
+              const price = parseNumber(row.retailPrice);
+              const floor = round2(Math.min(factor * baseMin, price != null && !Number.isNaN(price) && price > 0 ? price : Infinity));
+              return (
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 p-2 text-sm text-warning">
+                  <span>«أقل سعر» لـ{unitName} فارغ: يمكن بيعها بأي سعر رغم أن للـ{baseName} حدًّا أدنى.</span>
+                  <Button size="sm" variant="secondary" onClick={() => set(i, { minSalePrice: String(floor) })}>استخدم {formatMoney(floor)}</Button>
+                </div>
               );
             })()}
             {suggestRetail != null && !disabled && parseNumber(row.retailPrice) !== suggestRetail && (

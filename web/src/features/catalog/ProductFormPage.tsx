@@ -136,7 +136,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
   const changeUnits = (rows: UnitRow[]) => { setUnitRows(rows); setUnitsTouched(true); };
   useUnsavedChangesWarning(isDirty || unitsTouched);
 
-  const [purchaseRaw, retailRaw, wholesaleRaw, unitIdRaw] = useWatch({ control, name: ['purchasePrice', 'retailPrice', 'wholesalePrice', 'unitId'] });
+  const [purchaseRaw, retailRaw, wholesaleRaw, unitIdRaw, minRaw] = useWatch({ control, name: ['purchasePrice', 'retailPrice', 'wholesalePrice', 'unitId', 'minSalePrice'] });
   const cost = parseNumber(purchaseRaw) || (existing?.averageCost ?? 0);
   const retail = parseNumber(retailRaw) ?? 0;
   const suggested = suggestPrice(cost, margin);
@@ -280,7 +280,8 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
         </Field>
         <ProductUnitsEditor rows={unitRows} onChange={changeUnits} baseUnitId={Number(unitIdRaw) || 0} disabled={!canEditPrices}
           baseCost={canSeeCost || isNew ? cost : 0}
-          baseRetail={parseNumber(retailRaw) ?? 0} baseWholesale={parseNumber(wholesaleRaw) ?? parseNumber(retailRaw) ?? 0} />
+          baseRetail={parseNumber(retailRaw) ?? 0} baseWholesale={parseNumber(wholesaleRaw) ?? parseNumber(retailRaw) ?? 0}
+          baseMin={parseNumber(minRaw) ?? 0} />
       </Card>
 
       <Card className="space-y-4 p-5">

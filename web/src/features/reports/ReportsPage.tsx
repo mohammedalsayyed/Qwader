@@ -139,14 +139,14 @@ export function ReportsPage() {
             </Section>
           )}
           {p.accounts && (
-            <Section title="الحسابات — رصيد نهاية الفترة">
+            <Section title="الحسابات — رصيد بداية الفترة + الداخل − الخارج = رصيد نهايتها">
               <ul className="divide-y divide-line">
                 {p.accounts.map((a) => (
                   <li key={a.accountId}>
                     <Link to={`/accounts/${a.accountId}`} className="flex items-center justify-between gap-3 px-4 py-3">
                       <span className="min-w-0">
                         <span className="block font-medium">{a.name}</span>
-                        <span className="tabular block text-xs text-muted">داخل {formatMoney(a.in)} · خارج {formatMoney(a.out)}</span>
+                        <span className="tabular block text-xs text-muted">بداية {formatMoney(a.openingBalance)} · داخل {formatMoney(a.in)} · خارج {formatMoney(a.out)}</span>
                       </span>
                       <span className={cn('tabular shrink-0 font-bold', a.closingBalance < 0 && 'text-danger')}>{formatMoney(a.closingBalance)}</span>
                     </Link>

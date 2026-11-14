@@ -272,6 +272,12 @@ public sealed class InventoryService(
         else if (request.CategoryId is { } categoryId) products = products.Where(p => p.CategoryId == categoryId);
         var productIds = await products.Select(p => p.Id).ToListAsync(ct);
         if (productIds.Count == 0) throw new BusinessRuleException("لا توجد منتجات مطابقة لإنشاء الجرد");
+        // Two open counts of the same product would each post their own count, the last one undoing the first.
+        var busy = await db.StockCountLines.AsNoTracking()
+            .Where(l => l.StockCount.Status == StockCountStatus.Open && productIds.Contains(l.ProductId))
+            .Select(l => new { l.StockCount.Number, l.Product.Name }).Take(3).ToListAsync(ct);
+        if (busy.Count > 0)
+            throw new BusinessRuleException($"يوجد جرد مفتوح لنفس المنتجات ({busy[0].Number}، مثل «{busy[0].Name}»)؛ اعتمده أو ألغِه أولًا");
         if (productIds.Count > 3000) throw new BusinessRuleException("عدد المنتجات كبير جدًا لجرد واحد؛ اختر صنفًا محددًا");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -297,7 +303,12 @@ public sealed class InventoryService(
         {
             if (entry.CountedQuantity < 0) throw new ValidationFailedException("entries", "الكمية المعدودة لا يمكن أن تكون سالبة");
             var line = count.Lines.FirstOrDefault(l => l.Id == entry.LineId) ?? throw new ValidationFailedException("entries", "بند جرد غير موجود");
+            if (line.CountedQuantity == entry.CountedQuantity) continue;
             line.CountedQuantity = entry.CountedQuantity;
+            // The system's balance at the moment the shelf was counted: sales between counting and posting then still count.
+            line.ExpectedQuantity = entry.CountedQuantity is null ? null
+                : await db.StockBalances.Where(s => s.ProductId == line.ProductId && s.WarehouseId == count.WarehouseId)
+                    .Select(s => (decimal?)s.Quantity).FirstOrDefaultAsync(ct) ?? 0;
         }
         await db.SaveChangesAsync(ct);
         return await GetCountAsync(id, ct);
@@ -312,8 +323,10 @@ public sealed class InventoryService(
 
         foreach (var line in count.Lines.Where(l => l.CountedQuantity is not null).OrderBy(l => l.ProductId))
         {
-            // Expected = the system balance at the moment of posting (sales during the count are already reflected).
-            var expected = await db.StockBalances.Where(s => s.ProductId == line.ProductId && s.WarehouseId == count.WarehouseId)
+            // The difference is the shelf against the system's balance when the line was counted, applied to today's balance:
+            // counted 8 when the system said 8.5, then 1 sold before posting → 7, not 8. (A line counted before this rule
+            // has no recorded balance: the balance now is used.)
+            var expected = line.ExpectedQuantity ?? await db.StockBalances.Where(s => s.ProductId == line.ProductId && s.WarehouseId == count.WarehouseId)
                 .Select(s => (decimal?)s.Quantity).FirstOrDefaultAsync(ct) ?? 0;
             line.ExpectedQuantity = expected;
             var diff = line.CountedQuantity!.Value - expected;

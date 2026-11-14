@@ -45,6 +45,7 @@ public sealed class ProductService(
         if (request.CategoryId is { } categoryId) query = query.Where(p => p.CategoryId == categoryId);
         if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
         if (request.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
+        if (request.CostAbovePrice && canViewCost) query = query.Where(p => p.AverageCost > p.RetailPrice);
         if (request.PriceFrom is { } from) query = query.Where(p => p.RetailPrice >= from);
         if (request.PriceTo is { } to) query = query.Where(p => p.RetailPrice <= to);
         return request.Stock switch

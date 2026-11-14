@@ -214,7 +214,8 @@ public sealed class VoucherService(
 
         var now = clock.UtcNow;
         var source = new LedgerSource("ReceiptVoucher", voucher.Id, voucher.Number, $"إلغاء سند قبض: {request.Reason.Trim()}");
-        await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct);
+        // The money must still be in the account (it may have been moved since): an account never goes below zero.
+        await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct, requireFunds: true);
         if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
             await customers.PostAsync(customerId, CustomerEntryType.Reversal, voucher.Amount, 0, source, now, ct);
         await ReleaseAsync(voucher, ct);
