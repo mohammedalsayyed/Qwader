@@ -22,7 +22,7 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { applyOfflineChanges, findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
 import { formatDateTime } from '@/lib/format';
-import { cartTotals, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine, type HeldCart } from './cart';
+import { cartTotals, floorPrice, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine, type HeldCart } from './cart';
 import { useIsOffline } from './OfflineSales';
 import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
@@ -464,7 +464,9 @@ function PriceRow({ line: l, tier, onEdit, onPick }: { line: CartLine; tier: Pri
   const choices = lowest > 0 && lowest < highest
     ? [{ label: 'الأقل', price: lowest }, { label: 'الأعلى', price: highest }]
     : [];
-  const reduction = round2(l.quantity * (highest - l.unitPrice));
+  // Down to the minimum the price is just changed; only what goes under it is a discount (as the invoice records it).
+  const reduction = round2(l.quantity * Math.max(0, floorPrice(l, tier) - l.unitPrice));
+  const changed = l.unitPrice < highest - 0.004 && reduction <= 0.004;
   return (
     <div className="mt-2">
       <div className="flex items-stretch gap-2">
@@ -492,9 +494,10 @@ function PriceRow({ line: l, tier, onEdit, onPick }: { line: CartLine; tier: Pri
           </div>
         )}
       </div>
-      {(reduction > 0.004 || l.unitPrice > highest + 0.004 || l.lineDiscount > 0) && (
+      {(reduction > 0.004 || changed || l.unitPrice > highest + 0.004 || l.lineDiscount > 0) && (
         <p className="mt-1 flex flex-wrap gap-x-3 text-xs font-semibold text-warning">
-          {reduction > 0.004 && <span>تخفيض {formatMoney(reduction)}</span>}
+          {reduction > 0.004 && <span>خصم تحت أقل سعر {formatMoney(reduction)}</span>}
+          {changed && <span className="text-muted">سعر معدَّل (ليس خصمًا)</span>}
           {l.unitPrice > highest + 0.004 && <span>سعر معدَّل (أعلى من المحدد)</span>}
           {l.lineDiscount > 0 && <span>خصم {formatMoney(l.lineDiscount)}</span>}
         </p>

@@ -133,11 +133,14 @@ public sealed class SaleService(
             if (l.LineDiscount > CostMath.RoundMoney(l.Quantity * l.UnitPrice))
                 throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
             var listPrice = request.PriceTier == PriceTier.Wholesale ? unit.WholesalePrice : unit.RetailPrice;
-            // The lowered amount is the line at the list price less the line at the price charged, each rounded as the till
-            // rounds it: the line's total is exactly quantity × price charged (rounded once), the same number the till shows.
-            // (Rounding the difference on its own could leave the line a cent off with fractional quantities.)
-            var lowered = l.UnitPrice < listPrice ? CostMath.RoundMoney(l.Quantity * listPrice) - CostMath.RoundMoney(l.Quantity * l.UnitPrice) : 0;
-            var unitPrice = lowered > 0 ? listPrice : l.UnitPrice;
+            // The store's rule: down to the minimum sale price a lowered price is the selling price, not a discount (sold at 200
+            // of 220 with a minimum of 200: price 200, no discount). Only what goes under the minimum is a discount — 190 is
+            // the minimum 200 less a 10 discount. No minimum set: a changed price is never a discount.
+            var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(unit.MinSalePrice, unit.WholesalePrice) : unit.MinSalePrice;
+            var floor = Math.Min(minimum, listPrice);
+            var unitPrice = l.UnitPrice < floor ? floor : l.UnitPrice;
+            // Each rounded as the till rounds it, so the line's total is exactly quantity × price charged (rounded once).
+            var lowered = unitPrice > l.UnitPrice ? CostMath.RoundMoney(l.Quantity * unitPrice) - CostMath.RoundMoney(l.Quantity * l.UnitPrice) : 0;
             var gross = CostMath.RoundMoney(l.Quantity * unitPrice);
             typedLineDiscounts += l.LineDiscount;
             return new SaleInvoiceLine

@@ -228,12 +228,12 @@ public sealed class SalesTests(ApiFactory factory)
         var cash = await AccountAsync(seller, "الصندوق النقدي");
 
         // 75 is 25% under the list price, past the 5% limit, yet allowed: only the minimum (70) limits a lowered price.
-        // It is recorded as a discount: the line keeps the price 100 with a 25 discount.
+        // Down to the minimum it is the selling price, not a discount: the line is sold at 75 with no discount.
         var lowered = await (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 75)], [new(cash, 75)]))).ReadAsync<SaleDetailDto>();
         lowered.Total.Should().Be(75);
-        lowered.GrossTotal.Should().Be(100);
-        lowered.LineDiscountTotal.Should().Be(25);
-        lowered.Lines[0].UnitPrice.Should().Be(100);
+        lowered.GrossTotal.Should().Be(75);
+        lowered.LineDiscountTotal.Should().Be(0);
+        lowered.Lines[0].UnitPrice.Should().Be(75);
         (await seller.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, 120)], [new(cash, 120)]))).StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Below the minimum: refused for a seller…
@@ -251,6 +251,9 @@ public sealed class SalesTests(ApiFactory factory)
         {
             var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 1, price)], [new(adminCash, price)]))).ReadAsync<SaleDetailDto>();
             ids.Add(sale.Id);
+            // Under the minimum: the line shows the minimum (70) and what went under it as a discount.
+            sale.Lines[0].UnitPrice.Should().Be(70);
+            sale.LineDiscountTotal.Should().Be(70 - price);
             sale.Total.Should().Be(price);
             sale.Lines[0].PriceOverridden.Should().BeTrue();
             sale.ReviewNote.Should().Contain("أقل من أقل سعر بيع").And.Contain("اعتُمد بصلاحية");

@@ -136,6 +136,10 @@ function load(): Cart {
 
 export const tierPrice = (l: Pick<CartLine, 'retailPrice' | 'wholesalePrice'>, tier: PriceTier) => (tier === 'Wholesale' ? l.wholesalePrice : l.retailPrice);
 
+/** The lowest price that is still not a discount: the minimum sale price (wholesale: the lower of it and the wholesale price), never above the list price. */
+export const floorPrice = (l: Pick<CartLine, 'retailPrice' | 'wholesalePrice' | 'minSalePrice'>, tier: PriceTier) =>
+  Math.min(tier === 'Wholesale' ? Math.min(l.minSalePrice, l.wholesalePrice) : l.minSalePrice, tierPrice(l, tier));
+
 export const lineTotal = (l: CartLine) => round2(l.quantity * l.unitPrice - l.lineDiscount);
 
 export function cartTotals(cart: Cart) {
@@ -143,7 +147,8 @@ export function cartTotals(cart: Cart) {
   const lineDiscounts = round2(cart.lines.reduce((s, l) => s + l.lineDiscount, 0));
   const listTotal = round2(cart.lines.reduce((s, l) => s + l.quantity * tierPrice(l, cart.tier), 0));
   // A price lowered below the product's price is saved as a discount on the line (the server does the same).
-  const priceReductions = round2(cart.lines.reduce((s, l) => s + l.quantity * Math.max(0, tierPrice(l, cart.tier) - l.unitPrice), 0));
+  // Only a price under the minimum is a discount (down to the minimum it is just the selling price), as the invoice records it.
+  const priceReductions = round2(cart.lines.reduce((s, l) => s + l.quantity * Math.max(0, floorPrice(l, cart.tier) - l.unitPrice), 0));
   const items = cart.lines.reduce((s, l) => s + l.quantity * l.factor, 0);
   return { gross, lineDiscounts, priceReductions, subtotal: round2(gross - lineDiscounts), listTotal, items };
 }
