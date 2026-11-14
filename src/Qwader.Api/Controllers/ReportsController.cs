@@ -27,6 +27,13 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
         return reports.PeriodAsync(f, t, ct);
     }
 
+    [HttpGet("owner")]
+    public Task<OwnerReportDto> Owner([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
+    {
+        var (f, t) = Period(from, to);
+        return reports.OwnerAsync(f, t, ct);
+    }
+
     [HttpGet("daily")]
     public Task<IReadOnlyList<DailyRowDto>> Daily([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
     {

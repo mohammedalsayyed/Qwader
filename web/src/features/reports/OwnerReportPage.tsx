@@ -2,176 +2,149 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ArrowRight, MessageCircle, Printer } from 'lucide-react';
-import { reportsApi, type PeriodReport, type ProductRow } from '@/api/reports';
-import { useAuth } from '@/auth/AuthProvider';
-import { P } from '@/auth/permissions';
+import { reportsApi, type OwnerReport } from '@/api/reports';
 import { Button } from '@/components/ui/Button';
 import { ErrorState, Spinner } from '@/components/ui/Feedback';
-import { Input } from '@/components/ui/Field';
+import { DateRangeFilter, resolveRange, type DateRangeValue } from '@/components/ui/DateRange';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, localToday } from '@/lib/format';
 import { useStoreSettings } from '@/lib/queries';
 
 const SALARIES = 'الرواتب';
-const MONTH = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-
-/** A month (yyyy-mm) as a range: its first day to its last, or to today while it is still running. */
-function monthRange(month: string) {
-  const [y, m] = month.split('-').map(Number);
-  const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-  const today = localToday();
-  return { from: `${month}-01`, to: last > today ? today : last };
-}
 
 /**
- * «تقرير المالك»: one A4 page for the owner of the money — the month's profit, expenses and salaries, the money in each
- * account, and what is owed to and by the store. Printed or saved as PDF, or sent as a WhatsApp message. Reads only.
+ * «تقرير المالك»: one A4 page for the owner of the money — what is in the accounts, the sales, the profit, expenses and
+ * salaries, the debts both ways, and what customers paid on their debts. Printed / saved as PDF or sent on WhatsApp. Reads only.
  */
 export function OwnerReportPage() {
-  const { can } = useAuth();
   const settings = useStoreSettings();
-  const [month, setMonth] = useState(localToday().slice(0, 7));
-  const range = monthRange(month);
-  const period = useQuery({ queryKey: ['report', 'period', range], queryFn: () => reportsApi.period(range), placeholderData: keepPreviousData });
-  const top = useQuery({
-    queryKey: ['report', 'products', range, 'Profit', 5],
-    queryFn: () => reportsApi.products(range, 'Profit', 5),
-    enabled: can(P.ReportsProfit),
-    placeholderData: keepPreviousData,
-  });
-  const p = period.data;
-  // An account that held nothing and moved nothing all month is left out: the owner reads only where the money is.
-  const accounts = p?.accounts?.filter((a) => a.openingBalance !== 0 || a.in !== 0 || a.out !== 0 || a.closingBalance !== 0) ?? null;
-  const monthName = MONTH.format(new Date(`${month}-01T00:00:00Z`));
+  const [range, setRange] = useState<DateRangeValue>({ preset: 'today', ...resolveRange('today') });
+  const r = { from: range.from, to: range.to };
+  const query = useQuery({ queryKey: ['report', 'owner', r], queryFn: () => reportsApi.owner(r), placeholderData: keepPreviousData });
+  const o = query.data;
+  const p = o?.period;
+  const oneDay = p ? p.from === p.to : true;
+  const isToday = p?.to === localToday();
+  const periodLabel = p ? (oneDay ? (isToday ? `اليوم ${formatDate(p.from)}` : formatDate(p.from)) : `من ${formatDate(p.from)} إلى ${formatDate(p.to)}`) : '';
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
-        <div className="flex items-end gap-2">
-          <Link to="/reports" className="mb-2 text-muted hover:text-ink" aria-label="رجوع للتقارير"><ArrowRight className="size-5" /></Link>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">الشهر</span>
-            <Input type="month" value={month} max={localToday().slice(0, 7)} onChange={(e) => e.target.value && setMonth(e.target.value)} className="w-48" />
-          </label>
+      <div className="space-y-3 print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link to="/reports" className="flex h-10 items-center gap-1 text-sm text-muted"><ArrowRight className="size-4" /> التقارير</Link>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => window.print()}><Printer className="size-4" /> طباعة / PDF</Button>
+            <Button variant="secondary" disabled={!o}
+              onClick={() => o && window.open(`https://wa.me/?text=${encodeURIComponent(whatsappText(o, settings.data?.storeName ?? '', periodLabel))}`, '_blank')}>
+              <MessageCircle className="size-4" /> واتساب
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => window.print()}><Printer className="size-4" /> طباعة / PDF</Button>
-          <Button variant="secondary" disabled={!p}
-            onClick={() => p && window.open(`https://wa.me/?text=${encodeURIComponent(whatsappText(p, settings.data?.storeName ?? '', monthName))}`, '_blank')}>
-            <MessageCircle className="size-4" /> واتساب
-          </Button>
-        </div>
+        <DateRangeFilter value={range} onChange={setRange} presets={['today', 'yesterday', 'thisMonth', 'lastMonth', 'custom']} />
       </div>
 
-      {period.isPending ? <Spinner /> : period.isError ? <ErrorState message={errorMessage(period.error)} onRetry={() => void period.refetch()} /> : p && (
-        <article className={cn('space-y-5 rounded-card border border-line bg-surface p-5 print:border-0 print:p-0 sm:p-7', period.isPlaceholderData && 'opacity-60')}>
+      {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : o && p && (
+        <article className={cn('space-y-6 rounded-card border border-line bg-surface p-5 print:border-0 print:p-0 sm:p-7', query.isPlaceholderData && 'opacity-60')}>
           <header className="flex items-start justify-between gap-4 border-b-2 border-ink pb-3">
             <div>
               <p className="text-xl font-bold">{settings.data?.storeName}</p>
-              <p className="text-sm text-muted">تقرير المالك — {monthName}</p>
+              <p className="text-sm text-muted">تقرير المالك — {periodLabel}</p>
             </div>
-            <p className="text-start text-xs text-muted">
-              من {formatDate(p.from)} إلى {formatDate(p.to)}<br />أُعِدّ في {formatDate(localToday())}
-            </p>
+            <p className="text-xs text-muted">أُعِدّ في {formatDate(localToday())}</p>
           </header>
 
-          {/* The four figures the owner looks for first. */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Figure label="المبيعات" value={p.netSales} hint={`${p.invoiceCount} فاتورة`} />
-            {p.grossProfit != null && <Figure label="ربح البضاعة" value={p.grossProfit} hint="المبيعات − سعر الشراء" />}
-            {p.expenses != null && <Figure label="المصروفات والرواتب" value={p.expenses} />}
-            {p.netOperatingProfit != null && <Figure label="صافي الربح" value={p.netOperatingProfit} strong />}
+          {/* 1. Money in the accounts, as at the end of the period (today: right now). */}
+          {p.accounts && (() => {
+            const held = p.accounts.filter((a) => a.closingBalance !== 0);
+            const total = held.reduce((s, a) => s + a.closingBalance, 0);
+            return (
+              <Block title={isToday ? 'المصاري في الحسابات الآن' : `المصاري في الحسابات في ${formatDate(p.to)}`} total={total}>
+                {held.length === 0 ? <Empty>لا يوجد رصيد في أي حساب.</Empty> : <Lines rows={held.map((a) => [a.name, a.closingBalance])} />}
+              </Block>
+            );
+          })()}
+
+          {/* 2–3. Sales and profit. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Figure label={oneDay ? 'مبيعات اليوم' : 'المبيعات'} value={p.netSales}
+              hint={`${p.invoiceCount} فاتورة${p.returns > 0 ? ` · بعد مرتجعات ${formatMoney(p.returns)}` : ''}`} />
+            {p.grossProfit != null && <Figure label="الربح" value={p.grossProfit} hint="المبيعات − سعر شراء البضاعة" />}
           </div>
 
-          <Block title="1. الربح">
-            <Lines rows={[
-              ['المبيعات قبل الخصم', p.grossSales],
-              ['− الخصومات', p.discounts],
-              ['− المرتجعات', p.returns],
-              ['= صافي المبيعات', p.netSales, 'strong'],
-              ...(p.costOfSales != null ? [['− تكلفة البضاعة المباعة (سعر الشراء)', p.costOfSales] as Row, ['= ربح البضاعة', p.grossProfit!, 'strong'] as Row] : []),
-              ...(p.expenses != null ? [['− المصروفات والرواتب', p.expenses] as Row] : []),
-              ...(p.netOperatingProfit != null ? [['= صافي الربح', p.netOperatingProfit, 'total'] as Row] : []),
-            ]} />
-            {p.netSales > 0 && p.netOperatingProfit != null && (
-              <p className="mt-2 text-xs text-muted">نسبة صافي الربح من المبيعات: {Math.round((p.netOperatingProfit / p.netSales) * 1000) / 10}%</p>
-            )}
-          </Block>
+          {/* 4. Expenses and salaries. */}
+          {p.expensesByCategory && (() => {
+            const salaries = p.expensesByCategory.find((e) => e.name === SALARIES)?.amount ?? 0;
+            const others = p.expensesByCategory.filter((e) => e.name !== SALARIES && e.amount !== 0);
+            return (
+              <Block title="المصاريف والرواتب" total={p.expenses ?? 0}>
+                <Lines rows={[[SALARIES, salaries, 'strong'], ...others.map((e) => [e.name, e.amount] as Row)]} />
+                {p.netOperatingProfit != null && (
+                  <p className="mt-2 flex justify-between text-sm text-muted">
+                    <span>الربح بعد المصاريف والرواتب</span>
+                    <span className={cn('tabular font-semibold', p.netOperatingProfit < 0 ? 'text-danger' : 'text-ink')}>{formatMoney(p.netOperatingProfit)}</span>
+                  </p>
+                )}
+              </Block>
+            );
+          })()}
 
-          {p.expensesByCategory && (
-            <Block title="2. المصروفات والرواتب">
-              {p.expensesByCategory.length === 0 ? <p className="text-sm text-muted">لا مصروفات في هذا الشهر.</p> : (
-                <Lines rows={[
-                  ...[...p.expensesByCategory].sort((a, b) => Number(b.name === SALARIES) - Number(a.name === SALARIES) || b.amount - a.amount)
-                    .map((e) => [e.name, e.amount, e.name === SALARIES ? 'strong' : null] as Row),
-                  ['= المجموع', p.expenses ?? 0, 'total'],
-                ]} />
+          {/* 5. Debts both ways, as of now. */}
+          {p.receivables != null && (
+            <section className="break-inside-avoid">
+              <h2 className="mb-2 font-bold">الديون (حتى الآن)</h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-control border border-line p-3">
+                  <p className="mb-1 text-sm font-semibold text-success">لنا (ديون للمعرض)</p>
+                  <Lines rows={[
+                    ['على العملاء', p.receivables],
+                    ...(o.supplierAdvances ? [['عند الموردين (دفعنا مقدمًا)', o.supplierAdvances] as Row] : []),
+                    ['المجموع', p.receivables + (o.supplierAdvances ?? 0), 'total'],
+                  ]} />
+                </div>
+                <div className="rounded-control border border-line p-3">
+                  <p className="mb-1 text-sm font-semibold text-danger">علينا (ديون على المعرض)</p>
+                  <Lines rows={[
+                    ['للموردين', p.payables ?? 0],
+                    ['للعملاء (أرصدة لهم)', o.customerCredits ?? 0],
+                    ['المجموع', (p.payables ?? 0) + (o.customerCredits ?? 0), 'total'],
+                  ]} />
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* 6. What customers paid on what they owed. */}
+          {o.collections && (
+            <Block title="دفعات من العملاء على ديونهم" total={o.collections.reduce((s, c) => s + c.amount, 0)}>
+              {o.collections.length === 0 ? <Empty>لا دفعات على ديون في هذه الفترة.</Empty> : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm">
+                    <thead className="text-muted">
+                      <tr className="border-b border-line">
+                        <th className="py-1.5 text-start font-semibold">العميل</th>
+                        {!oneDay && <th className="py-1.5 text-start font-semibold">التاريخ</th>}
+                        <th className="py-1.5 text-start font-semibold">إلى حساب</th>
+                        <th className="py-1.5 text-end font-semibold">دفع</th>
+                        <th className="py-1.5 text-end font-semibold">باقي عليه</th>
+                      </tr>
+                    </thead>
+                    <tbody className="tabular">
+                      {o.collections.map((c) => (
+                        <tr key={c.id} className="border-b border-line/60">
+                          <td className="py-1.5"><Link to={`/customers/${c.customerId}`} className="hover:text-brand-700">{c.customerName}</Link></td>
+                          {!oneDay && <td className="py-1.5">{formatDate(c.date)}</td>}
+                          <td className="py-1.5">{c.accountName}</td>
+                          <td className="py-1.5 text-end font-semibold">{formatMoney(c.amount)}</td>
+                          <td className="py-1.5 text-end text-muted">{c.owesNow > 0 ? formatMoney(c.owesNow) : 'سدّد'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </Block>
           )}
-
-          {accounts && (
-            <Block title="3. المصاري في الحسابات">
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] text-sm">
-                <thead className="text-muted">
-                  <tr className="border-b border-line">
-                    <th className="py-1.5 text-start font-semibold">الحساب</th>
-                    <th className="py-1.5 text-end font-semibold">أول الشهر</th>
-                    <th className="py-1.5 text-end font-semibold">داخل</th>
-                    <th className="py-1.5 text-end font-semibold">خارج</th>
-                    <th className="py-1.5 text-end font-semibold">آخر الشهر</th>
-                  </tr>
-                </thead>
-                <tbody className="tabular">
-                  {accounts.map((a) => (
-                    <tr key={a.accountId} className="border-b border-line/60">
-                      <td className="py-1.5">{a.name}</td>
-                      <td className="py-1.5 text-end">{formatMoney(a.openingBalance)}</td>
-                      <td className="py-1.5 text-end">{formatMoney(a.in)}</td>
-                      <td className="py-1.5 text-end">{formatMoney(a.out)}</td>
-                      <td className={cn('py-1.5 text-end font-bold', a.closingBalance < 0 && 'text-danger')}>{formatMoney(a.closingBalance)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="tabular font-bold">
-                  <tr className="border-t-2 border-ink">
-                    <td className="py-1.5">المجموع</td>
-                    <td className="py-1.5 text-end">{formatMoney(sum(accounts, 'openingBalance'))}</td>
-                    <td className="py-1.5 text-end">{formatMoney(sum(accounts, 'in'))}</td>
-                    <td className="py-1.5 text-end">{formatMoney(sum(accounts, 'out'))}</td>
-                    <td className="py-1.5 text-end">{formatMoney(sum(accounts, 'closingBalance'))}</td>
-                  </tr>
-                </tfoot>
-              </table>
-              </div>
-              <p className="mt-2 text-xs text-muted">الداخل والخارج يشمل كل حركة: مبيعات، تحصيل، مشتريات، مصروفات، رواتب، وتحويل بين الحسابات.</p>
-            </Block>
-          )}
-
-          {(p.receivables != null || p.inventoryValue != null) && (
-            <Block title="4. لنا وعلينا (اليوم)">
-              <Lines rows={[
-                ...(p.receivables != null ? [['لنا: ديون على العملاء', p.receivables] as Row] : []),
-                ...(p.pendingTransferAmount ? [[`لنا: حوالات بانتظار التحقق (${p.pendingTransferCount})`, p.pendingTransferAmount] as Row] : []),
-                ...(p.payables != null ? [['علينا: مستحق للموردين', p.payables] as Row] : []),
-                ...(p.inventoryValue != null ? [['البضاعة في المخزن (بسعر الشراء)', p.inventoryValue, 'strong'] as Row] : []),
-                ...(p.inventoryLosses ? [['تالف ومفقود خلال الشهر (نقص من البضاعة)', p.inventoryLosses] as Row] : []),
-              ]} />
-            </Block>
-          )}
-
-          {top.data && top.data.length > 0 && (
-            <Block title="5. أكثر المنتجات ربحًا">
-              <TopProducts rows={top.data} />
-            </Block>
-          )}
-
-          <p className="rounded-control bg-canvas p-3 text-xs leading-6 text-muted print:bg-transparent print:p-0">
-            ملاحظة: الربح غير المصاري الموجودة في الحسابات. جزء من الربح ممكن يكون لسا دين على العملاء، أو صار بضاعة جديدة في المخزن.
-            عشان هيك التقرير بيعرض الربح والحسابات و«لنا وعلينا» مع بعض.
-          </p>
         </article>
       )}
     </div>
@@ -180,33 +153,36 @@ export function OwnerReportPage() {
 
 type Row = [label: string, value: number, emphasis?: 'strong' | 'total' | null];
 
-const sum = <T,>(rows: T[], key: keyof T) => rows.reduce((s, r) => s + Number(r[key]), 0);
-
-function Figure({ label, value, hint, strong }: { label: string; value: number; hint?: string; strong?: boolean }) {
+function Figure({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
-    <div className={cn('rounded-control border border-line p-3', strong && 'border-ink')}>
-      <p className="text-xs text-muted">{label}</p>
-      <p className={cn('tabular text-lg font-bold', value < 0 && 'text-danger')}>{formatMoney(value)}</p>
+    <div className="rounded-control border border-line p-4">
+      <p className="text-sm text-muted">{label}</p>
+      <p className={cn('tabular text-2xl font-bold', value < 0 && 'text-danger')}>{formatMoney(value)}</p>
       {hint && <p className="text-xs text-muted">{hint}</p>}
     </div>
   );
 }
 
-function Block({ title, children }: { title: string; children: ReactNode }) {
+function Block({ title, total, children }: { title: string; total?: number; children: ReactNode }) {
   return (
     <section className="break-inside-avoid">
-      <h2 className="mb-2 font-bold">{title}</h2>
+      <div className="mb-2 flex items-baseline justify-between gap-3 border-b border-ink pb-1">
+        <h2 className="font-bold">{title}</h2>
+        {total != null && <span className={cn('tabular text-lg font-bold', total < 0 && 'text-danger')}>{formatMoney(total)}</span>}
+      </div>
       {children}
     </section>
   );
 }
 
+const Empty = ({ children }: { children: ReactNode }) => <p className="text-sm text-muted">{children}</p>;
+
 function Lines({ rows }: { rows: Row[] }) {
   return (
     <dl className="text-sm">
       {rows.map(([label, value, emphasis]) => (
-        <div key={label} className={cn('flex justify-between gap-3 border-b border-line/60 py-1.5',
-          emphasis === 'strong' && 'font-semibold', emphasis === 'total' && 'border-b-0 border-t-2 border-t-ink text-base font-bold')}>
+        <div key={label} className={cn('flex justify-between gap-3 border-b border-line/60 py-1.5 last:border-b-0',
+          emphasis === 'strong' && 'font-semibold', emphasis === 'total' && 'font-bold')}>
           <dt>{label}</dt>
           <dd className={cn('tabular', value < 0 && 'text-danger')}>{formatMoney(value)}</dd>
         </div>
@@ -215,43 +191,29 @@ function Lines({ rows }: { rows: Row[] }) {
   );
 }
 
-function TopProducts({ rows }: { rows: ProductRow[] }) {
-  return (
-    <table className="w-full text-sm">
-      <thead className="text-muted">
-        <tr className="border-b border-line">
-          <th className="py-1.5 text-start font-semibold">المنتج</th>
-          <th className="py-1.5 text-end font-semibold">المبيعات</th>
-          <th className="py-1.5 text-end font-semibold">الربح</th>
-        </tr>
-      </thead>
-      <tbody className="tabular">
-        {rows.map((r) => (
-          <tr key={r.productId} className="border-b border-line/60">
-            <td className="py-1.5">{r.name}</td>
-            <td className="py-1.5 text-end">{formatMoney(r.revenue)}</td>
-            <td className="py-1.5 text-end font-semibold">{formatMoney(r.profit)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
 /** The same report as a short WhatsApp message. */
-function whatsappText(p: PeriodReport, store: string, month: string) {
-  const m = (v: number | null | undefined) => formatMoney(v);
-  const lines = [`*${store} — تقرير ${month}*`, '', `المبيعات: ${m(p.netSales)} (${p.invoiceCount} فاتورة)`];
-  if (p.grossProfit != null) lines.push(`ربح البضاعة: ${m(p.grossProfit)}`);
-  if (p.expenses != null) lines.push(`المصروفات والرواتب: ${m(p.expenses)}`);
-  if (p.netOperatingProfit != null) lines.push(`*صافي الربح: ${m(p.netOperatingProfit)}*`);
-  if (p.expensesByCategory?.length) lines.push('', '*المصروفات:*', ...p.expensesByCategory.map((e) => `• ${e.name}: ${m(e.amount)}`));
-  if (p.accounts?.length) {
-    lines.push('', '*المصاري في الحسابات (آخر الشهر):*', ...p.accounts.filter((a) => a.closingBalance !== 0).map((a) => `• ${a.name}: ${m(a.closingBalance)}`));
-    lines.push(`المجموع: ${m(sum(p.accounts, 'closingBalance'))}`);
+function whatsappText(o: OwnerReport, store: string, period: string) {
+  const p = o.period;
+  const m = formatMoney;
+  const lines = [`*${store} — تقرير ${period}*`];
+  if (p.accounts) {
+    const held = p.accounts.filter((a) => a.closingBalance !== 0);
+    lines.push('', '*المصاري في الحسابات:*', ...held.map((a) => `• ${a.name}: ${m(a.closingBalance)}`), `المجموع: ${m(held.reduce((s, a) => s + a.closingBalance, 0))}`);
   }
-  if (p.receivables != null) lines.push('', `لنا عند العملاء: ${m(p.receivables)}`);
-  if (p.payables != null) lines.push(`علينا للموردين: ${m(p.payables)}`);
-  if (p.inventoryValue != null) lines.push(`البضاعة في المخزن: ${m(p.inventoryValue)}`);
+  lines.push('', `*المبيعات:* ${m(p.netSales)} (${p.invoiceCount} فاتورة)`);
+  if (p.grossProfit != null) lines.push(`*الربح:* ${m(p.grossProfit)}`);
+  if (p.expensesByCategory) {
+    lines.push('', `*المصاريف والرواتب:* ${m(p.expenses)}`, ...p.expensesByCategory.filter((e) => e.amount !== 0).map((e) => `• ${e.name}: ${m(e.amount)}`));
+    if (p.netOperatingProfit != null) lines.push(`الربح بعد المصاريف: ${m(p.netOperatingProfit)}`);
+  }
+  if (p.receivables != null) {
+    lines.push('', '*الديون:*', `لنا على العملاء: ${m(p.receivables)}`);
+    if (o.supplierAdvances) lines.push(`لنا عند الموردين: ${m(o.supplierAdvances)}`);
+    lines.push(`علينا للموردين: ${m(p.payables)}`, `علينا للعملاء: ${m(o.customerCredits)}`);
+  }
+  if (o.collections?.length) {
+    lines.push('', `*دفعات من العملاء على ديونهم:* ${m(o.collections.reduce((s, c) => s + c.amount, 0))}`,
+      ...o.collections.map((c) => `• ${c.customerName}: ${m(c.amount)}${c.owesNow > 0 ? ` (باقي ${m(c.owesNow)})` : ' (سدّد)'}`));
+  }
   return lines.join('\n');
 }
