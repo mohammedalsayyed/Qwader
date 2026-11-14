@@ -103,6 +103,7 @@ public sealed class PurchaseService(
             return await GetAsync(id, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PurchaseInvoices", id, ct);
         var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Draft) throw new BusinessRuleException("لا يمكن تعديل فاتورة معتمدة أو ملغاة");
@@ -129,6 +130,7 @@ public sealed class PurchaseService(
             return await GetAsync(id, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PurchaseInvoices", id, ct);
         var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Draft) throw new BusinessRuleException("هذه الفاتورة معتمدة أو ملغاة من قبل");
@@ -144,6 +146,7 @@ public sealed class PurchaseService(
     public async Task<PurchaseDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PurchaseInvoices", id, ct);
         var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status == PurchaseStatus.Voided) throw new BusinessRuleException("الفاتورة ملغاة من قبل");
@@ -183,6 +186,7 @@ public sealed class PurchaseService(
             return await GetAsync(id, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PurchaseInvoices", id, ct);
         var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Posted) throw new BusinessRuleException("يمكن إرجاع البضاعة من فاتورة معتمدة فقط");

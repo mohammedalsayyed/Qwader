@@ -142,6 +142,7 @@ public sealed class AccountService(
     public async Task<AccountTransferDto> VoidTransferAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("AccountTransfers", id, ct);
         var transfer = await db.AccountTransfers.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw new NotFoundException("التحويل غير موجود");
         if (transfer.VoidedAt is not null) throw new BusinessRuleException("هذا التحويل ملغى من قبل");
 

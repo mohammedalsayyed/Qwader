@@ -321,6 +321,7 @@ public sealed class InventoryService(
     public async Task<StockCountDto> PostCountAsync(int id, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("StockCounts", id, ct);
         var count = await db.StockCounts.Include(c => c.Lines).FirstOrDefaultAsync(c => c.Id == id, ct) ?? throw new NotFoundException("الجرد غير موجود");
         if (count.Status != StockCountStatus.Open) throw new BusinessRuleException("تم اعتماد هذا الجرد أو إلغاؤه من قبل");
         if (count.Lines.All(l => l.CountedQuantity is null)) throw new BusinessRuleException("لم يتم إدخال أي كمية معدودة");
@@ -350,11 +351,15 @@ public sealed class InventoryService(
 
     public async Task CancelCountAsync(int id, CancellationToken ct = default)
     {
+        // Locked like posting: a cancel racing a post never turns a posted count back into «cancelled».
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("StockCounts", id, ct);
         var count = await db.StockCounts.FirstOrDefaultAsync(c => c.Id == id, ct) ?? throw new NotFoundException("الجرد غير موجود");
-        if (count.Status != StockCountStatus.Open) throw new BusinessRuleException("لا يمكن إلغاء جرد معتمد");
+        if (count.Status != StockCountStatus.Open) throw new BusinessRuleException("لا يمكن إلغاء جرد معتمد أو ملغى");
         count.Status = StockCountStatus.Cancelled;
         audit.Log("StockCount.Cancel", "StockCount", id.ToString());
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 
     private async Task<StockPosting> ReceiveAtAverageAsync(StockEntry entry, CancellationToken ct)

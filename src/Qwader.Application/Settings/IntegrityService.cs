@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Qwader.Application.Abstractions;
 using Qwader.Domain.Finance;
+using Qwader.Domain.Inventory;
 using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 
@@ -45,6 +46,7 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
             await SaleInvoicesAsync(ct),
             await PurchaseInvoicesAsync(ct),
             await ReturnedQuantitiesAsync(ct),
+            await ReversedOnceAsync(ct),
         };
         return new IntegrityReport(clock.UtcNow, checks.All(c => c.IssueCount == 0), checks);
     }
@@ -173,6 +175,41 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
             if (p.PaidAmount > p.Total + Money) issues.Add(new($"{p.Number}: المدفوع أكبر من الإجمالي", p.PaidAmount, p.Total, link));
         }
         return Check("فواتير الشراء", "مجموع كل فاتورة = بنودها، والإجمالي = المجموع − الخصم، والمدفوع لا يتجاوز الإجمالي", rows.Count, issues);
+    }
+
+    /// <summary>
+    /// A document is reversed once: an account never has more reversing entries for a document than the document's own
+    /// entries, and a sale's or purchase's stock never comes back more times than it left (two cancels at the same moment).
+    /// </summary>
+    private async Task<IntegrityCheck> ReversedOnceAsync(CancellationToken ct)
+    {
+        var money = await db.AccountTransactions.AsNoTracking().Where(t => t.SourceId != null)
+            .GroupBy(t => new { t.SourceType, t.SourceId, t.FinancialAccountId })
+            .Select(g => new
+            {
+                g.Key.SourceType, g.Key.SourceId, g.Key.FinancialAccountId,
+                Reversals = g.Count(t => t.Category == AccountTransactionCategory.Reversal),
+                Originals = g.Count(t => t.Category != AccountTransactionCategory.Reversal),
+                Number = g.Max(t => t.SourceNumber),
+            })
+            .Where(g => g.Reversals > g.Originals).ToListAsync(ct);
+        var stock = await db.StockMovements.AsNoTracking()
+            .Where(m => (m.SourceType == "SaleInvoice" || m.SourceType == "SaleRestore" || m.SourceType == "PurchaseInvoice") && m.SourceId != null)
+            .GroupBy(m => new { Purchase = m.SourceType == "PurchaseInvoice", m.SourceId, m.ProductId })
+            .Select(g => new
+            {
+                g.Key.Purchase, g.Key.SourceId,
+                Out = g.Count(m => m.Type == StockMovementType.Sale || m.Type == StockMovementType.SaleRestore || m.Type == StockMovementType.Purchase),
+                Back = g.Count(m => m.Type == StockMovementType.SaleVoid || m.Type == StockMovementType.PurchaseVoid),
+                Number = g.Max(m => m.SourceNumber),
+            })
+            .Where(g => g.Back > g.Out).ToListAsync(ct);
+        var issues = money.Select(m => new IntegrityIssue($"{m.Number}: عُكس أكثر من مرة في حساب", m.Reversals, m.Originals, null))
+            .Concat(stock.Select(s => new IntegrityIssue($"{s.Number}: رجعت بضاعته أكثر من مرة", s.Back, s.Out,
+                s.Purchase ? $"/purchases/{s.SourceId}" : $"/sales/{s.SourceId}")))
+            .ToList();
+        return Check("كل مستند يُعكس مرة واحدة", "لا يوجد مستند (فاتورة، سند، مخالصة) أُلغي فعُكست مبالغه أو بضاعته أكثر من مرة",
+            money.Count + stock.Count, issues);
     }
 
     private async Task<IntegrityCheck> ReturnedQuantitiesAsync(CancellationToken ct)

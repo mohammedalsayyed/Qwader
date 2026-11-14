@@ -208,6 +208,7 @@ public sealed class VoucherService(
     public async Task<VoucherDto> VoidReceiptAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("ReceiptVouchers", id, ct);
         var voucher = await db.ReceiptVouchers.FirstOrDefaultAsync(v => v.Id == id, ct) ?? throw new NotFoundException("السند غير موجود");
         if (voucher.Status == VoucherStatus.Voided) throw new BusinessRuleException("السند ملغى من قبل");
         if (voucher.IncomingTransferId is not null) throw new BusinessRuleException("هذا السند ناتج عن حوالة مؤكدة؛ لا يُلغى من هنا");
@@ -356,6 +357,7 @@ public sealed class VoucherService(
     public async Task<VoucherDto> VoidPaymentAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PaymentVouchers", id, ct);
         var voucher = await db.PaymentVouchers.FirstOrDefaultAsync(v => v.Id == id, ct) ?? throw new NotFoundException("السند غير موجود");
         if (voucher.Purpose == PaymentPurpose.Expense) throw new BusinessRuleException("هذا السند لمصروف؛ ألغِ المصروف من شاشة المصروفات");
         if (voucher.Purpose == PaymentPurpose.EmployeeAdvance) throw new BusinessRuleException("هذا السند لسلفة موظف؛ ألغِ السلفة من شاشة الرواتب");
@@ -476,6 +478,7 @@ public sealed class VoucherService(
         if (await db.PayrollEntries.AnyAsync(e => e.ExpenseId == id, ct) || await db.PayrollSettlements.AnyAsync(s => s.ExpenseId == id, ct))
             throw new BusinessRuleException("هذا المصروف من الرواتب؛ ألغِ السلفة أو المخالصة من شاشة الرواتب");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("Expenses", id, ct);
         await VoidExpenseCoreAsync(id, request.Reason.Trim(), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

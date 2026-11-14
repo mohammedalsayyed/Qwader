@@ -267,6 +267,7 @@ public sealed class PayrollService(
     public async Task<EmployeeDto> VoidEntryAsync(int entryId, VoidDocumentRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PayrollEntries", entryId, ct);
         var entry = await db.PayrollEntries.FirstOrDefaultAsync(e => e.Id == entryId, ct) ?? throw new NotFoundException("الحركة غير موجودة");
         if (entry.Status == VoucherStatus.Voided) throw new BusinessRuleException("الحركة ملغاة من قبل");
         if (entry.SettlementId is not null) throw new BusinessRuleException("دخلت هذه الحركة في مخالصة؛ ألغِ المخالصة أولًا");
@@ -386,6 +387,7 @@ public sealed class PayrollService(
     public async Task<EmployeeDto> VoidSettlementAsync(int settlementId, VoidDocumentRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("PayrollSettlements", settlementId, ct);
         var settlement = await db.PayrollSettlements.FirstOrDefaultAsync(s => s.Id == settlementId, ct) ?? throw new NotFoundException("المخالصة غير موجودة");
         if (settlement.Status == VoucherStatus.Voided) throw new BusinessRuleException("المخالصة ملغاة من قبل");
 

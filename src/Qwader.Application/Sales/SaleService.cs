@@ -321,12 +321,21 @@ public sealed class SaleService(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
-        await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), ct);
-        if (invoice.ReviewNote is not null && invoice.ReviewedAt is null)
-            push.Notify(PushTopics.Sales, new PushMessage($"فاتورة تحتاج مراجعة — {invoice.Number}", invoice.ReviewNote, $"/sales/{invoice.Id}",
-                $"review-{invoice.Id}"),
-                Permissions.SalesViewAll);
-        return await GetAsync(invoice.Id, ct);
+        // The sale is saved from here on: nothing after it may answer «error» (the cashier would sell it again).
+        // A notification that fails is only a missed notification, and the answer is read even if the client stopped waiting.
+        try
+        {
+            await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), CancellationToken.None);
+            if (invoice.ReviewNote is not null && invoice.ReviewedAt is null)
+                push.Notify(PushTopics.Sales, new PushMessage($"فاتورة تحتاج مراجعة — {invoice.Number}", invoice.ReviewNote, $"/sales/{invoice.Id}",
+                    $"review-{invoice.Id}"),
+                    Permissions.SalesViewAll);
+        }
+        catch (Exception)
+        {
+            // Notifications are best effort.
+        }
+        return await GetAsync(invoice.Id, CancellationToken.None);
     }
 
     /// <summary>
@@ -545,6 +554,7 @@ public sealed class SaleService(
         if (await idempotency.FindAsync(request.IdempotencyKey, ReturnOperation, ct) is not null) return await GetAsync(id, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
         var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Customer).FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new NotFoundException("الفاتورة غير موجودة");
         if (invoice.Status is SaleStatus.Voided or SaleStatus.Returned) throw new BusinessRuleException("لا توجد كميات قابلة للإرجاع في هذه الفاتورة");
@@ -629,6 +639,7 @@ public sealed class SaleService(
     public async Task<SaleDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
         var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Payments).Include(s => s.Customer)
             .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
         if (invoice.Status == SaleStatus.Voided) throw new BusinessRuleException("الفاتورة ملغاة من قبل");
@@ -703,6 +714,7 @@ public sealed class SaleService(
     public async Task<SaleDetailDto> RestoreAsync(int id, VoidRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
         var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Payments).Include(s => s.Customer)
             .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
         if (invoice.Status != SaleStatus.Voided) throw new BusinessRuleException("الفاتورة غير ملغاة");
@@ -764,6 +776,7 @@ public sealed class SaleService(
     public async Task<SaleDetailDto> VoidReturnAsync(int id, int returnId, VoidRequest request, CancellationToken ct = default)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
         var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Customer)
             .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
         var ret = await db.SaleReturns.IgnoreQueryFilters().Include(r => r.Lines)
