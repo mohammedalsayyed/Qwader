@@ -90,7 +90,7 @@ export function PurchaseDetailPage() {
             <Button variant="secondary" onClick={() => setReturning(true)}><Undo2 className="size-4" /> مردود للمورد</Button>
           )}
           {p.status !== 'Voided' && (
-            <Button variant="outline" onClick={() => setVoiding(true)}><Ban className="size-4 text-danger" /> إلغاء الفاتورة</Button>
+            <Button variant="outline" onClick={() => setVoiding(true)}><Ban className="size-4 text-danger" /> {p.status === 'Draft' ? 'إلغاء المسودة' : 'إلغاء الفاتورة'}</Button>
           )}
           <Button variant="outline" onClick={() => window.print()}><Printer className="size-4" /> طباعة</Button>
         </div>

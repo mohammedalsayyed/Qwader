@@ -305,6 +305,10 @@ public sealed class PurchaseService(
 
     private async Task PostInternalAsync(PurchaseInvoice invoice, CancellationToken ct)
     {
+        // A product archived after the draft was saved is not bought into stock again (its stock was written off at archiving).
+        var lineProducts = invoice.Lines.Select(l => l.ProductId).Distinct().ToList();
+        var archived = await db.Products.AsNoTracking().Where(p => lineProducts.Contains(p.Id) && p.IsArchived).Select(p => p.Name).FirstOrDefaultAsync(ct);
+        if (archived is not null) throw new BusinessRuleException($"المنتج «{archived}» مؤرشف؛ ألغِ أرشفته أو احذفه من الفاتورة ثم اعتمدها");
         // Ascending product order keeps lock acquisition consistent across concurrent postings.
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId).ThenBy(l => l.Id))
         {

@@ -187,6 +187,11 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
                   <p className="truncate font-semibold">{customer.name}</p>
                   <p className="ltr text-sm text-muted">{customer.phone}</p>
                   {customer.balance > 0 && <p className="text-xs text-warning">عليه سابقًا: {formatMoney(customer.balance)}</p>}
+                  {customer.balance < 0 && (
+                    <p className="text-xs font-semibold text-success">
+                      له رصيد عندك: {formatMoney(-customer.balance)} — إذا اشترى بالآجل يُخصم الدين من رصيده تلقائيًا
+                    </p>
+                  )}
                 </div>
                 <IconButton label="تغيير العميل" onClick={() => setCustomer(null)}><X className="size-5" /></IconButton>
               </div>
@@ -205,6 +210,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0"><p className="truncate font-semibold">{c.name}</p><p className="ltr text-xs text-muted">{c.phone ?? c.code}</p></div>
                       {c.balance > 0 && <span className="tabular shrink-0 text-sm text-warning">{formatMoney(c.balance)}</span>}
+                      {c.balance < 0 && <span className="tabular shrink-0 text-sm text-success">له {formatMoney(-c.balance)}</span>}
                     </div>
                   )}
                   onSelect={setCustomer}

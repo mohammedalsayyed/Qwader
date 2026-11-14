@@ -46,10 +46,21 @@ public interface IPushSubscriptionService
 
 public sealed class SavePushSubscriptionRequestValidator : AbstractValidator<SavePushSubscriptionRequest>
 {
+    /// <summary>
+    /// The browsers' push services only: the server sends to this address, so an arbitrary one (localhost, an address
+    /// inside the hosting network) would make it call places it should never reach.
+    /// </summary>
+    private static readonly string[] PushHosts =
+        ["fcm.googleapis.com", ".push.services.mozilla.com", ".notify.windows.com", ".push.apple.com"];
+
+    internal static bool IsPushService(string? endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps && u.IsDefaultPort
+        && PushHosts.Any(h => h.StartsWith('.') ? u.Host.EndsWith(h, StringComparison.OrdinalIgnoreCase) : u.Host.Equals(h, StringComparison.OrdinalIgnoreCase));
+
     public SavePushSubscriptionRequestValidator()
     {
         RuleFor(x => x.Endpoint).NotEmpty().MaximumLength(800)
-            .Must(e => Uri.TryCreate(e, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps).WithMessage("عنوان الاشتراك غير صالح");
+            .Must(IsPushService).WithMessage("عنوان الاشتراك غير صالح");
         RuleFor(x => x.P256dh).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Auth).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Topics).NotNull();

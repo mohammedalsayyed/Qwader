@@ -15,7 +15,7 @@ namespace Qwader.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public sealed class PushTests(ApiFactory factory)
 {
-    private static string Endpoint(string name) => $"https://push.example/{name}-{Guid.NewGuid():N}";
+    private static string Endpoint(string name) => $"https://fcm.googleapis.com/fcm/send/{name}-{Guid.NewGuid():N}";
 
     private static async Task SubscribeAsync(HttpClient client, string endpoint, PushTopicsDto topics) =>
         (await client.PutAsJsonAsync("/api/push/subscription", new SavePushSubscriptionRequest(endpoint, "p256dh-key", "auth-key", topics, "اختبار")))

@@ -170,7 +170,7 @@ function TransferSheet({ transfer: t, onClose }: { transfer: IncomingTransfer; o
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
   const done = (msg: string) => {
-    for (const k of ['transfers', 'notifications', 'accounts', 'account', 'customers', 'customer', 'sale']) void queryClient.invalidateQueries({ queryKey: [k] });
+    for (const k of ['transfers', 'notifications', 'accounts', 'account', 'account-statement', 'customers', 'customer', 'customer-statement', 'sale', 'sales', 'receipt-vouchers', 'vouchers']) void queryClient.invalidateQueries({ queryKey: [k] });
     toast.success(msg);
     onClose();
   };

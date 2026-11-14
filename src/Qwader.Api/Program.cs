@@ -33,7 +33,13 @@ FluentValidation.ValidatorOptions.Global.LanguageManager.Culture = new System.Gl
 FluentValidation.ValidatorOptions.Global.DisplayNameResolver = (_, member, _) => member is null ? null
     : Qwader.Api.Infrastructure.FieldNames.Arabic.GetValueOrDefault(member.Name, "هذا الحقل");
 builder.Services.AddControllers(options => options.Filters.Add<ValidationFilter>())
-    .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        // Hidden characters out of every text; numbers past a billion refused (see InputConverters).
+        options.JsonSerializerOptions.Converters.Add(new Qwader.Api.Infrastructure.CleanStringConverter());
+        options.JsonSerializerOptions.Converters.Add(new Qwader.Api.Infrastructure.BoundedDecimalConverter());
+    });
 
 builder.Services.Configure<ApiBehaviorOptions>(options =>
     options.InvalidModelStateResponseFactory = context =>
@@ -163,6 +169,9 @@ app.Use(async (context, next) =>
             + "base-uri 'self'; form-action 'self'; frame-ancestors 'none'" + (context.Request.IsHttps ? "; upgrade-insecure-requests" : "");
         if (context.Request.IsHttps) h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
         h.Remove("X-Powered-By");
+        // API answers hold balances, customers and costs: never kept by the browser or a proxy. Files that set their own
+        // caching (product photos) keep it.
+        if (context.Request.Path.StartsWithSegments("/api") && !h.ContainsKey("Cache-Control")) h.CacheControl = "no-store";
         return Task.CompletedTask;
     });
     await next();

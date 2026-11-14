@@ -14,7 +14,8 @@ public sealed record AccountDto(
 public sealed record SaveAccountRequest(string Name, FinancialAccountType Type, string? ProviderName, string? HolderName, string? AccountNumber, bool IsActive = true);
 
 /// <summary>Sets the account's opening balance; the difference is posted as a documented «رصيد افتتاحي» movement.</summary>
-public sealed record SetOpeningBalanceRequest(decimal OpeningBalance, string? Notes);
+/// <summary>The new opening balance: required (a request without it never zeroes the balance).</summary>
+public sealed record SetOpeningBalanceRequest(decimal? OpeningBalance, string? Notes);
 
 public sealed record AccountMovementDto(long Id, DateTime Date, MoneyDirection Direction, decimal Amount, decimal BalanceAfter,
     AccountTransactionCategory Category, string CategoryName, string SourceType, int? SourceId, string? SourceNumber, string? Description, string? UserName);
@@ -143,7 +144,8 @@ public sealed class SetOpeningBalanceRequestValidator : AbstractValidator<SetOpe
 {
     public SetOpeningBalanceRequestValidator()
     {
-        RuleFor(x => x.OpeningBalance).GreaterThanOrEqualTo(0).WithMessage("الرصيد الافتتاحي لا يمكن أن يكون سالبًا");
+        RuleFor(x => x.OpeningBalance).NotNull().WithMessage("اكتب الرصيد الافتتاحي")
+            .GreaterThanOrEqualTo(0).WithMessage("الرصيد الافتتاحي لا يمكن أن يكون سالبًا");
         RuleFor(x => x.Notes).MaximumLength(300);
     }
 }

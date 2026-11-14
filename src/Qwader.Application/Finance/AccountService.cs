@@ -87,16 +87,18 @@ public sealed class AccountService(
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var account = await db.FinancialAccounts.FirstOrDefaultAsync(a => a.Id == id, ct) ?? throw new NotFoundException("الحساب غير موجود");
-        var delta = request.OpeningBalance - account.OpeningBalance;
+        var opening = request.OpeningBalance ?? throw new ValidationFailedException("openingBalance", "اكتب الرصيد الافتتاحي");
+        var delta = opening - account.OpeningBalance;
         if (delta == 0) return await GetAsync(id, ct);
 
         // The balance only ever changes through a movement: the correction is posted, not written over.
         var description = "تعديل الرصيد الافتتاحي" + (string.IsNullOrWhiteSpace(request.Notes) ? "" : $" — {request.Notes.Trim()}");
+        // Lowering it takes money out: refused when the account no longer holds it (an account never goes below zero).
         await ledger.PostAsync(id, delta > 0 ? MoneyDirection.In : MoneyDirection.Out, Math.Abs(delta), AccountTransactionCategory.OpeningBalance,
-            new LedgerSource("FinancialAccount", id, null, description), clock.UtcNow, ct);
-        await db.Database.ExecuteSqlAsync($"UPDATE FinancialAccounts SET OpeningBalance = {request.OpeningBalance} WHERE Id = {id}", ct);
+            new LedgerSource("FinancialAccount", id, null, description), clock.UtcNow, ct, requireFunds: delta < 0);
+        await db.Database.ExecuteSqlAsync($"UPDATE FinancialAccounts SET OpeningBalance = {opening} WHERE Id = {id}", ct);
 
-        audit.Log("Account.SetOpeningBalance", "FinancialAccount", id.ToString(), new { account.OpeningBalance }, new { request.OpeningBalance }, request.Notes);
+        audit.Log("Account.SetOpeningBalance", "FinancialAccount", id.ToString(), new { account.OpeningBalance }, new { OpeningBalance = opening }, request.Notes);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return await GetAsync(id, ct);
@@ -107,7 +109,9 @@ public sealed class AccountService(
         var account = await db.FinancialAccounts.AsNoTracking().Where(a => a.Id == id).Select(a => new { a.Id, a.Name }).FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("الحساب غير موجود");
         var end = to ?? clock.LocalToday;
-        var (startUtc, endUtc) = clock.LocalDaysToUtcRange(from ?? new DateOnly(2000, 1, 1), end);
+        var (startUtc, endUtc) = clock.LocalDaysToUtcRange(from ?? end, end);
+        // No start day: every movement up to the end, however old its date, so the closing balance is the account's.
+        if (from is null) startUtc = DateTime.MinValue;
         var all = db.AccountTransactions.AsNoTracking().Where(t => t.FinancialAccountId == id);
 
         var opening = from is null ? 0 : await all.Where(t => t.Date < startUtc)

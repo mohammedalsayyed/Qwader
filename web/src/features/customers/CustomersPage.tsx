@@ -204,7 +204,7 @@ export function CustomerDetailPage() {
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'invoices', label: 'الفواتير' }, { value: 'statement', label: 'كشف الحساب' }]} />
       {tab === 'statement' ? (
         <StatementView queryKey={['customer-statement', id]} load={(from, to) => customersApi.statement(id, from, to)}
-          debitLabel="مدين (مشتريات)" creditLabel="دائن (دفعات/مرتجعات)" balanceHint="الموجب = مستحق على العميل" />
+          debitLabel="مدين (مشتريات)" creditLabel="دائن (دفعات/مرتجعات)" balanceHint="الموجب = مستحق على العميل" increases="debit" />
       ) : (
         <CustomerInvoices customerId={id} />
       )}

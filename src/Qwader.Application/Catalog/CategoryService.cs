@@ -90,8 +90,9 @@ public sealed class CategoryService(IAppDbContext db, IDocumentNumberGenerator n
 
     private static Task ApplyAsync(Category category, SaveCategoryRequest request, CancellationToken _)
     {
-        category.Name = request.Name.Trim();
-        category.NormalizedName = ArabicText.Normalize(request.Name);
+        // One space between words: «صنف  أ» and «صنف أ» are the same category.
+        category.Name = string.Join(' ', request.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        category.NormalizedName = ArabicText.Normalize(category.Name);
         category.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         category.IsActive = request.IsActive;
         return Task.CompletedTask;

@@ -24,12 +24,15 @@ export function StatementView({
   debitLabel,
   creditLabel,
   balanceHint,
+  increases = 'credit',
 }: {
   queryKey: unknown[];
   load: (from?: string, to?: string) => Promise<Statement>;
   debitLabel: string;
   creditLabel: string;
   balanceHint?: string;
+  /** The side that adds to the balance: a customer's purchases (debit), what the store owes a supplier (credit). */
+  increases?: 'debit' | 'credit';
 }) {
   const [range, setRange] = useState<DateRangeValue>({ preset: 'all' });
   const query = useQuery({
@@ -77,8 +80,13 @@ export function StatementView({
                       {l.description && <p className="text-sm">{l.description}</p>}
                     </div>
                     <div className="shrink-0 text-end">
-                      {l.credit > 0 && <p className="tabular font-semibold text-danger">+{formatMoney(l.credit)}</p>}
-                      {l.debit > 0 && <p className="tabular font-semibold text-success">−{formatMoney(l.debit)}</p>}
+                      {/* What adds to the balance shows «+», what takes from it «−». */}
+                      {(increases === 'credit' ? l.credit : l.debit) > 0 && (
+                        <p className="tabular font-semibold text-danger">+{formatMoney(increases === 'credit' ? l.credit : l.debit)}</p>
+                      )}
+                      {(increases === 'credit' ? l.debit : l.credit) > 0 && (
+                        <p className="tabular font-semibold text-success">−{formatMoney(increases === 'credit' ? l.debit : l.credit)}</p>
+                      )}
                       <p className="tabular text-xs text-muted">الرصيد: {formatMoney(l.balance)}</p>
                     </div>
                   </li>

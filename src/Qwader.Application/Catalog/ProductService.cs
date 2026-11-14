@@ -281,6 +281,15 @@ public sealed class ProductService(
                 throw new ValidationFailedException("parentProductId", "اختر المنتج الأصلي وليس أحد متغيراته");
             if (!isNew && await db.Products.AnyAsync(p => p.ParentProductId == product.Id, ct))
                 throw new ValidationFailedException("parentProductId", "هذا المنتج له متغيرات، فلا يمكن جعله متغيرًا لمنتج آخر");
+
+            // Two variants of one product with the same size, colour and model cannot be told apart at the till.
+            var (size, color, model) = (Clean(r.Size), Clean(r.Color), Clean(r.Model));
+            var twin = await db.Products.AsNoTracking()
+                .Where(p => (p.ParentProductId == parentId || p.Id == parentId) && p.Id != product.Id && !p.IsArchived
+                    && p.Size == size && p.Color == color && p.Model == model)
+                .Select(p => p.Sku).FirstOrDefaultAsync(ct);
+            if (twin is not null)
+                throw new ValidationFailedException("size", $"يوجد متغير بنفس المقاس واللون والموديل ({twin})");
         }
 
         product.Name = r.Name.Trim();
@@ -309,6 +318,9 @@ public sealed class ProductService(
                 throw new ValidationFailedException("units", "إحدى الوحدات غير موجودة");
             if (r.Units.Any(u => u.UnitId == r.UnitId))
                 throw new ValidationFailedException("units", "الوحدة الإضافية يجب أن تختلف عن الوحدة الأساسية");
+            // A carton of a unit counted whole holds a whole number of them (not 1.5 pieces).
+            if (r.Units.Any(u => u.Factor != decimal.Truncate(u.Factor)) && await db.Units.AnyAsync(u => u.Id == r.UnitId && u.WholeNumbersOnly, ct))
+                throw new ValidationFailedException("units", "الوحدة الأساسية تُعدّ بدون كسور: عدد القطع في الوحدة الإضافية يجب أن يكون عددًا صحيحًا");
             // Updated in place by unit, so invoices that point at a unit keep pointing at it.
             foreach (var gone in product.Units.Where(u => !unitIds.Contains(u.UnitId)).ToList()) product.Units.Remove(gone);
             foreach (var u in r.Units)

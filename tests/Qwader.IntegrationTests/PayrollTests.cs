@@ -40,7 +40,7 @@ public sealed class PayrollTests(ApiFactory factory)
     {
         var admin = await factory.LoginAsync();
         var (userId, worker) = await NewUserAsync(admin);
-        var workerPhone = $"https://push.example/worker-{Guid.NewGuid():N}";
+        var workerPhone = $"https://fcm.googleapis.com/fcm/send/worker-{Guid.NewGuid():N}";
         (await worker.PutAsJsonAsync("/api/push/subscription", new SavePushSubscriptionRequest(workerPhone, "p256dh-key", "auth-key", new PushTopicsDto(false, false, false), "اختبار")))
             .EnsureSuccessStatusCode();
         var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;

@@ -105,7 +105,9 @@ public sealed class ReviewFixesTests(ApiFactory factory)
         (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null,
             "دخل", null, 0.001m, drawer, null, null, null))).StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, (HttpStatusCode)422);
         (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null,
-            "دخل", null, 1_000_000_000_000_000m, drawer, null, null, null))).StatusCode.Should().Be((HttpStatusCode)422);
+            "دخل", null, 1_000_000_000_000_000m, drawer, null, null, null))).StatusCode.Should().Be(HttpStatusCode.BadRequest, "refused as input");
+        (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null,
+            "دخل", null, 200_000_000m, drawer, null, null, null))).StatusCode.Should().Be((HttpStatusCode)422, "over the 100M ceiling of one amount");
         (await BalanceAsync(drawer)).Should().Be(0);
     }
 

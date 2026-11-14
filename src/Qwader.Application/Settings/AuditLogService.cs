@@ -135,7 +135,10 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
                 .Select(p => new { p.Id, p.Sku, p.Name, p.Size, p.Color, p.Model }).ToListAsync(ct))
             .ToDictionary(p => p.Id, p => $"{p.Sku} · {Domain.Catalog.Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model)}"));
         await Add("SaleInvoice", l => db.SaleInvoices.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Number} · {x.CustomerName}", ct));
-        await Add("PurchaseInvoice", l => db.PurchaseInvoices.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => $"{x.Number} · {x.Supplier.Name}", ct));
+        // The supplier's name is read in the query: the dictionary's value is built after loading, where the supplier is not loaded.
+        await Add("PurchaseInvoice", async l => (await db.PurchaseInvoices.AsNoTracking().Where(x => l.Contains(x.Id))
+                .Select(x => new { x.Id, x.Number, Supplier = x.Supplier.Name }).ToListAsync(ct))
+            .ToDictionary(x => x.Id, x => $"{x.Number} · {x.Supplier}"));
         await Add("ReceiptVoucher", l => db.ReceiptVouchers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
         await Add("PaymentVoucher", l => db.PaymentVouchers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));
         await Add("IncomingTransfer", l => db.IncomingTransfers.AsNoTracking().Where(x => l.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Number, ct));

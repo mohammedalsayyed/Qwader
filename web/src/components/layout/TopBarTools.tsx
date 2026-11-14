@@ -189,7 +189,7 @@ export function NotificationsButton() {
       <IconButton label={total ? `الإشعارات (${total})` : 'الإشعارات'} onClick={() => setOpen(true)} className="relative">
         <Bell className="size-6" />
         {total > 0 && (
-          <span className="tabular absolute top-1.5 end-1.5 min-w-4.5 rounded-full bg-danger px-1 text-center text-[11px] leading-4.5 font-bold text-white">
+          <span dir="ltr" className="tabular absolute top-1.5 end-1.5 min-w-4.5 rounded-full bg-danger px-1 text-center text-[11px] leading-4.5 font-bold text-white">
             {total > 99 ? '99+' : total}
           </span>
         )}

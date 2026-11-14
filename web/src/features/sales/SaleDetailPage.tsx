@@ -82,8 +82,22 @@ export function SaleDetailPage() {
   const collected = s.paidAmount - s.payments.reduce((sum, p) => sum + p.amount, 0);
 
   const share = async () => {
-    const text = [settings.data?.storeName, `فاتورة رقم ${s.number}`, `الإجمالي: ${formatMoney(s.total)}`,
-      s.remaining > 0 ? `المتبقي: ${formatMoney(s.remaining)}` : null].filter(Boolean).join('\n');
+    // The whole invoice as text: its lines, what was paid, what is left, and plainly when it was voided or returned.
+    const status = s.status === 'Voided' ? '⚠️ فاتورة ملغاة' : s.status === 'Returned' ? '⚠️ فاتورة مرتجعة بالكامل'
+      : s.status === 'PartiallyReturned' ? `مرتجع منها: ${formatMoney(s.returnedTotal)}` : null;
+    const text = [
+      settings.data?.storeName,
+      `فاتورة رقم ${s.number} — ${formatDateTime(s.date)}`,
+      status,
+      s.isWalkIn ? null : `العميل: ${s.customerName}`,
+      '',
+      ...s.lines.map((l) => `• ${l.productName}: ${formatQuantity(l.quantity)}${l.unitName ? ` ${l.unitName}` : ''} × ${formatMoney(l.unitPrice)} = ${formatMoney(l.lineTotal)}`),
+      '',
+      s.lineDiscountTotal + s.invoiceDiscount > 0 ? `الخصم: ${formatMoney(s.lineDiscountTotal + s.invoiceDiscount)}` : null,
+      `الإجمالي: ${formatMoney(s.total)}`,
+      s.status === 'Voided' ? null : `المدفوع: ${formatMoney(s.paidAmount)}`,
+      s.remaining > 0 ? `المتبقي: ${formatMoney(s.remaining)}` : null,
+    ].filter((x) => x != null).join('\n');
     if (navigator.share) {
       try { await navigator.share({ title: `فاتورة ${s.number}`, text }); return; } catch { /* fall back */ }
     }
