@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, Banknote, Landmark, Pencil, Plus, Scale, Smartphone } from 'lucide-react';
-import { accountsApi, type Account } from '@/api/finance';
+import { ArrowDownLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, Ban, Banknote, History, Landmark, Pencil, Plus, Scale, Smartphone } from 'lucide-react';
+import { accountsApi, type Account, type AccountTransfer } from '@/api/finance';
 import type { AccountType } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -30,6 +30,7 @@ export function AccountsPage() {
   const { can } = useAuth();
   const [editing, setEditing] = useState<Account | 'new' | null>(null);
   const [transferring, setTransferring] = useState(false);
+  const [showTransfers, setShowTransfers] = useState(false);
   const query = useQuery({ queryKey: ['accounts'], queryFn: () => accountsApi.list(true) });
 
   if (query.isPending) return <Spinner />;
@@ -49,6 +50,7 @@ export function AccountsPage() {
         <div className="mb-4 grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={() => setTransferring(true)}><ArrowLeftRight className="size-4" /> تحويل بين حسابات</Button>
           <Button variant="outline" onClick={() => setEditing('new')}><Plus className="size-4" /> حساب جديد</Button>
+          <Button variant="outline" className="col-span-2" onClick={() => setShowTransfers(true)}><History className="size-4" /> سجل التحويلات بين الحسابات</Button>
         </div>
       )}
       <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -71,6 +73,7 @@ export function AccountsPage() {
       </ul>
       {editing && <AccountSheet account={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {transferring && <TransferSheet accounts={active} onClose={() => setTransferring(false)} />}
+      {showTransfers && <TransfersLogSheet onClose={() => setShowTransfers(false)} />}
     </>
   );
 }
@@ -159,6 +162,66 @@ function TransferSheet({ accounts, onClose }: { accounts: Account[]; onClose: ()
         </Field>
         <Field label="المبلغ" required>{(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} onChange={(e) => setAmount(e.target.value)} />}</Field>
         <Field label="ملاحظات">{(id) => <Input id={id} value={notes} onChange={(e) => setNotes(e.target.value)} />}</Field>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Transfers between the store's own accounts, newest first; a wrong one is cancelled here (the money goes back). */
+function TransfersLogSheet({ onClose }: { onClose: () => void }) {
+  const [page, setPage] = useState(1);
+  const [cancelling, setCancelling] = useState<AccountTransfer | null>(null);
+  const query = useQuery({ queryKey: ['account-transfers', page], queryFn: () => accountsApi.transfers(page), placeholderData: keepPreviousData });
+  return (
+    <Sheet open onClose={onClose} title="سجل التحويلات بين الحسابات" size="lg">
+      {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : (
+        query.data.items.length === 0 ? <EmptyState title="لا توجد تحويلات" /> : (
+          <>
+            <ul className="divide-y divide-line">
+              {query.data.items.map((t) => (
+                <li key={t.id} className={cn('flex flex-wrap items-center justify-between gap-2 py-3', t.voidedAt && 'opacity-70')}>
+                  <div className="min-w-0">
+                    <p className="font-semibold">{t.fromAccountName} ← {t.toAccountName}{t.voidedAt && <span className="ms-2"><Badge tone="danger">ملغى</Badge></span>}</p>
+                    <p className="text-xs text-muted"><span className="ltr inline-block">{t.number}</span> · {formatDateTime(t.date)}{t.createdByName && ` · ${t.createdByName}`}{t.notes && ` · ${t.notes}`}</p>
+                    {t.voidedAt && <p className="text-xs text-danger">أُلغي في {formatDateTime(t.voidedAt)} — {t.voidReason}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('tabular font-bold', t.voidedAt && 'line-through')}>{formatMoney(t.amount)}</span>
+                    {!t.voidedAt && <Button size="sm" variant="outline" onClick={() => setCancelling(t)}><Ban className="size-4 text-danger" /> إلغاء</Button>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Pagination page={query.data.page} totalPages={query.data.totalPages} onChange={setPage} />
+          </>
+        )
+      )}
+      {cancelling && <CancelTransferSheet transfer={cancelling} onClose={() => setCancelling(null)} />}
+    </Sheet>
+  );
+}
+
+function CancelTransferSheet({ transfer, onClose }: { transfer: AccountTransfer; onClose: () => void }) {
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+  const save = useMutation({
+    mutationFn: () => accountsApi.voidTransfer(transfer.id, reason.trim()),
+    onSuccess: () => { invalidateMoney(queryClient); toast.success(`تم إلغاء التحويل ${transfer.number}`); onClose(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <Sheet open onClose={onClose} title={`إلغاء التحويل ${transfer.number}`}
+      footer={<Button block size="lg" variant="danger" loading={save.isPending} onClick={() => (reason.trim() ? save.mutate() : setError('سبب الإلغاء مطلوب'))}>تأكيد الإلغاء</Button>}>
+      <div className="space-y-3">
+        <p className="text-sm leading-6 text-muted">
+          يرجع المبلغ <b className="tabular">{formatMoney(transfer.amount)}</b> من «{transfer.toAccountName}» إلى «{transfer.fromAccountName}».
+          يجب أن يكون المبلغ ما زال موجودًا في «{transfer.toAccountName}». يبقى التحويل ظاهرًا بحالة «ملغى».
+        </p>
+        <Field label="سبب الإلغاء" required error={error}>
+          {(id, d) => <Input id={id} aria-describedby={d} value={reason} onChange={(e) => { setReason(e.target.value); setError(undefined); }} />}
+        </Field>
       </div>
     </Sheet>
   );

@@ -53,6 +53,10 @@ public class AccountTransfer : AuditableEntity
     public decimal Amount { get; set; }
     public DateTime Date { get; set; }
     public string? Notes { get; set; }
+    /// <summary>Cancelled: the money went back to the account it left (opposite entries on both accounts).</summary>
+    public DateTime? VoidedAt { get; set; }
+    public int? VoidedById { get; set; }
+    public string? VoidReason { get; set; }
 
     public FinancialAccount FromAccount { get; set; } = null!;
     public FinancialAccount ToAccount { get; set; } = null!;

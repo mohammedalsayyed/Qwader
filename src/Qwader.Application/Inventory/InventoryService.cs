@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Qwader.Application.Catalog;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Ledgers;
@@ -156,6 +157,7 @@ public sealed class InventoryService(
                 .Select(m => m.BalanceAfter).FirstAsync(ct);
             return new StockAdjustmentResult(done.ResultId!, previous);
         }
+        await QuantityRules.EnsureAsync(db, [(request.ProductId, null, request.Quantity)], ct);
 
         var product = await db.Products.AsNoTracking().Where(p => p.Id == request.ProductId).Select(p => new { p.Id, p.IsArchived }).FirstOrDefaultAsync(ct)
             ?? throw new ValidationFailedException("productId", "المنتج غير موجود");
@@ -303,6 +305,8 @@ public sealed class InventoryService(
         {
             if (entry.CountedQuantity < 0) throw new ValidationFailedException("entries", "الكمية المعدودة لا يمكن أن تكون سالبة");
             var line = count.Lines.FirstOrDefault(l => l.Id == entry.LineId) ?? throw new ValidationFailedException("entries", "بند جرد غير موجود");
+            if (entry.CountedQuantity is { } counted)
+                await QuantityRules.EnsureAsync(db, [(line.ProductId, null, counted)], ct);
             if (line.CountedQuantity == entry.CountedQuantity) continue;
             line.CountedQuantity = entry.CountedQuantity;
             // The system's balance at the moment the shelf was counted: sales between counting and posting then still count.

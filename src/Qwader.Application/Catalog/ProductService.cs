@@ -161,6 +161,9 @@ public sealed class ProductService(
     {
         if ((request.OpeningQuantity ?? 0) > 0 && !currentUser.HasPermission(Permissions.InventoryAdjust) && !currentUser.HasPermission(Permissions.PurchasesManage))
             throw new ForbiddenException("ليست لديك صلاحية إدخال رصيد افتتاحي للمخزون");
+        if (request.OpeningQuantity is { } opening && opening != decimal.Truncate(opening)
+            && await db.Units.AnyAsync(u => u.Id == request.UnitId && u.WholeNumbersOnly, ct))
+            throw new ValidationFailedException("openingQuantity", $"الوحدة تُعدّ بدون كسور: الكمية {opening:0.###} غير مقبولة");
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 

@@ -44,6 +44,9 @@ public sealed class AccountTransfersController(IAccountService accounts) : Contr
 
     [HttpPost]
     public Task<AccountTransferDto> Create(CreateAccountTransferRequest request, CancellationToken ct) => accounts.TransferAsync(request, ct);
+
+    [HttpPost("{id:int}/void")]
+    public Task<AccountTransferDto> Void(int id, VoidDocumentRequest request, CancellationToken ct) => accounts.VoidTransferAsync(id, request, ct);
 }
 
 [ApiController]

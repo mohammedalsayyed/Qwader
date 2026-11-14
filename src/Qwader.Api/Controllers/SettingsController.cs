@@ -97,6 +97,12 @@ public sealed class LookupsController(ILookupService lookups) : ControllerBase
     [HttpPost("units")]
     [HasPermission(Permissions.ProductsManage)]
     public Task<LookupItem> AddUnit(AddUnitRequest request, CancellationToken ct) => lookups.AddUnitAsync(request.Name, ct);
+
+    public sealed record SetUnitRequest(bool WholeNumbersOnly);
+
+    [HttpPut("units/{id:int}")]
+    [HasPermission(Permissions.ProductsManage)]
+    public Task<UnitLookupItem> SetUnit(int id, SetUnitRequest request, CancellationToken ct) => lookups.SetUnitWholeNumbersAsync(id, request.WholeNumbersOnly, ct);
 }
 
 /// <summary>The version, for signed-in users only (shown under the copyright line); not told to anyone before sign-in.</summary>

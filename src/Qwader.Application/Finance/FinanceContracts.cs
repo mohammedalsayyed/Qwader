@@ -25,7 +25,8 @@ public sealed record AccountStatementDto(int AccountId, string AccountName, Date
 public sealed record CreateAccountTransferRequest(Guid IdempotencyKey, int FromAccountId, int ToAccountId, decimal Amount, string? Notes);
 
 public sealed record AccountTransferDto(int Id, string Number, DateTime Date, int FromAccountId, string FromAccountName,
-    int ToAccountId, string ToAccountName, decimal Amount, string? Notes, string? CreatedByName);
+    int ToAccountId, string ToAccountName, decimal Amount, string? Notes, string? CreatedByName,
+    DateTime? VoidedAt = null, string? VoidReason = null);
 
 // ------------------------------------------------------------------ incoming transfers
 

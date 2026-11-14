@@ -104,8 +104,13 @@ export interface LookupItem {
 
 export type AccountType = 'Cash' | 'Bank' | 'Wallet';
 
+/** A unit of measure; wholeNumbersOnly: no fractions of it (a piece, a set). */
+export interface UnitLookup extends LookupItem {
+  wholeNumbersOnly: boolean;
+}
+
 export interface Lookups {
-  units: LookupItem[];
+  units: UnitLookup[];
   warehouses: LookupItem[];
   expenseCategories: LookupItem[];
   categories: LookupItem[];
@@ -130,4 +135,6 @@ export const lookupsApi = {
   get: () => api<Lookups>('/lookups'),
   /** A unit of measure typed in a product form; an existing one with that name comes back instead. */
   addUnit: (name: string) => api<LookupItem>('/lookups/units', { method: 'POST', body: { name } }),
+  setUnitWholeNumbers: (id: number, wholeNumbersOnly: boolean) =>
+    api<UnitLookup>(`/lookups/units/${id}`, { method: 'PUT', body: { wholeNumbersOnly } }),
 };

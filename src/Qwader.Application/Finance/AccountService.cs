@@ -18,6 +18,8 @@ public interface IAccountService
     Task<AccountStatementDto> StatementAsync(int id, DateOnly? from, DateOnly? to, PagedRequest paging, CancellationToken ct = default);
     Task<PagedResult<AccountTransferDto>> TransfersAsync(PagedRequest request, CancellationToken ct = default);
     Task<AccountTransferDto> TransferAsync(CreateAccountTransferRequest request, CancellationToken ct = default);
+    /// <summary>Cancels a transfer: the money goes back from the account that received it (it must still be there).</summary>
+    Task<AccountTransferDto> VoidTransferAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
 }
 
 public sealed class AccountService(
@@ -133,8 +135,31 @@ public sealed class AccountService(
         var users = db.Users;
         return await db.AccountTransfers.AsNoTracking().OrderByDescending(t => t.Id)
             .Select(t => new AccountTransferDto(t.Id, t.Number, t.Date, t.FromAccountId, t.FromAccount.Name, t.ToAccountId, t.ToAccount.Name,
-                t.Amount, t.Notes, users.Where(u => u.Id == t.CreatedById).Select(u => u.FullName).FirstOrDefault()))
+                t.Amount, t.Notes, users.Where(u => u.Id == t.CreatedById).Select(u => u.FullName).FirstOrDefault(), t.VoidedAt, t.VoidReason))
             .ToPagedAsync(request, ct);
+    }
+
+    public async Task<AccountTransferDto> VoidTransferAsync(int id, VoidDocumentRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var transfer = await db.AccountTransfers.FirstOrDefaultAsync(t => t.Id == id, ct) ?? throw new NotFoundException("التحويل غير موجود");
+        if (transfer.VoidedAt is not null) throw new BusinessRuleException("هذا التحويل ملغى من قبل");
+
+        var now = clock.UtcNow;
+        var reason = request.Reason.Trim();
+        // Paired with the transfer's own entries (same source) so reports leave both out; the receiving account must still hold it.
+        var source = new LedgerSource("AccountTransfer", transfer.Id, transfer.Number, $"إلغاء التحويل: {reason}");
+        foreach (var (accountId, direction) in new[] { (transfer.ToAccountId, MoneyDirection.Out), (transfer.FromAccountId, MoneyDirection.In) }.OrderBy(x => x.Item1))
+            await ledger.PostAsync(accountId, direction, transfer.Amount, AccountTransactionCategory.Reversal, source, now, ct,
+                requireFunds: direction == MoneyDirection.Out);
+
+        transfer.VoidedAt = now;
+        transfer.VoidedById = currentUser.UserId;
+        transfer.VoidReason = reason;
+        audit.Log("Account.TransferVoid", "AccountTransfer", transfer.Id.ToString(), null, new { transfer.Number, transfer.Amount }, reason);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return (await TransfersAsync(new PagedRequest { PageSize = 100 }, ct)).Items.First(t => t.Id == transfer.Id);
     }
 
     public async Task<AccountTransferDto> TransferAsync(CreateAccountTransferRequest request, CancellationToken ct = default)

@@ -61,6 +61,9 @@ export interface AccountTransfer {
   amount: number;
   notes: string | null;
   createdByName: string | null;
+  /** Cancelled: the money went back to the account it left. */
+  voidedAt: string | null;
+  voidReason: string | null;
 }
 
 export type TransferStatus = 'Pending' | 'Confirmed' | 'Rejected';
@@ -170,6 +173,7 @@ export const accountsApi = {
   transfers: (page = 1) => api<PagedResult<AccountTransfer>>('/account-transfers', { query: { page, pageSize: 20 } }),
   transfer: (input: { idempotencyKey: string; fromAccountId: number; toAccountId: number; amount: number; notes?: string | null }) =>
     api<AccountTransfer>('/account-transfers', { method: 'POST', body: input }),
+  voidTransfer: (id: number, reason: string) => api<AccountTransfer>(`/account-transfers/${id}/void`, { method: 'POST', body: { reason } }),
 };
 
 export const transfersApi = {

@@ -515,6 +515,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
 
+                    b.Property<bool>("WholeNumbersOnly")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
@@ -663,6 +666,16 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("UpdatedById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("VoidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("VoidedById")
                         .HasColumnType("int");
 
                     b.HasKey("Id");

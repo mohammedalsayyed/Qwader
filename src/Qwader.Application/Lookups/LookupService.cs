@@ -10,8 +10,11 @@ public sealed record LookupItem(int Id, string Name);
 
 public sealed record AccountLookupItem(int Id, string Name, FinancialAccountType Type);
 
+/// <summary>A unit of measure; <see cref="WholeNumbersOnly"/>: no fractions of it (a piece, a set).</summary>
+public sealed record UnitLookupItem(int Id, string Name, bool WholeNumbersOnly);
+
 public sealed record LookupsDto(
-    IReadOnlyList<LookupItem> Units,
+    IReadOnlyList<UnitLookupItem> Units,
     IReadOnlyList<LookupItem> Warehouses,
     IReadOnlyList<LookupItem> ExpenseCategories,
     IReadOnlyList<LookupItem> Categories,
@@ -22,6 +25,8 @@ public interface ILookupService
     Task<LookupsDto> GetAsync(CancellationToken ct = default);
     /// <summary>A unit of measure added from a product form; an existing one with that name is returned (and shown again if hidden).</summary>
     Task<LookupItem> AddUnitAsync(string name, CancellationToken ct = default);
+    /// <summary>Whether the unit is counted in whole numbers only.</summary>
+    Task<UnitLookupItem> SetUnitWholeNumbersAsync(int id, bool wholeNumbersOnly, CancellationToken ct = default);
 }
 
 /// <summary>Small reference lists the client caches once per session.</summary>
@@ -43,8 +48,20 @@ public sealed class LookupService(IAppDbContext db, IAuditService audit) : ILook
         return new LookupItem(unit.Id, unit.Name);
     }
 
+    public async Task<UnitLookupItem> SetUnitWholeNumbersAsync(int id, bool wholeNumbersOnly, CancellationToken ct = default)
+    {
+        var unit = await db.Units.FirstOrDefaultAsync(u => u.Id == id, ct) ?? throw new NotFoundException("الوحدة غير موجودة");
+        if (unit.WholeNumbersOnly != wholeNumbersOnly)
+        {
+            audit.Log("Unit.Update", "Unit", unit.Id.ToString(), new { unit.WholeNumbersOnly }, new { WholeNumbersOnly = wholeNumbersOnly });
+            unit.WholeNumbersOnly = wholeNumbersOnly;
+            await db.SaveChangesAsync(ct);
+        }
+        return new UnitLookupItem(unit.Id, unit.Name, unit.WholeNumbersOnly);
+    }
+
     public async Task<LookupsDto> GetAsync(CancellationToken ct = default) => new(
-        await db.Units.Where(u => u.IsActive).OrderBy(u => u.Id).Select(u => new LookupItem(u.Id, u.Name)).ToListAsync(ct),
+        await db.Units.Where(u => u.IsActive).OrderBy(u => u.Id).Select(u => new UnitLookupItem(u.Id, u.Name, u.WholeNumbersOnly)).ToListAsync(ct),
         await db.Warehouses.Where(w => w.IsActive).OrderByDescending(w => w.IsDefault).ThenBy(w => w.Id)
             .Select(w => new LookupItem(w.Id, w.Name)).ToListAsync(ct),
         await db.ExpenseCategories.Where(c => c.IsActive).OrderBy(c => c.Id).Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct),

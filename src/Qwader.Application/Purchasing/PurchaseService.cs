@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qwader.Application.Catalog;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Ledgers;
@@ -198,6 +199,8 @@ public sealed class PurchaseService(
             Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
         };
 
+        await QuantityRules.EnsureAsync(db, request.Lines.Select(r => invoice.Lines.FirstOrDefault(l => l.Id == r.PurchaseInvoiceLineId) is { } l
+            ? (l.ProductId, l.ProductUnitId, r.Quantity) : (0, (int?)null, 0m)), ct);
         foreach (var input in request.Lines.GroupBy(l => l.PurchaseInvoiceLineId).Select(g => new { LineId = g.Key, Quantity = g.Sum(x => x.Quantity) }))
         {
             var line = invoice.Lines.FirstOrDefault(l => l.Id == input.LineId)
@@ -249,6 +252,7 @@ public sealed class PurchaseService(
             ?? throw new ValidationFailedException("supplierId", "المورد غير موجود");
         if (!supplier.IsActive) throw new ValidationFailedException("supplierId", "المورد غير فعّال");
 
+        await QuantityRules.EnsureAsync(db, r.Lines.Select(l => (l.ProductId, l.ProductUnitId, l.Quantity)), ct);
         var productIds = r.Lines.Select(l => l.ProductId).Distinct().ToList();
         var products = await db.Products.AsNoTracking().Where(p => productIds.Contains(p.Id))
             .Select(p => new { p.Id, p.Name, p.IsArchived, Units = p.Units.Select(u => new { u.Id, u.Unit.Name, u.Factor }).ToList() })

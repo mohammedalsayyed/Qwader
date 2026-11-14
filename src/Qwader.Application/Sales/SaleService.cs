@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Qwader.Application.Catalog;
 using Qwader.Application.Abstractions;
 using Qwader.Application.Common;
 using Qwader.Application.Customers;
@@ -71,6 +72,8 @@ public sealed class SaleService(
             })
             .ToDictionaryAsync(p => p.Id, ct);
         if (products.Count != productIds.Count) throw new ValidationFailedException("lines", "أحد المنتجات غير موجود");
+        foreach (var problem in await QuantityRules.CheckAsync(db, request.Lines.Select(l => (l.ProductId, l.ProductUnitId, l.Quantity)), ct))
+            Breach(problem);
         foreach (var archived in products.Values.Where(p => p.IsArchived))
             Breach($"المنتج «{archived.Name}» مؤرشف ولا يمكن بيعه");
 
@@ -563,6 +566,8 @@ public sealed class SaleService(
             Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
         };
 
+        await QuantityRules.EnsureAsync(db, request.Lines.Select(r => invoice.Lines.FirstOrDefault(l => l.Id == r.SaleInvoiceLineId) is { } l
+            ? (l.ProductId, l.ProductUnitId, r.Quantity) : (0, (int?)null, 0m)), ct);
         foreach (var group in request.Lines.GroupBy(l => (l.SaleInvoiceLineId, l.Condition)))
         {
             var line = invoice.Lines.FirstOrDefault(l => l.Id == group.Key.SaleInvoiceLineId)

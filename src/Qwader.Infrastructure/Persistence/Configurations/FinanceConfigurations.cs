@@ -36,6 +36,7 @@ public sealed class AccountTransferConfiguration : IEntityTypeConfiguration<Acco
     {
         b.Property(t => t.Number).HasMaxLength(30).IsRequired();
         b.Property(t => t.Notes).HasMaxLength(300);
+        b.Property(t => t.VoidReason).HasMaxLength(300);
         b.HasIndex(t => t.Number).IsUnique();
         b.HasOne(t => t.FromAccount).WithMany().HasForeignKey(t => t.FromAccountId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(t => t.ToAccount).WithMany().HasForeignKey(t => t.ToAccountId).OnDelete(DeleteBehavior.Restrict);

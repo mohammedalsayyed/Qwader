@@ -77,6 +77,8 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Sale.Void"] = "إلغاء فاتورة بيع",
         ["Sale.Restore"] = "استعادة فاتورة بيع ملغاة",
         ["Sale.ReturnVoid"] = "إلغاء مرتجع بيع",
+        ["Account.TransferVoid"] = "إلغاء تحويل بين حسابات",
+        ["Unit.Update"] = "تعديل وحدة قياس",
         ["Account.Create"] = "إضافة حساب مالي",
         ["Account.Update"] = "تعديل حساب مالي",
         ["Account.SetOpeningBalance"] = "تعديل رصيد افتتاحي",

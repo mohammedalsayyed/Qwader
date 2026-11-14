@@ -11,6 +11,7 @@ using Qwader.Application.Purchasing;
 using Qwader.Application.Reports;
 using Qwader.Application.Sales;
 using Qwader.Domain.Finance;
+
 using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 using Qwader.Infrastructure.Persistence;
@@ -165,6 +166,62 @@ public sealed class ReviewFixesTests(ApiFactory factory)
             [new(product.Id, 3, 10), new(product.Id, 3, 10)], [new(drawer, 60)], null));
         response.StatusCode.Should().Be((HttpStatusCode)422);
         (await response.Content.ReadAsStringAsync()).Should().Contain("المطلوب 6").And.Contain("المتوفر 3");
+    }
+
+    [Fact]
+    public async Task A_unit_counted_in_whole_numbers_refuses_fractions_everywhere_and_others_still_take_them()
+    {
+        var admin = await factory.LoginAsync();
+        var drawer = await DrawerAsync(admin);
+        // A unit of its own, so switching it does not touch other tests' products.
+        var unit = await (await admin.PostAsJsonAsync("/api/lookups/units", new { name = TestData.Unique("طقم") })).ReadAsync<Application.Lookups.LookupItem>();
+        var product = await admin.CreateProductAsync(retail: 10, openingQuantity: 5, openingCost: 4);
+        var request = new SaveProductRequest(product.Name, product.Sku, null, product.CategoryId, null, unit.Id, null, null,
+            null, null, null, null, 4, 10, 10, 0, 2, null);
+        await (await admin.PutAsJsonAsync($"/api/products/{product.Id}", request)).ReadAsync<ProductDetailDto>();
+
+        // Fractions allowed until the unit is switched (the default keeps today's behaviour).
+        (await admin.PostAsJsonAsync("/api/sales", Sale(product.Id, 0.5m, 10, drawer, 5))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var set = await (await admin.PutAsJsonAsync($"/api/lookups/units/{unit.Id}", new { wholeNumbersOnly = true })).ReadAsync<Application.Lookups.UnitLookupItem>();
+        set.WholeNumbersOnly.Should().BeTrue();
+        (await admin.LookupsAsync()).Units.Single(u => u.Id == unit.Id).WholeNumbersOnly.Should().BeTrue();
+
+        var sale = await admin.PostAsJsonAsync("/api/sales", Sale(product.Id, 0.5m, 10, drawer, 5));
+        sale.StatusCode.Should().Be((HttpStatusCode)422);
+        (await sale.Content.ReadAsStringAsync()).Should().Contain("بدون كسور");
+        (await admin.AdjustAsync(product.Id, AdjustmentKind.Damaged, 0.5m)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var supplier = await admin.CreateSupplierAsync();
+        (await admin.PostAsJsonAsync("/api/purchases", new SavePurchaseRequest(Guid.NewGuid(), supplier.Id, null, null, null, 0, 0, null, null,
+            [new PurchaseLineInput(product.Id, 1.25m, 4)], true))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await admin.PostAsJsonAsync("/api/sales", Sale(product.Id, 2, 10, drawer, 20))).StatusCode.Should().Be(HttpStatusCode.OK, "whole numbers still sell");
+    }
+
+    [Fact]
+    public async Task Cancelling_a_transfer_puts_the_money_back_and_needs_it_still_in_the_receiving_account()
+    {
+        var admin = await factory.LoginAsync();
+        var from = await DrawerAsync(admin);
+        var to = await DrawerAsync(admin);
+        await admin.FundAsync(from, 100);
+        var transfer = await (await admin.PostAsJsonAsync("/api/account-transfers", new CreateAccountTransferRequest(Guid.NewGuid(), from, to, 60, null)))
+            .ReadAsync<AccountTransferDto>();
+        (await BalanceAsync(from)).Should().Be(40);
+        (await BalanceAsync(to)).Should().Be(60);
+
+        var voided = await (await admin.PostAsJsonAsync($"/api/account-transfers/{transfer.Id}/void", new VoidDocumentRequest("مبلغ غلط"))).ReadAsync<AccountTransferDto>();
+        voided.VoidedAt.Should().NotBeNull();
+        voided.VoidReason.Should().Be("مبلغ غلط");
+        (await BalanceAsync(from)).Should().Be(100);
+        (await BalanceAsync(to)).Should().Be(0);
+        (await admin.PostAsJsonAsync($"/api/account-transfers/{transfer.Id}/void", new VoidDocumentRequest("مرة ثانية"))).StatusCode.Should().Be((HttpStatusCode)422);
+
+        // Spent from the receiving account: it cannot be cancelled.
+        var second = await (await admin.PostAsJsonAsync("/api/account-transfers", new CreateAccountTransferRequest(Guid.NewGuid(), from, to, 50, null)))
+            .ReadAsync<AccountTransferDto>();
+        await (await admin.PostAsJsonAsync("/api/account-transfers", new CreateAccountTransferRequest(Guid.NewGuid(), to, from, 30, null))).ReadAsync<AccountTransferDto>();
+        (await admin.PostAsJsonAsync($"/api/account-transfers/{second.Id}/void", new VoidDocumentRequest("غلط"))).StatusCode.Should().Be((HttpStatusCode)422);
+        (await BalanceAsync(to)).Should().Be(20);
     }
 
     [Fact]
