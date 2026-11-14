@@ -89,7 +89,8 @@ function OfflineShell() {
           <span className="hidden text-sm text-muted sm:block">{user?.fullName}</span>
         </span>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 pt-4 pb-10 lg:px-8">
+      {/* The till takes the whole width here too, as in the connected layout (search, invoice, invoices put aside). */}
+      <main className={`mx-auto w-full px-4 pt-4 pb-10 lg:px-8 ${location.pathname === '/pos/queue' ? 'max-w-6xl' : 'max-w-[1700px]'}`}>
         <Suspense fallback={<Spinner />}>{location.pathname === '/pos/queue' ? <OfflineQueuePage /> : <PosPage />}</Suspense>
       </main>
     </div>
