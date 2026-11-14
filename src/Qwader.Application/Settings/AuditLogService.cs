@@ -75,6 +75,8 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Payroll.VoidSettlement"] = "إلغاء مخالصة راتب",
         ["Sale.Return"] = "مرتجع مبيعات",
         ["Sale.Void"] = "إلغاء فاتورة بيع",
+        ["Sale.Restore"] = "استعادة فاتورة بيع ملغاة",
+        ["Sale.ReturnVoid"] = "إلغاء مرتجع بيع",
         ["Account.Create"] = "إضافة حساب مالي",
         ["Account.Update"] = "تعديل حساب مالي",
         ["Account.SetOpeningBalance"] = "تعديل رصيد افتتاحي",

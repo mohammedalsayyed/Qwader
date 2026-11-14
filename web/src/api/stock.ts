@@ -8,6 +8,8 @@ export type MovementType =
   | 'Sale'
   | 'SaleReturn'
   | 'SaleVoid'
+  | 'SaleReturnVoid'
+  | 'SaleRestore'
   | 'Damaged'
   | 'Lost'
   | 'Found'
@@ -24,6 +26,8 @@ export const MOVEMENT_LABELS: Record<MovementType, string> = {
   Sale: 'بيع',
   SaleReturn: 'مرتجع بيع',
   SaleVoid: 'إلغاء بيع',
+  SaleReturnVoid: 'إلغاء مرتجع بيع',
+  SaleRestore: 'استعادة فاتورة ملغاة',
   Damaged: 'تالف',
   Lost: 'مفقود',
   Found: 'زيادة / عثور',

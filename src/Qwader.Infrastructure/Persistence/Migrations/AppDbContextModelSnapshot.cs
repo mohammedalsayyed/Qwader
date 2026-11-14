@@ -2488,6 +2488,12 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Property<int>("PriceTier")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("RestoredAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("RestoredById")
+                        .HasColumnType("int");
+
                     b.Property<string>("ReviewNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -2714,6 +2720,16 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("UpdatedById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("VoidReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("VoidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("VoidedById")
                         .HasColumnType("int");
 
                     b.HasKey("Id");

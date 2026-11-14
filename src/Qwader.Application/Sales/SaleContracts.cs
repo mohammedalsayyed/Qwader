@@ -32,7 +32,9 @@ public sealed record SaleReturnRequest(
     ReturnSettlement Settlement,
     int? RefundAccountId,
     string? Reason,
-    IReadOnlyList<SaleReturnLineInput> Lines);
+    IReadOnlyList<SaleReturnLineInput> Lines,
+    /// <summary>The day of the return: today by default, or an earlier day (not before the invoice).</summary>
+    DateOnly? Date = null);
 
 public sealed record SaleListItemDto(
     int Id, string Number, DateTime Date, string CustomerName, string? CustomerPhone, bool IsWalkIn,
@@ -50,7 +52,8 @@ public sealed record SalePaymentDto(int Id, int AccountId, string AccountName, d
 
 public sealed record SalePendingTransferDto(int Id, string Number, decimal Amount, string AccountName, string? Reference, Domain.Finance.TransferStatus Status);
 
-public sealed record SaleReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason);
+public sealed record SaleReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason,
+    DateTime? VoidedAt = null, string? VoidReason = null, string? RefundAccountName = null);
 
 public sealed record SaleDetailDto(
     int Id, string Number, DateTime Date, SaleStatus Status, PriceTier PriceTier,
@@ -60,7 +63,8 @@ public sealed record SaleDetailDto(
     string SalespersonName, string? Notes, DateTime? VoidedAt, string? VoidReason,
     IReadOnlyList<SaleLineDto> Lines, IReadOnlyList<SalePaymentDto> Payments, IReadOnlyList<SaleReturnSummaryDto> Returns,
     IReadOnlyList<SalePendingTransferDto> Transfers,
-    bool SoldOffline = false, string? ReviewNote = null, DateTime? ReviewedAt = null, string? ReviewedByName = null);
+    bool SoldOffline = false, string? ReviewNote = null, DateTime? ReviewedAt = null, string? ReviewedByName = null,
+    DateTime? RestoredAt = null);
 
 public sealed class SaleListRequest : PagedRequest
 {
@@ -108,6 +112,10 @@ public interface ISaleService
     Task<SaleDetailDto> GetAsync(int id, CancellationToken ct = default);
     Task<SaleDetailDto> ReturnAsync(int id, SaleReturnRequest request, CancellationToken ct = default);
     Task<SaleDetailDto> VoidAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
+    /// <summary>Brings a voided invoice back: goods out, money in, debt on the customer again, as when it was made.</summary>
+    Task<SaleDetailDto> RestoreAsync(int id, Purchasing.VoidRequest request, CancellationToken ct = default);
+    /// <summary>Cancels a return: its goods leave again, the money refunded comes back to the account it left, the balance as before.</summary>
+    Task<SaleDetailDto> VoidReturnAsync(int id, int returnId, Purchasing.VoidRequest request, CancellationToken ct = default);
     Task<SalesSummaryDto> SummaryAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);
     Task<OfflineDataDto> OfflineDataAsync(CancellationToken ct = default);
     Task<OfflineChangesDto> OfflineChangesAsync(long movementId, long ledgerEntryId, DateTime at, CancellationToken ct = default);

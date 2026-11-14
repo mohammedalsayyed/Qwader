@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, Printer, Share2, Undo2 } from 'lucide-react';
+import { ArrowRight, Ban, Printer, RotateCcw, Share2, Undo2 } from 'lucide-react';
 import { salesApi, SALE_STATUS, type ReturnCondition, type Sale } from '@/api/sales';
 import type { ReturnSettlement } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
@@ -14,7 +14,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatDateTime, formatMoney, formatQuantity } from '@/lib/format';
+import { formatDateTime, formatMoney, formatQuantity, localToday, TIME_ZONE } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { cleanNumberInput, parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
@@ -58,6 +58,8 @@ export function SaleDetailPage() {
   const settings = useStoreSettings();
   const [returning, setReturning] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [cancellingReturn, setCancellingReturn] = useState<Sale['returns'][number] | null>(null);
   const query = useQuery({ queryKey: ['sale', id], queryFn: () => salesApi.get(id) });
 
   // «طباعة» from the till opens this page with ?print=1.
@@ -107,7 +109,15 @@ export function SaleDetailPage() {
           <Badge tone={SALE_STATUS[s.status].tone}>{SALE_STATUS[s.status].label}</Badge>
         </div>
 
-        {s.status === 'Voided' && <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">أُلغيت في {formatDateTime(s.voidedAt)} — السبب: {s.voidReason}</p>}
+        {s.status === 'Voided' && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-red-50 p-3 text-sm text-danger">
+            <p>أُلغيت في {formatDateTime(s.voidedAt)} — السبب: {s.voidReason}</p>
+            {can(P.SalesVoid) && !s.restoredAt && (
+              <Button size="sm" variant="outline" onClick={() => setRestoring(true)}><RotateCcw className="size-4" /> استعادة الفاتورة</Button>
+            )}
+          </div>
+        )}
+        {s.restoredAt && s.status !== 'Voided' && <p className="rounded-xl bg-amber-50 p-3 text-sm text-warning">أُلغيت ثم استُعيدت في {formatDateTime(s.restoredAt)}.</p>}
         {s.reviewNote && <ReviewNote sale={s} />}
 
         <div className="flex flex-wrap gap-2">
@@ -175,12 +185,21 @@ export function SaleDetailPage() {
             <h2 className="mb-2 font-bold">المرتجعات</h2>
             <ul className="divide-y divide-line">
               {s.returns.map((r) => (
-                <li key={r.id} className="flex items-center justify-between gap-2 py-2">
-                  <div>
-                    <p className="ltr text-sm font-semibold">{r.number}</p>
-                    <p className="text-xs text-muted">{formatDateTime(r.date)} · {r.settlement === 'Refund' ? 'استرداد مبلغ' : 'خصم من دين العميل'}{r.reason && ` · ${r.reason}`}</p>
+                <li key={r.id} className={cn('flex flex-wrap items-center justify-between gap-2 py-2', r.voidedAt && 'opacity-70')}>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">
+                      <span className={cn('ltr inline-block', r.voidedAt && 'line-through')}>{r.number}</span>
+                      {r.voidedAt && <span className="ms-2"><Badge tone="danger">ملغى</Badge></span>}
+                    </p>
+                    <p className="text-xs text-muted">{formatDateTime(r.date)} · {r.settlement === 'Refund' ? `استرداد مبلغ${r.refundAccountName ? ` من ${r.refundAccountName}` : ''}` : 'خصم من دين العميل'}{r.reason && ` · ${r.reason}`}</p>
+                    {r.voidedAt && <p className="text-xs text-danger">أُلغي في {formatDateTime(r.voidedAt)} — {r.voidReason}</p>}
                   </div>
-                  <span className="tabular font-bold">{formatMoney(r.total)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('tabular font-bold', r.voidedAt && 'line-through')}>{formatMoney(r.total)}</span>
+                    {!r.voidedAt && can(P.SalesVoid) && (
+                      <Button size="sm" variant="outline" onClick={() => setCancellingReturn(r)}><Ban className="size-4 text-danger" /> إلغاء المرتجع</Button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -194,6 +213,8 @@ export function SaleDetailPage() {
 
       {returning && <ReturnSheet sale={s} onClose={() => setReturning(false)} onDone={refresh} />}
       {voiding && <VoidSheet sale={s} onClose={() => setVoiding(false)} onDone={refresh} />}
+      {restoring && <RestoreSheet sale={s} onClose={() => setRestoring(false)} onDone={refresh} />}
+      {cancellingReturn && <CancelReturnSheet sale={s} ret={cancellingReturn} onClose={() => setCancellingReturn(null)} onDone={refresh} />}
     </div>
   );
 }
@@ -262,6 +283,7 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
   const [settlement, setSettlement] = useState<ReturnSettlement>(sale.isWalkIn ? 'Refund' : sale.remaining > 0 ? 'ReduceBalance' : 'Refund');
   const [accountId, setAccountId] = useState(String(sale.payments[0]?.accountId ?? lookups.data?.accounts[0]?.id ?? ''));
   const [reason, setReason] = useState('');
+  const [date, setDate] = useState(localToday());
   const [error, setError] = useState<string>();
 
   const total = round2(lines.reduce((sum, l) => {
@@ -275,6 +297,7 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
       settlement,
       refundAccountId: settlement === 'Refund' ? Number(accountId) : null,
       reason: reason.trim() || null,
+      date: date === localToday() ? null : date,
       lines: lines.filter((l) => (parseNumber(qty[l.id]) ?? 0) > 0)
         .map((l) => ({ saleInvoiceLineId: l.id, quantity: parseNumber(qty[l.id])!, condition: condition[l.id] ?? 'Sellable' })),
     }),
@@ -349,17 +372,35 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
           </Field>
         )}
         <Field label="السبب">{(id) => <Input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
+        <DayField label="تاريخ المرتجع" sale={sale} value={date} onChange={(v) => { setDate(v); setError(undefined); }} />
       </div>
     </Sheet>
+  );
+}
+
+/** The invoice's day in Palestine (yyyy-mm-dd): a void or a return cannot be dated before it. */
+function invoiceDay(sale: Sale) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(new Date(sale.date));
+}
+
+/** The day a void or a return happened: today by default, or an earlier day back to the invoice's. */
+function DayField({ label, sale, value, onChange }: { label: string; sale: Sale; value: string; onChange: (v: string) => void }) {
+  const today = localToday();
+  return (
+    <Field label={label} hint={value === today ? 'اليوم — غيّره إذا حصل في يوم سابق' : 'تُسجَّل الحركات بنهاية هذا اليوم'}>
+      {(id, d) => <Input id={id} aria-describedby={d} type="date" min={invoiceDay(sale)} max={today} value={value}
+        onChange={(e) => onChange(e.target.value || today)} />}
+    </Field>
   );
 }
 
 function VoidSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => void; onDone: (s: Sale) => void }) {
   const toast = useToast();
   const [reason, setReason] = useState('');
+  const [date, setDate] = useState(localToday());
   const [error, setError] = useState<string>();
   const save = useMutation({
-    mutationFn: () => salesApi.void(sale.id, reason.trim()),
+    mutationFn: () => salesApi.void(sale.id, reason.trim(), date === localToday() ? null : date),
     onSuccess: (s) => { onDone(s); toast.success('تم إلغاء الفاتورة وعكس حركاتها'); onClose(); },
     onError: (e) => setError(errorMessage(e)),
   });
@@ -373,6 +414,65 @@ function VoidSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => void;
         </p>
         <Field label="سبب الإلغاء" required error={error}>
           {(id, d) => <TextArea id={id} aria-describedby={d} rows={2} value={reason} onChange={(e) => { setReason(e.target.value); setError(undefined); }} />}
+        </Field>
+        <DayField label="تاريخ الإلغاء" sale={sale} value={date} onChange={setDate} />
+      </div>
+    </Sheet>
+  );
+}
+
+/** «استعادة الفاتورة»: a voided invoice comes back as it was — once only. */
+function RestoreSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => void; onDone: (s: Sale) => void }) {
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+  const save = useMutation({
+    mutationFn: () => salesApi.restore(sale.id, reason.trim()),
+    onSuccess: (s) => { onDone(s); toast.success('تمت استعادة الفاتورة'); onClose(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  const paidTo = [...new Set(sale.payments.map((p) => p.accountName))].join('، ');
+  return (
+    <Sheet open onClose={onClose} title={`استعادة الفاتورة ${sale.number}`}
+      footer={<Button block size="lg" loading={save.isPending} onClick={() => (reason.trim() ? save.mutate() : setError('سبب الاستعادة مطلوب'))}>تأكيد الاستعادة</Button>}>
+      <div className="space-y-3">
+        <ul className="list-disc space-y-1 ps-5 text-sm leading-6 text-muted">
+          <li>تخرج الكميات من المخزون مرة أخرى (يجب أن تكون متوفرة).</li>
+          {sale.payments.length > 0 && <li>ترجع المبالغ المدفوعة ({formatMoney(sale.payments.reduce((t, p) => t + p.amount, 0))}) إلى نفس الحساب: {paidTo}.</li>}
+          {!sale.isWalkIn && <li>يرجع الدين على العميل كما كان.</li>}
+          <li>تُستعاد الفاتورة <b>مرة واحدة فقط</b>، ويمكن إلغاؤها بعدها من جديد.</li>
+        </ul>
+        <Field label="سبب الاستعادة" required error={error}>
+          {(id, d) => <Input id={id} aria-describedby={d} value={reason} onChange={(e) => { setReason(e.target.value); setError(undefined); }} />}
+        </Field>
+      </div>
+    </Sheet>
+  );
+}
+
+/** «إلغاء المرتجع»: the goods leave again and the refund comes back to the account it was paid from. */
+function CancelReturnSheet({ sale, ret, onClose, onDone }: { sale: Sale; ret: Sale['returns'][number]; onClose: () => void; onDone: (s: Sale) => void }) {
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string>();
+  const save = useMutation({
+    mutationFn: () => salesApi.voidReturn(sale.id, ret.id, reason.trim()),
+    onSuccess: (s) => { onDone(s); toast.success(`تم إلغاء المرتجع ${ret.number}`); onClose(); },
+    onError: (e) => setError(errorMessage(e)),
+  });
+  return (
+    <Sheet open onClose={onClose} title={`إلغاء المرتجع ${ret.number}`}
+      footer={<Button block size="lg" variant="danger" loading={save.isPending} onClick={() => (reason.trim() ? save.mutate() : setError('سبب الإلغاء مطلوب'))}>تأكيد إلغاء المرتجع</Button>}>
+      <div className="space-y-3">
+        <ul className="list-disc space-y-1 ps-5 text-sm leading-6 text-muted">
+          <li>تخرج الكميات الصالحة التي رجعت للمخزون مرة أخرى (يجب أن تكون متوفرة).</li>
+          {ret.settlement === 'Refund'
+            ? <li>يرجع المبلغ ({formatMoney(ret.total)}) إلى الحساب الذي دُفع منه{ret.refundAccountName ? `: ${ret.refundAccountName}` : ''}.</li>
+            : <li>يرجع المبلغ ({formatMoney(ret.total)}) دينًا على العميل كما كان.</li>}
+          <li>يبقى المرتجع ظاهرًا في الفاتورة بحالة «ملغى».</li>
+        </ul>
+        <Field label="سبب الإلغاء" required error={error}>
+          {(id, d) => <Input id={id} aria-describedby={d} value={reason} onChange={(e) => { setReason(e.target.value); setError(undefined); }} />}
         </Field>
       </div>
     </Sheet>

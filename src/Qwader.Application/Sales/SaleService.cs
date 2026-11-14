@@ -422,8 +422,11 @@ public sealed class SaleService(
         var invoice = s.Invoice;
         if (!CanSeeAll && invoice.SalespersonId != currentUser.UserId) throw new NotFoundException("الفاتورة غير موجودة");
 
-        var returns = await db.SaleReturns.AsNoTracking().Where(r => r.SaleInvoiceId == id).OrderBy(r => r.Id)
-            .Select(r => new SaleReturnSummaryDto(r.Id, r.Number, r.Date, r.Total, r.Settlement, r.Reason)).ToListAsync(ct);
+        // Cancelled returns are listed (marked) for the history; they count for nothing.
+        var allReturns = await db.SaleReturns.IgnoreQueryFilters().AsNoTracking().Where(r => r.SaleInvoiceId == id).OrderBy(r => r.Id)
+            .Select(r => new SaleReturnSummaryDto(r.Id, r.Number, r.Date, r.Total, r.Settlement, r.Reason, r.VoidedAt, r.VoidReason,
+                db.FinancialAccounts.Where(a => a.Id == r.RefundAccountId).Select(a => a.Name).FirstOrDefault())).ToListAsync(ct);
+        var returns = allReturns.Where(r => r.VoidedAt is null).ToList();
         var returnedCost = await db.SaleReturns.Where(r => r.SaleInvoiceId == id).SumAsync(r => (decimal?)r.Lines
             .Where(l => l.Condition == ReturnCondition.Sellable).Sum(l => l.Quantity * l.UnitCost), ct) ?? 0;
 
@@ -444,7 +447,7 @@ public sealed class SaleService(
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden, l.UnitFactor)).ToList(),
-            s.Payments, returns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer);
+            s.Payments, allReturns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer, invoice.RestoredAt);
     }
 
     public async Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default)
@@ -536,7 +539,7 @@ public sealed class SaleService(
             && !await db.FinancialAccounts.AnyAsync(a => a.Id == request.RefundAccountId && a.IsActive, ct))
             throw new ValidationFailedException("refundAccountId", "الحساب المختار غير موجود أو معطّل");
 
-        var now = clock.UtcNow;
+        var now = DayOf(request.Date, invoice.Date, "المرتجع");
         var ret = new SaleReturn
         {
             Number = await numbers.NextAsync(DocumentType.SaleReturn, ct),
@@ -581,7 +584,7 @@ public sealed class SaleService(
         {
             var factor = invoice.Lines.First(l => l.Id == line.SaleInvoiceLineId).UnitFactor;
             await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * factor, StockMovementType.SaleReturn,
-                "SaleReturn", ret.Id, ret.Number, $"مرتجع من {invoice.Number}"), line.UnitCost / factor, ct);
+                "SaleReturn", ret.Id, ret.Number, $"مرتجع من {invoice.Number}", now), line.UnitCost / factor, ct);
         }
 
         var source = new LedgerSource("SaleReturn", ret.Id, ret.Number, $"مرتجع من الفاتورة {invoice.Number}");
@@ -615,16 +618,19 @@ public sealed class SaleService(
         if (invoice.Lines.Any(l => l.ReturnedQuantity > 0))
             throw new BusinessRuleException("لا يمكن إلغاء فاتورة عليها مرتجعات؛ أرجِع باقي الكميات بدلًا من الإلغاء");
 
-        var now = clock.UtcNow;
+        var now = DayOf(request.Date, invoice.RestoredAt ?? invoice.Date, "الإلغاء");
         var reason = request.Reason.Trim();
         var source = new LedgerSource("SaleInvoice", invoice.Id, invoice.Number, $"إلغاء الفاتورة: {reason}");
+        // A restored invoice's money came in again under «SaleRestore»: its reversal pairs with that, not with the first payment
+        // (already reversed), so reports that leave out a document and its reversal stay right.
+        var moneySource = invoice.RestoredAt is null ? source : source with { SourceType = RestoreSource };
 
         foreach (var line in invoice.Lines.OrderBy(l => l.ProductId))
             await inventory.ReceiveAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.SaleVoid,
-                "SaleInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة بيع"), line.UnitCost / line.UnitFactor, ct);
+                "SaleInvoice", invoice.Id, invoice.Number, "إلغاء فاتورة بيع", now), line.UnitCost / line.UnitFactor, ct);
 
         foreach (var payment in invoice.Payments)
-            await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, source, now, ct);
+            await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, moneySource, now, ct);
 
         if (!invoice.Customer.IsWalkIn)
         {
@@ -636,7 +642,7 @@ public sealed class SaleService(
         foreach (var transfer in await db.IncomingTransfers.Where(t => t.SaleInvoiceId == invoice.Id && t.Status == Domain.Finance.TransferStatus.Pending).ToListAsync(ct))
         {
             transfer.Status = Domain.Finance.TransferStatus.Rejected;
-            transfer.RejectReason = "إلغاء الفاتورة " + invoice.Number;
+            transfer.RejectReason = VoidedTransferReason(invoice.Number);
             transfer.ReviewedAt = now;
             transfer.ReviewedById = currentUser.UserId;
         }
@@ -653,6 +659,135 @@ public sealed class SaleService(
         await tx.CommitAsync(ct);
         push.Notify(PushTopics.Sales, new PushMessage($"إلغاء الفاتورة {invoice.Number}", $"{PushMessage.Money(invoice.Total)} — {reason}", $"/sales/{id}"),
             Permissions.SalesViewAll);
+        return await GetAsync(id, ct);
+    }
+
+    private const string RestoreSource = "SaleRestore";
+    private static string VoidedTransferReason(string number) => "إلغاء الفاتورة " + number;
+
+    /// <summary>
+    /// The moment to record for a void or a return dated <paramref name="day"/>: now when it is today (or not given);
+    /// an earlier day is recorded at its end, and never before <paramref name="notBefore"/> (the invoice).
+    /// </summary>
+    private DateTime DayOf(DateOnly? day, DateTime notBefore, string what)
+    {
+        var today = clock.LocalToday;
+        if (day is null || day == today) return clock.UtcNow;
+        if (day > today) throw new ValidationFailedException("date", $"لا يمكن أن يكون تاريخ {what} بعد اليوم");
+        var first = DateOnly.FromDateTime(clock.ToLocal(notBefore));
+        if (day < first) throw new ValidationFailedException("date", $"لا يمكن أن يكون تاريخ {what} قبل تاريخ الفاتورة ({first:yyyy-MM-dd})");
+        var endOfDay = clock.LocalDaysToUtcRange(day.Value, day.Value).EndUtc.AddSeconds(-1);
+        return endOfDay > notBefore ? endOfDay : notBefore.AddSeconds(1);
+    }
+
+    // ------------------------------------------------------------------ restore a voided invoice
+
+    public async Task<SaleDetailDto> RestoreAsync(int id, VoidRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Payments).Include(s => s.Customer)
+            .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
+        if (invoice.Status != SaleStatus.Voided) throw new BusinessRuleException("الفاتورة غير ملغاة");
+        // Once: a second restore could not be told apart from the first in the account's entries.
+        if (invoice.RestoredAt is not null) throw new BusinessRuleException("هذه الفاتورة استُعيدت مرة من قبل؛ لا يمكن استعادتها مرة ثانية. أنشئ فاتورة جديدة");
+        if (!invoice.Customer.IsActive) throw new BusinessRuleException($"العميل «{invoice.Customer.Name}» غير فعّال؛ فعّله أولًا");
+
+        var now = clock.UtcNow;
+        var reason = request.Reason.Trim();
+        var source = new LedgerSource(RestoreSource, invoice.Id, invoice.Number, $"استعادة الفاتورة: {reason}");
+
+        // The goods leave again, at today's average cost (the invoice's cost and profit follow it).
+        foreach (var line in invoice.Lines.OrderBy(l => l.ProductId))
+        {
+            var posting = await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * line.UnitFactor, StockMovementType.SaleRestore,
+                RestoreSource, invoice.Id, invoice.Number, "استعادة فاتورة بيع ملغاة"), ct: ct);
+            line.UnitCost = posting.UnitCost * line.UnitFactor;
+        }
+        invoice.TotalCost = invoice.Lines.Sum(l => l.Quantity * l.UnitCost);
+
+        // The money comes back to the accounts it was paid into, as at the sale.
+        foreach (var payment in invoice.Payments)
+            await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.In, payment.Amount, AccountTransactionCategory.SaleReceipt, source, now, ct);
+        if (!invoice.Customer.IsWalkIn)
+        {
+            await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Sale, invoice.Total, 0, source, now, ct);
+            if (invoice.PaidAmount > 0)
+                await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Payment, 0, invoice.PaidAmount, source with { Description = "مدفوع عند البيع" }, now, ct);
+        }
+
+        // Transfers the void turned down wait for verification again.
+        var turnedDown = VoidedTransferReason(invoice.Number);
+        foreach (var transfer in await db.IncomingTransfers.Where(t => t.SaleInvoiceId == invoice.Id && t.Status == Domain.Finance.TransferStatus.Rejected
+                     && t.RejectReason == turnedDown).ToListAsync(ct))
+        {
+            transfer.Status = Domain.Finance.TransferStatus.Pending;
+            transfer.RejectReason = null;
+            transfer.ReviewedAt = null;
+            transfer.ReviewedById = null;
+        }
+
+        var voidedReason = invoice.VoidReason;
+        invoice.Status = SaleStatus.Posted;
+        invoice.VoidedAt = null;
+        invoice.VoidedById = null;
+        invoice.VoidReason = null;
+        invoice.RestoredAt = now;
+        invoice.RestoredById = currentUser.UserId;
+        audit.Log("Sale.Restore", "SaleInvoice", id.ToString(), new { VoidReason = voidedReason }, new { invoice.Number, invoice.Total }, reason);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        push.Notify(PushTopics.Sales, new PushMessage($"استعادة الفاتورة {invoice.Number}", $"{PushMessage.Money(invoice.Total)} — {reason}", $"/sales/{id}"),
+            Permissions.SalesViewAll);
+        return await GetAsync(id, ct);
+    }
+
+    // ------------------------------------------------------------------ cancel a return
+
+    public async Task<SaleDetailDto> VoidReturnAsync(int id, int returnId, VoidRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var invoice = await db.SaleInvoices.Include(s => s.Lines).Include(s => s.Customer)
+            .FirstOrDefaultAsync(s => s.Id == id, ct) ?? throw new NotFoundException("الفاتورة غير موجودة");
+        var ret = await db.SaleReturns.IgnoreQueryFilters().Include(r => r.Lines)
+            .FirstOrDefaultAsync(r => r.Id == returnId && r.SaleInvoiceId == id, ct) ?? throw new NotFoundException("المرتجع غير موجود");
+        if (ret.VoidedAt is not null) throw new BusinessRuleException("هذا المرتجع ملغى من قبل");
+
+        var now = clock.UtcNow;
+        var reason = request.Reason.Trim();
+        var source = new LedgerSource("SaleReturn", ret.Id, ret.Number, $"إلغاء المرتجع {ret.Number}: {reason}");
+
+        // The goods it put back on the shelf leave again, at the cost they came back with. Damaged ones never came back.
+        foreach (var line in ret.Lines.Where(l => l.Condition == ReturnCondition.Sellable).OrderBy(l => l.ProductId))
+        {
+            var factor = invoice.Lines.First(l => l.Id == line.SaleInvoiceLineId).UnitFactor;
+            await inventory.IssueAsync(new StockEntry(line.ProductId, invoice.WarehouseId, line.Quantity * factor, StockMovementType.SaleReturnVoid,
+                "SaleReturn", ret.Id, ret.Number, $"إلغاء مرتجع من {invoice.Number}"), line.UnitCost / factor, ct);
+        }
+
+        if (ret.Total > 0)
+        {
+            if (!invoice.Customer.IsWalkIn)
+                await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, ret.Total, 0, source, now, ct);
+            if (ret.Settlement == ReturnSettlement.Refund)
+            {
+                // The refund comes back to the account it was paid from (paired with it, so reports leave both out).
+                await accounts.PostAsync(ret.RefundAccountId!.Value, MoneyDirection.In, ret.Total, AccountTransactionCategory.Reversal, source, now, ct);
+                if (!invoice.Customer.IsWalkIn)
+                    await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, 0, ret.Total, source with { Description = "إلغاء إعادة المبلغ للعميل" }, now, ct);
+            }
+        }
+
+        foreach (var line in ret.Lines)
+            invoice.Lines.First(l => l.Id == line.SaleInvoiceLineId).ReturnedQuantity -= line.Quantity;
+        invoice.Status = invoice.Lines.All(l => l.ReturnedQuantity == l.Quantity) ? SaleStatus.Returned
+            : invoice.Lines.Any(l => l.ReturnedQuantity > 0) ? SaleStatus.PartiallyReturned : SaleStatus.Posted;
+
+        ret.VoidedAt = now;
+        ret.VoidedById = currentUser.UserId;
+        ret.VoidReason = reason;
+        audit.Log("Sale.ReturnVoid", "SaleInvoice", id.ToString(), null, new { ret.Number, ret.Total, ret.Settlement }, reason);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return await GetAsync(id, ct);
     }
 
@@ -695,7 +830,8 @@ public sealed class SaleService(
             && ((t.Direction == MoneyDirection.In
                     && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection)
                     && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
-                || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund)));
+                || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund
+                    && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))));
         if (ownOnly) received = received.Where(t => t.UserId == me);
         var sums = await received.GroupBy(t => t.FinancialAccountId)
             .Select(g => new { AccountId = g.Key, Amount = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) }).ToListAsync(ct);

@@ -98,7 +98,10 @@ public sealed class SaleReturnConfiguration : IEntityTypeConfiguration<SaleRetur
     {
         b.Property(r => r.Number).HasMaxLength(30).IsRequired();
         b.Property(r => r.Reason).HasMaxLength(300);
+        b.Property(r => r.VoidReason).HasMaxLength(300);
         b.Property(r => r.TotalCost).AsCostMoney();
+        // A cancelled return no longer exists for totals, reports, balances checks and the returned quantities.
+        b.HasQueryFilter(r => r.VoidedAt == null);
         b.HasIndex(r => r.Number).IsUnique();
         b.HasIndex(r => r.Date);
         b.HasOne(r => r.SaleInvoice).WithMany().HasForeignKey(r => r.SaleInvoiceId).OnDelete(DeleteBehavior.Restrict);
@@ -114,6 +117,7 @@ public sealed class SaleReturnLineConfiguration : IEntityTypeConfiguration<SaleR
     {
         b.Property(l => l.Quantity).AsQuantity();
         b.Property(l => l.UnitCost).AsCost();
+        b.HasQueryFilter(l => l.SaleReturn.VoidedAt == null);
         b.HasOne(l => l.SaleInvoiceLine).WithMany().HasForeignKey(l => l.SaleInvoiceLineId).OnDelete(DeleteBehavior.Restrict);
     }
 }

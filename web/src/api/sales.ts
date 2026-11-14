@@ -67,9 +67,13 @@ export interface Sale {
   notes: string | null;
   voidedAt: string | null;
   voidReason: string | null;
+  /** A voided invoice brought back (once only). */
+  restoredAt: string | null;
   lines: SaleLine[];
   payments: { id: number; accountId: number; accountName: string; amount: number; reference: string | null }[];
-  returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null }[];
+  /** Every return, cancelled ones too (voidedAt set): those count for nothing and are shown for the history only. */
+  returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null;
+    voidedAt: string | null; voidReason: string | null; refundAccountName: string | null }[];
   transfers: { id: number; number: string; amount: number; accountName: string; reference: string | null; status: 'Pending' | 'Confirmed' | 'Rejected' }[];
   soldOffline: boolean;
   /** What an offline sale broke (one problem per line), for a manager to review. */
@@ -169,9 +173,13 @@ export const salesApi = {
   summary: (from?: string, to?: string) => api<SalesSummary>('/sales/summary', { query: { from, to } }),
   return: (
     id: number,
-    input: { idempotencyKey: string; settlement: ReturnSettlement; refundAccountId?: number | null; reason?: string | null; lines: { saleInvoiceLineId: number; quantity: number; condition: ReturnCondition }[] },
+    input: { idempotencyKey: string; settlement: ReturnSettlement; refundAccountId?: number | null; reason?: string | null; lines: { saleInvoiceLineId: number; quantity: number; condition: ReturnCondition }[];
+      /** yyyy-mm-dd; today when left out. */
+      date?: string | null },
   ) => api<Sale>(`/sales/${id}/returns`, { method: 'POST', body: input }),
-  void: (id: number, reason: string) => api<Sale>(`/sales/${id}/void`, { method: 'POST', body: { reason } }),
+  void: (id: number, reason: string, date?: string | null) => api<Sale>(`/sales/${id}/void`, { method: 'POST', body: { reason, date: date || null } }),
+  restore: (id: number, reason: string) => api<Sale>(`/sales/${id}/restore`, { method: 'POST', body: { reason } }),
+  voidReturn: (id: number, returnId: number, reason: string) => api<Sale>(`/sales/${id}/returns/${returnId}/void`, { method: 'POST', body: { reason } }),
   offlineData: () => api<OfflineData>('/sales/offline-data'),
   offlineChanges: (c: OfflineCursor) => api<OfflineChanges>('/sales/offline-changes', { query: { movementId: c.movementId, ledgerEntryId: c.ledgerEntryId, at: c.at } }),
   markReviewed: (id: number) => api<Sale>(`/sales/${id}/reviewed`, { method: 'POST' }),

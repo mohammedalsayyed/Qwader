@@ -22,6 +22,10 @@ public enum StockMovementType
     Sale = 10,
     SaleReturn = 11,
     SaleVoid = 12,
+    /// <summary>A sale return cancelled: the goods it put back leave again.</summary>
+    SaleReturnVoid = 13,
+    /// <summary>A voided sale restored: its goods leave again.</summary>
+    SaleRestore = 14,
     Damaged = 20,
     Lost = 21,
     Found = 22,

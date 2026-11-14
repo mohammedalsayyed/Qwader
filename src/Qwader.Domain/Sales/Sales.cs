@@ -96,6 +96,9 @@ public class SaleInvoice : AuditableEntity
     public DateTime? VoidedAt { get; set; }
     public int? VoidedById { get; set; }
     public string? VoidReason { get; set; }
+    /// <summary>A voided invoice brought back («استعادة الفاتورة»): its goods, money and debt posted again. Once only.</summary>
+    public DateTime? RestoredAt { get; set; }
+    public int? RestoredById { get; set; }
 
     /// <summary>Made on a device without internet and sent when the connection returned; <see cref="Date"/> is when it was sold.</summary>
     public bool SoldOffline { get; set; }
@@ -172,6 +175,11 @@ public class SaleReturn : AuditableEntity
     public ReturnSettlement Settlement { get; set; }
     public int? RefundAccountId { get; set; }
     public string? Reason { get; set; }
+    /// <summary>The return was cancelled («إلغاء المرتجع»): goods, money and balance put back as they were before it.
+    /// A cancelled return is left out of every query (a query filter); only the invoice's history shows it.</summary>
+    public DateTime? VoidedAt { get; set; }
+    public int? VoidedById { get; set; }
+    public string? VoidReason { get; set; }
 
     public SaleInvoice SaleInvoice { get; set; } = null!;
     public ICollection<SaleReturnLine> Lines { get; set; } = new List<SaleReturnLine>();

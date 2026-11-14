@@ -36,6 +36,14 @@ public sealed class SalesController(ISaleService sales) : ControllerBase
     [HasPermission(Permissions.SalesVoid)]
     public Task<SaleDetailDto> Void(int id, VoidRequest request, CancellationToken ct) => sales.VoidAsync(id, request, ct);
 
+    [HttpPost("{id:int}/restore")]
+    [HasPermission(Permissions.SalesVoid)]
+    public Task<SaleDetailDto> Restore(int id, VoidRequest request, CancellationToken ct) => sales.RestoreAsync(id, request, ct);
+
+    [HttpPost("{id:int}/returns/{returnId:int}/void")]
+    [HasPermission(Permissions.SalesVoid)]
+    public Task<SaleDetailDto> VoidReturn(int id, int returnId, VoidRequest request, CancellationToken ct) => sales.VoidReturnAsync(id, returnId, request, ct);
+
     /// <summary>Products, prices, stock and customers a till keeps on the device to sell without internet.</summary>
     [HttpGet("offline-data")]
     [HasPermission(Permissions.SalesCreate)]

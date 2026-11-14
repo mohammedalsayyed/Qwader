@@ -13,7 +13,9 @@ public sealed record StockEntry(
     string SourceType,
     int? SourceId,
     string? SourceNumber,
-    string? Notes = null);
+    string? Notes = null,
+    /// <summary>When it happened, if not now (a void or a return dated an earlier day).</summary>
+    DateTime? Date = null);
 
 public sealed record StockPosting(decimal UnitCost, decimal BalanceAfter, decimal AverageCostAfter);
 
@@ -142,7 +144,7 @@ public sealed class InventoryLedger(IAppDbContext db, ICurrentUser currentUser, 
             SourceId = entry.SourceId,
             SourceNumber = entry.SourceNumber,
             Notes = entry.Notes,
-            OccurredAt = clock.UtcNow,
+            OccurredAt = entry.Date ?? clock.UtcNow,
             UserId = currentUser.UserId,
         });
 
