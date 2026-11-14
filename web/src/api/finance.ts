@@ -35,6 +35,8 @@ export interface AccountsDay {
   in: number;
   out: number;
   closing: number;
+  /** The day's net split as the reports see it: cash flow, and what the cash flow leaves out. */
+  breakdown: { cashFlow: number; openingBalances: number; voided: number; transfers: number } | null;
 }
 
 export interface SaveAccountInput {

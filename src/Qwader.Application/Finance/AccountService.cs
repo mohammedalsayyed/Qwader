@@ -68,7 +68,22 @@ public sealed class AccountService(
             // A disabled account is listed only if it held or moved money that day.
             .Where(r => r.IsActive || r.Opening != 0 || r.In != 0 || r.Out != 0)
             .ToList();
-        return new AccountsDayDto(day, rows, rows.Sum(r => r.Opening), rows.Sum(r => r.In), rows.Sum(r => r.Out), rows.Sum(r => r.Closing));
+        // The same rule as the cash-flow report: a voided entry and its reversal are not cash flow, nor opening balances or transfers.
+        var reversals = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
+        var moves = await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end)
+            .Select(t => new
+            {
+                Signed = t.Direction == MoneyDirection.In ? t.Amount : -t.Amount,
+                t.Category,
+                Voided = t.Category == AccountTransactionCategory.Reversal
+                    || reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId),
+            }).ToListAsync(ct);
+        var breakdown = new AccountsDayBreakdown(
+            moves.Where(m => !m.Voided && m.Category is not (AccountTransactionCategory.OpeningBalance or AccountTransactionCategory.TransferIn or AccountTransactionCategory.TransferOut)).Sum(m => m.Signed),
+            moves.Where(m => !m.Voided && m.Category == AccountTransactionCategory.OpeningBalance).Sum(m => m.Signed),
+            moves.Where(m => m.Voided).Sum(m => m.Signed),
+            moves.Where(m => !m.Voided && m.Category is AccountTransactionCategory.TransferIn or AccountTransactionCategory.TransferOut).Sum(m => m.Signed));
+        return new AccountsDayDto(day, rows, rows.Sum(r => r.Opening), rows.Sum(r => r.In), rows.Sum(r => r.Out), rows.Sum(r => r.Closing), breakdown);
     }
 
     public async Task<IReadOnlyList<AccountDto>> ListAsync(bool includeInactive, CancellationToken ct = default)

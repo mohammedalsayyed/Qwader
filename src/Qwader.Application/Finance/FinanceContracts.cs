@@ -31,7 +31,15 @@ public sealed record AccountDayDto(int AccountId, string Name, FinancialAccountT
     decimal Opening, decimal In, decimal Out, decimal Closing);
 
 /// <summary>Every account on a day, with the store's totals.</summary>
-public sealed record AccountsDayDto(DateOnly Day, IReadOnlyList<AccountDayDto> Accounts, decimal Opening, decimal In, decimal Out, decimal Closing);
+public sealed record AccountsDayDto(DateOnly Day, IReadOnlyList<AccountDayDto> Accounts, decimal Opening, decimal In, decimal Out, decimal Closing,
+    AccountsDayBreakdown? Breakdown = null);
+
+/// <summary>
+/// The day's net (Closing − Opening), split so it ties to the reports: CashFlow is the reports' «صافي التدفق النقدي» (sales,
+/// collections, expenses…); the rest is what the cash flow leaves out — opening balances set or corrected, documents voided
+/// (an entry and its reversal; one from an earlier day brings its money back today) and transfers between the store's accounts.
+/// </summary>
+public sealed record AccountsDayBreakdown(decimal CashFlow, decimal OpeningBalances, decimal Voided, decimal Transfers);
 
 public sealed record AccountTransferDto(int Id, string Number, DateTime Date, int FromAccountId, string FromAccountName,
     int ToAccountId, string ToAccountName, decimal Amount, string? Notes, string? CreatedByName,

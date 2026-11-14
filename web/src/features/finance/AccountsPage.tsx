@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowDownLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, Ban, Banknote, History, Landmark, Pencil, Plus, Scale, Smartphone } from 'lucide-react';
-import { accountsApi, type Account, type AccountTransfer } from '@/api/finance';
+import { accountsApi, type Account, type AccountsDay, type AccountTransfer } from '@/api/finance';
 import type { AccountType } from '@/api/endpoints';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -222,9 +222,34 @@ function AccountsOnDay() {
               </tr>
             </tfoot>
           </table>
+          {d.breakdown && <DayBreakdown b={d.breakdown} net={net} tone={tone} />}
         </div>
       )}
     </section>
+  );
+}
+
+/** Under the total: the day's net as the reports count it (cash flow), and what they leave out, so the numbers tie up. */
+function DayBreakdown({ b, net, tone }: { b: NonNullable<AccountsDay['breakdown']>; net: (n: number) => string; tone: (n: number) => string }) {
+  const rows: [string, number][] = [
+    ['صافي التدفق النقدي (مبيعات، تحصيل، مصاريف، مرتجعات…) — نفس رقم التقارير', b.cashFlow],
+    ['تعديل أرصدة افتتاحية', b.openingBalances],
+    ['إلغاءات (مستند ملغي وعكسه؛ إلغاء مستند من يوم سابق يرجّع ماله اليوم)', b.voided],
+    ['تحويلات بين حساباتك', b.transfers],
+  ];
+  const shown = rows.filter(([, v], i) => i === 0 || Math.abs(v) >= 0.005);
+  return (
+    <div className="border-t border-line px-3 py-2 text-xs text-muted">
+      <p className="mb-1 font-semibold">منها:</p>
+      <dl className="space-y-1">
+        {shown.map(([label, v]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt>{label}</dt>
+            <dd className={cn('tabular shrink-0 font-semibold', tone(v))}>{net(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

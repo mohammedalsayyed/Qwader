@@ -208,6 +208,12 @@ public sealed class AccountLogoTests(ApiFactory factory)
         row.Closing.Should().Be((await admin.GetFromJsonAsync<AccountDto>($"/api/financial-accounts/{drawer}", TestJson.Options))!.CurrentBalance);
         today.In.Should().Be(today.Accounts.Sum(a => a.In));
         today.Closing.Should().Be(today.Opening + today.In - today.Out);
+        // The breakdown under the total adds up to it, and its cash flow is the reports' own figure for the day.
+        var b = today.Breakdown!;
+        (b.CashFlow + b.OpeningBalances + b.Voided + b.Transfers).Should().Be(today.Closing - today.Opening);
+        b.OpeningBalances.Should().BeGreaterThanOrEqualTo(70);
+        var report = await (await admin.GetAsync("/api/reports/period")).ReadAsync<Application.Reports.PeriodReportDto>();
+        b.CashFlow.Should().Be(report.NetCashFlow!.Value);
 
         // Yesterday the drawer held nothing; tomorrow cannot be asked yet.
         var yesterday = DateOnly.FromDateTime(DateTime.Now).AddDays(-1);
