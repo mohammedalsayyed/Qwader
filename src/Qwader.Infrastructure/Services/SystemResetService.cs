@@ -90,8 +90,9 @@ public sealed class SystemResetService(
             deleted += await db.IncomingTransfers.ExecuteDeleteAsync(ct);
             deleted += await db.AccountTransfers.ExecuteDeleteAsync(ct);
 
-            deleted += await db.SaleReturnLines.ExecuteDeleteAsync(ct);
-            deleted += await db.SaleReturns.ExecuteDeleteAsync(ct);
+            // Cancelled returns too: a query filter hides them, and left behind they would block deleting the invoices.
+            deleted += await db.SaleReturnLines.IgnoreQueryFilters().ExecuteDeleteAsync(ct);
+            deleted += await db.SaleReturns.IgnoreQueryFilters().ExecuteDeleteAsync(ct);
             deleted += await db.SalePayments.ExecuteDeleteAsync(ct);
             deleted += await db.SaleInvoiceLines.ExecuteDeleteAsync(ct);
             deleted += await db.SaleInvoices.ExecuteDeleteAsync(ct);

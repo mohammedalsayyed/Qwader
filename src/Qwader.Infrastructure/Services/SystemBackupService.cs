@@ -83,7 +83,8 @@ public sealed class SystemBackupService(
         await using var json = new Utf8JsonWriter(stream, JsonOptions);
         json.WriteStartArray();
         var rows = 0;
-        await foreach (var row in db.Set<T>().AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
+        // Every row, including those a query filter hides from the screens (cancelled returns).
+        await foreach (var row in db.Set<T>().IgnoreQueryFilters().AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
         {
             // The push signing key is a secret: a restored store simply makes a new one.
             if (row is Setting s && s.Key.StartsWith("Push.Vapid", StringComparison.Ordinal)) continue;

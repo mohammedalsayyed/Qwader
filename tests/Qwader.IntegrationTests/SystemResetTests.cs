@@ -33,6 +33,13 @@ public sealed class SystemResetTests(ApiFactory factory)
         var product = await admin.CreateProductAsync(retail: 50, openingQuantity: 5, openingCost: 30);
         var customer = await (await admin.PostAsJsonAsync("/api/customers", new SaveCustomerRequest(TestData.Unique("عميل"), "0591112233", null, null, true, 40)))
             .ReadAsync<CustomerDto>();
+        // A cancelled return (hidden from the screens by a query filter) must not stop the reset.
+        var cashAccount = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        var sold = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 2, 50)], [new(cashAccount, 100)], null))).ReadAsync<SaleDetailDto>();
+        var returned = await (await admin.PostAsJsonAsync($"/api/sales/{sold.Id}/returns", new SaleReturnRequest(Guid.NewGuid(), Domain.Purchasing.ReturnSettlement.Refund,
+            cashAccount, null, [new(sold.Lines[0].Id, 1)]))).ReadAsync<SaleDetailDto>();
+        await (await admin.PostAsJsonAsync($"/api/sales/{sold.Id}/returns/{returned.Returns[0].Id}/void", new VoidRequest("خطأ"))).ReadAsync<SaleDetailDto>();
 
         await ResetAsync(admin, SystemResetMode.TransactionsOnly);
 
