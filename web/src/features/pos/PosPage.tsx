@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { CloudOff, FilePen, Minus, PackageX, Pencil, Plus, ScanBarcode, ShoppingCart, Trash2, X } from 'lucide-react';
+import { CloudOff, FilePen, Minus, PackageX, Pause, Pencil, Play, Plus, ScanBarcode, ShoppingCart, Trash2, X } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import { productsApi, type ProductUnit } from '@/api/catalog';
 import { ApiError } from '@/api/client';
@@ -22,13 +22,13 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { applyOfflineChanges, findByCode, searchProducts, snapshotAge, useOfflineState } from '@/lib/offline';
 import { formatDateTime } from '@/lib/format';
-import { cartTotals, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine } from './cart';
+import { cartTotals, lineTotal, tierPrice, toCartProduct, unitChoices, useCart, type CartLine, type HeldCart } from './cart';
 import { useIsOffline } from './OfflineSales';
 import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
 export function PosPage() {
-  const { cart, add, update, remove, changeUnit, setTier, reset, startEdit } = useCart();
+  const { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld } = useCart();
   const [params, setParams] = useSearchParams();
   const [loadingEdit, setLoadingEdit] = useState(false);
   useLookups(); // load accounts early so checkout opens instantly
@@ -182,7 +182,7 @@ export function PosPage() {
   }, [editParam]);
 
   return (
-    <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0">
+    <div className="pb-[calc(7rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:gap-6 lg:pb-0 2xl:grid-cols-[minmax(0,1fr)_440px_300px]">
       {/* ---------------- search & results ---------------- */}
       <section className="min-w-0">
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -292,14 +292,31 @@ export function PosPage() {
       </section>
 
       {/* ---------------- cart ---------------- */}
+      {/* Below the widest screens the invoices put aside sit above the invoice; on the widest they have their own column. */}
+      {held.length > 0 && (
+        <div className="mt-4 lg:hidden">
+          <HeldList held={held} onResume={resume} onDrop={dropHeld} onRename={renameHeld} compact />
+        </div>
+      )}
       <section className={cn('mt-4 lg:mt-0', cart.lines.length === 0 && 'hidden lg:block')} aria-label="الفاتورة">
+        {held.length > 0 && (
+          <div className="mb-4 hidden lg:block 2xl:hidden">
+            <HeldList held={held} onResume={resume} onDrop={dropHeld} onRename={renameHeld} compact />
+          </div>
+        )}
         <div className="mb-2 flex items-center justify-between">
           <h2 className="font-bold">الفاتورة ({formatQuantity(totals.items)} قطعة)</h2>
           {cart.lines.length > 0 && (
+            <div className="flex items-center">
+            <button type="button" className="me-3 inline-flex h-10 items-center gap-1 rounded-lg px-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+              onClick={() => { hold(); toast.success('عُلّقت الفاتورة — تجدها في «الفواتير المعلّقة»'); searchRef.current?.querySelector('input')?.focus(); }}>
+              <Pause className="size-4" /> تعليق
+            </button>
             <button type="button" className="h-10 px-2 text-sm text-danger"
               onClick={async () => { if (await confirm({ title: 'إفراغ الفاتورة', message: 'سيتم حذف كل المنتجات من هذه الفاتورة.', confirmLabel: 'إفراغ', danger: true })) reset(); }}>
               إفراغ
             </button>
+            </div>
           )}
         </div>
 
@@ -356,6 +373,11 @@ export function PosPage() {
           </div>
         )}
       </section>
+
+      {/* Widest screens: the invoices put aside have their own column, beside the invoice. */}
+      <aside className="hidden 2xl:block" aria-label="الفواتير المعلّقة">
+        <HeldList held={held} onResume={resume} onDrop={dropHeld} onRename={renameHeld} />
+      </aside>
 
       {/* Phone: sticky total + pay above the tab bar */}
       {cart.lines.length > 0 && (
@@ -561,5 +583,61 @@ function LineSheet({ line, tier, tierPrice: listPrice, onSave, onRemove, onClose
         )}
       </div>
     </Sheet>
+  );
+}
+
+/** The invoices put aside («معلّقة»): each customer's cart while they keep choosing; one tap takes it back. */
+function HeldList({ held, onResume, onDrop, onRename, compact = false }: {
+  held: HeldCart[];
+  onResume: (id: string) => void;
+  onDrop: (id: string) => void;
+  onRename: (id: string, label: string) => void;
+  compact?: boolean;
+}) {
+  const confirm = useConfirm();
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const totalOf = (h: HeldCart) => round2(h.cart.lines.reduce((t, l) => t + lineTotal(l), 0));
+  const itemsOf = (h: HeldCart) => h.cart.lines.reduce((t, l) => t + l.quantity * l.factor, 0);
+  return (
+    <div className={cn(!compact && 'sticky top-4')}>
+      <h2 className="mb-2 flex items-center gap-2 font-bold">
+        الفواتير المعلّقة {held.length > 0 && <span className="rounded-full bg-amber-100 px-2 text-sm text-amber-900">{held.length}</span>}
+      </h2>
+      {held.length === 0 ? (
+        <p className="rounded-card border border-dashed border-line p-4 text-sm leading-6 text-muted">
+          زبون ما زال يختار؟ اضغط «تعليق» فوق الفاتورة: تُحفظ هنا ويمكنك البيع للزبون التالي، ثم تعود إليها بضغطة.
+        </p>
+      ) : (
+        <ul className={cn(compact ? 'flex gap-2 overflow-x-auto pb-1' : 'space-y-2')}>
+          {held.map((h) => (
+            <li key={h.id} className={cn('rounded-card border border-amber-200 bg-amber-50/60 p-3', compact && 'min-w-56 shrink-0')}>
+              {renaming === h.id ? (
+                <Input autoFocus defaultValue={h.label} aria-label="اسم الفاتورة المعلّقة" className="h-9"
+                  onBlur={(e) => { onRename(h.id, e.target.value); setRenaming(null); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') setRenaming(null); }} />
+              ) : (
+                <button type="button" className="block w-full truncate text-start font-semibold" title="تغيير الاسم" onClick={() => setRenaming(h.id)}>
+                  {h.label}
+                </button>
+              )}
+              <p className="mt-0.5 text-xs text-muted">
+                {formatQuantity(itemsOf(h))} قطعة · {new Date(h.heldAt).toLocaleTimeString('ar-PS-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}
+                {h.cart.tier === 'Wholesale' && ' · جملة'}{h.cart.editing && ` · تعديل ${h.cart.editing.number}`}
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="tabular font-bold">{formatMoney(totalOf(h))}</span>
+                <div className="flex items-center gap-1">
+                  <IconButton label={`حذف «${h.label}»`} className="size-9"
+                    onClick={async () => { if (await confirm({ title: 'حذف الفاتورة المعلّقة', message: `تُحذف «${h.label}» بمنتجاتها (لم تُسجَّل بعد).`, confirmLabel: 'حذف', danger: true })) onDrop(h.id); }}>
+                    <Trash2 className="size-4 text-danger" />
+                  </IconButton>
+                  <Button size="sm" onClick={() => onResume(h.id)}><Play className="size-4" /> استكمال</Button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

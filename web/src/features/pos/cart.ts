@@ -85,6 +85,33 @@ export interface Cart {
 }
 
 const STORAGE_KEY = 'qwader.pos.cart.v1';
+const HELD_KEY = 'qwader.pos.held.v1';
+
+/** An invoice put aside while its customer is still choosing: the whole cart, kept on this device until taken back. */
+export interface HeldCart {
+  id: string;
+  label: string;
+  heldAt: string;
+  cart: Cart;
+}
+
+function loadHeld(): HeldCart[] {
+  try {
+    const raw = localStorage.getItem(HELD_KEY);
+    const parsed = raw ? (JSON.parse(raw) as HeldCart[]) : [];
+    return Array.isArray(parsed) ? parsed.filter((h) => h?.cart?.key && Array.isArray(h.cart.lines)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHeld(held: HeldCart[]) {
+  try {
+    localStorage.setItem(HELD_KEY, JSON.stringify(held));
+  } catch {
+    /* ignore: kept in memory */
+  }
+}
 const newCart = (tier: PriceTier = 'Retail'): Cart => ({ key: crypto.randomUUID(), tier, lines: [] });
 
 function load(): Cart {
@@ -266,5 +293,39 @@ export function useCart() {
   // A finished sale's price type is not carried to the next customer: every new invoice starts at retail («مفرق»).
   const reset = useCallback(() => setCart(() => newCart()), []);
 
-  return { cart, add, update, remove, changeUnit, setTier, reset, startEdit };
+  // Invoices put aside, shared by the tabs of this device (each keeps its own key, so each is saved once).
+  const [held, setHeld] = useState<HeldCart[]>(loadHeld);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => { if (e.key === HELD_KEY) setHeld(loadHeld()); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+  const writeHeld = useCallback((next: HeldCart[]) => { saveHeld(next); setHeld(next); }, []);
+
+  /** Puts the current invoice aside (its products, prices and key) and starts an empty one. */
+  const hold = useCallback((label?: string) => {
+    if (cart.lines.length === 0) return;
+    const current = loadHeld();
+    const name = label?.trim() || cart.editing?.number && `تعديل ${cart.editing.number}` || `زبون ${current.length + 1}`;
+    writeHeld([...current, { id: crypto.randomUUID(), label: name, heldAt: new Date().toISOString(), cart }]);
+    setCart(() => newCart());
+  }, [cart, writeHeld]);
+
+  /** Takes an invoice back; the one on screen (if it has products) goes aside in its place. */
+  const resume = useCallback((id: string) => {
+    const current = loadHeld();
+    const chosen = current.find((h) => h.id === id);
+    if (!chosen) return;
+    const rest = current.filter((h) => h.id !== id);
+    if (cart.lines.length > 0)
+      rest.push({ id: crypto.randomUUID(), label: cart.editing?.number ? `تعديل ${cart.editing.number}` : `زبون ${rest.length + 1}`, heldAt: new Date().toISOString(), cart });
+    writeHeld(rest);
+    setCart(() => chosen.cart);
+  }, [cart, writeHeld]);
+
+  const dropHeld = useCallback((id: string) => writeHeld(loadHeld().filter((h) => h.id !== id)), [writeHeld]);
+  const renameHeld = useCallback((id: string, label: string) =>
+    writeHeld(loadHeld().map((h) => (h.id === id ? { ...h, label: label.trim() || h.label } : h))), [writeHeld]);
+
+  return { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld };
 }

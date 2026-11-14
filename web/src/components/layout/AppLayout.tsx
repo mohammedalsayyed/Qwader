@@ -69,7 +69,8 @@ export function AppLayout() {
         <TestBanner />
         <OfflineBanner />
         <TopBar />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-4 pb-page lg:px-8 lg:pb-10 print:p-0">
+        {/* The till uses the whole width (its third column lists the invoices put aside); other pages keep a reading width. */}
+        <main className={cn('mx-auto w-full flex-1 px-4 pt-4 pb-page lg:px-8 lg:pb-10 print:p-0', location.pathname.startsWith('/pos') ? 'max-w-[1700px]' : 'max-w-6xl')}>
           <Suspense fallback={<Spinner />}>
             <Outlet />
           </Suspense>
