@@ -265,6 +265,15 @@ public sealed class PurchaseService(
 
         await QuantityRules.EnsureAsync(db, request.Lines.Select(r => invoice.Lines.FirstOrDefault(l => l.Id == r.PurchaseInvoiceLineId) is { } l
             ? (l.ProductId, l.ProductUnitId, r.Quantity) : (0, (int?)null, 0m)), ct);
+        // Cash back from the supplier only when the store owes them nothing: while it owes, the return comes off what it owes
+        // (a refund of money never paid would leave the debt and add cash).
+        if (request.Settlement == ReturnSettlement.Refund)
+        {
+            await db.LockRowAsync("Suppliers", invoice.SupplierId, ct);
+            var owed = await db.Suppliers.Where(s => s.Id == invoice.SupplierId).Select(s => s.Balance).FirstAsync(ct);
+            if (owed > 0.004m)
+                throw new BusinessRuleException($"عليك للمورد {owed:0.00} ₪: اختر «خصم من المستحق» بدل استرداد المبلغ");
+        }
         foreach (var input in request.Lines.GroupBy(l => l.PurchaseInvoiceLineId).Select(g => new { LineId = g.Key, Quantity = g.Sum(x => x.Quantity) }))
         {
             var line = invoice.Lines.FirstOrDefault(l => l.Id == input.LineId)

@@ -41,14 +41,43 @@ public sealed class SaleService(
 
     // ------------------------------------------------------------------ create
 
-    public Task<SaleDetailDto> CreateAsync(CreateSaleRequest request, CancellationToken ct = default) => CreateCoreAsync(request, null, ct);
+    public async Task<SaleDetailDto> CreateAsync(CreateSaleRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            return await CreateCoreAsync(request, null, ct);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // The same request sent twice at the same moment: the other one saved it (its key is now taken). Answer with that
+            // invoice, as for any repeat, instead of an error the cashier would answer by selling again.
+            if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, CancellationToken.None) is not { } done) throw;
+            return await RepeatAsync(int.Parse(done.ResultId!), request);
+        }
+    }
+
+    /// <summary>
+    /// A key already used: the same sale sent again (a retry, a double tap) gets its invoice back. Different goods under the
+    /// same key — two tabs of the till sharing one cart's key — are refused, never answered with the other tab's invoice.
+    /// </summary>
+    private async Task<SaleDetailDto> RepeatAsync(int invoiceId, CreateSaleRequest request)
+    {
+        var sold = await db.SaleInvoiceLines.AsNoTracking().Where(l => l.SaleInvoiceId == invoiceId)
+            .Select(l => new { l.ProductId, l.ProductUnitId, l.Quantity }).ToListAsync(CancellationToken.None);
+        static string Key(int product, int? unit, decimal quantity) => $"{product}:{unit}:{quantity:0.###}";
+        var same = sold.Select(l => Key(l.ProductId, l.ProductUnitId, l.Quantity)).Order()
+            .SequenceEqual(request.Lines.Select(l => Key(l.ProductId, l.ProductUnitId, l.Quantity)).Order());
+        if (!same)
+            throw new ConflictException("أُرسلت فاتورة أخرى بنفس المفتاح (غالبًا من تبويب آخر لشاشة البيع). حدّث صفحة البيع ثم أعد المحاولة؛ لم تُسجَّل هذه الفاتورة");
+        return await GetAsync(invoiceId, CancellationToken.None);
+    }
 
     /// <param name="replacing">Editing: the voided invoice this one replaces; it keeps that invoice's date and salesperson.</param>
     private async Task<SaleDetailDto> CreateCoreAsync(CreateSaleRequest request, SaleInvoice? replacing, CancellationToken ct)
     {
         // A double tap or a retried request after a dropped connection returns the invoice already made.
         if (await idempotency.FindAsync(request.IdempotencyKey, CreateOperation, ct) is { } done)
-            return await GetAsync(int.Parse(done.ResultId!), ct);
+            return await RepeatAsync(int.Parse(done.ResultId!), request);
 
         if (request.PriceTier == PriceTier.Wholesale && !currentUser.HasPermission(Permissions.SalesWholesale))
             throw new ForbiddenException("البيع بسعر الجملة متاح لمدير النظام ومدير المعرض فقط");
@@ -301,7 +330,8 @@ public sealed class SaleService(
         foreach (var payment in invoice.Payments)
             await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.In, payment.Amount, AccountTransactionCategory.SaleReceipt, source, now, ct);
 
-        if (!customer.IsWalkIn)
+        // A free invoice (total 0) puts nothing on the customer's statement.
+        if (!customer.IsWalkIn && total > 0)
         {
             await customers.PostAsync(customer.Id, CustomerEntryType.Sale, total, 0, source, now, ct);
             if (paid > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, paid, source with { Description = "مدفوع عند البيع" }, now, ct);
@@ -608,6 +638,19 @@ public sealed class SaleService(
 
         ret.Total = ret.Lines.Sum(l => l.LineTotal);
         ret.TotalCost = ret.Lines.Sum(l => l.Quantity * l.UnitCost);
+        // Cash back: never more than was paid on this invoice (at the till and collected since), less what was already refunded.
+        // The part never paid comes off the customer's debt instead («خصم من الدين»).
+        if (request.Settlement == ReturnSettlement.Refund)
+        {
+            var refunded = await db.SaleReturns.Where(r => r.SaleInvoiceId == invoice.Id && r.Settlement == ReturnSettlement.Refund)
+                .SumAsync(r => (decimal?)r.Total, ct) ?? 0;
+            var refundable = invoice.PaidAmount + invoice.CollectedAmount - refunded;
+            if (ret.Total > refundable + 0.004m)
+                throw new BusinessRuleException(refundable <= 0.004m
+                    ? $"لم يُدفع شيء على هذه الفاتورة يمكن إعادته ({ret.Total:0.00} ₪ مرتجع): اختر «خصم من دين العميل»"
+                    : $"المدفوع على الفاتورة {refundable:0.00} ₪ فقط والمرتجع {ret.Total:0.00} ₪: اختر «خصم من دين العميل»، "
+                      + "ثم أعد للعميل ما يبقى له من صفحته («إعادة رصيد»)");
+        }
         invoice.Status = invoice.Lines.All(l => l.ReturnedQuantity == l.Quantity) ? SaleStatus.Returned : SaleStatus.PartiallyReturned;
         db.SaleReturns.Add(ret);
         await db.SaveChangesAsync(ct);
@@ -667,7 +710,7 @@ public sealed class SaleService(
         foreach (var payment in invoice.Payments)
             await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.Out, payment.Amount, AccountTransactionCategory.Reversal, moneySource, now, ct, requireFunds: true);
 
-        if (!invoice.Customer.IsWalkIn)
+        if (!invoice.Customer.IsWalkIn && invoice.Total > 0)
         {
             await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, 0, invoice.Total, source, now, ct);
             if (invoice.PaidAmount > 0) await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Reversal, invoice.PaidAmount, 0, source, now, ct);
@@ -744,7 +787,7 @@ public sealed class SaleService(
         // The money comes back to the accounts it was paid into, as at the sale.
         foreach (var payment in invoice.Payments)
             await accounts.PostAsync(payment.FinancialAccountId, MoneyDirection.In, payment.Amount, AccountTransactionCategory.SaleReceipt, source, now, ct);
-        if (!invoice.Customer.IsWalkIn)
+        if (!invoice.Customer.IsWalkIn && invoice.Total > 0)
         {
             await customers.PostAsync(invoice.CustomerId, CustomerEntryType.Sale, invoice.Total, 0, source, now, ct);
             if (invoice.PaidAmount > 0)
@@ -886,7 +929,7 @@ public sealed class SaleService(
                     ?? throw new ValidationFailedException("customerId", "العميل غير موجود أو غير فعّال");
                 var source = new LedgerSource("SaleInvoice", invoice.Id, invoice.Number, $"فاتورة بيع — ربط بالعميل (كانت زبون نقدي)");
                 var now = clock.UtcNow;
-                await customers.PostAsync(customer.Id, CustomerEntryType.Sale, invoice.Total, 0, source, now, ct);
+                if (invoice.Total > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Sale, invoice.Total, 0, source, now, ct);
                 if (invoice.PaidAmount > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, invoice.PaidAmount, source with { Description = "مدفوع عند البيع" }, now, ct);
                 invoice.CustomerId = customer.Id;
                 invoice.CustomerName = customer.Name;

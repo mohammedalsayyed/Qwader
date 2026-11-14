@@ -88,16 +88,21 @@ public sealed class SavePurchaseRequestValidator : AbstractValidator<SavePurchas
         RuleFor(x => x.SupplierId).GreaterThan(0).WithMessage("اختر المورد");
         RuleFor(x => x.SupplierInvoiceNo).MaximumLength(50);
         RuleFor(x => x.Notes).MaximumLength(500);
-        RuleFor(x => x.Discount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا");
-        RuleFor(x => x.PaidAmount).GreaterThanOrEqualTo(0).WithMessage("المبلغ المدفوع لا يمكن أن يكون سالبًا");
+        RuleFor(x => x.Discount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
+        RuleFor(x => x.PaidAmount).GreaterThanOrEqualTo(0).WithMessage("المبلغ المدفوع لا يمكن أن يكون سالبًا")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.PaymentAccountId).NotNull().When(x => x.PaidAmount > 0).WithMessage("اختر الحساب الذي دُفع منه المبلغ");
         RuleFor(x => x.Lines).NotEmpty().WithMessage("أضف منتجًا واحدًا على الأقل");
         RuleForEach(x => x.Lines).ChildRules(line =>
         {
             line.RuleFor(l => l.ProductId).GreaterThan(0).WithMessage("اختر المنتج");
-            line.RuleFor(l => l.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
-            line.RuleFor(l => l.UnitCost).GreaterThanOrEqualTo(0).WithMessage("تكلفة الوحدة لا يمكن أن تكون سالبة");
-            line.RuleFor(l => l.LineDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا");
+            line.RuleFor(l => l.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر")
+                .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
+            line.RuleFor(l => l.UnitCost).GreaterThanOrEqualTo(0).WithMessage("تكلفة الوحدة لا يمكن أن تكون سالبة")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
+            line.RuleFor(l => l.LineDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         });
     }
 }

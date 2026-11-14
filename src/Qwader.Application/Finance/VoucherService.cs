@@ -96,6 +96,8 @@ public sealed class VoucherService(
         Customer? customer = null;
         if (request.CustomerId is { } customerId)
         {
+            // Locked first: two receipts at the same moment cannot both pass the «not more than the debt» check.
+            await db.LockRowAsync("Customers", customerId, ct);
             customer = await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == customerId, ct) ?? throw new ValidationFailedException("customerId", "العميل غير موجود");
             if (customer.IsWalkIn) throw new ValidationFailedException("customerId", "اختر عميلًا باسمه");
             if (request.Purpose == ReceiptPurpose.DebtCollection && request.Amount > customer.Balance + 0.009m)
@@ -278,6 +280,7 @@ public sealed class VoucherService(
         Supplier? supplier = null;
         if (request.SupplierId is { } supplierId)
         {
+            await db.LockRowAsync("Suppliers", supplierId, ct);
             supplier = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.Id == supplierId, ct) ?? throw new ValidationFailedException("supplierId", "المورد غير موجود");
             if (request.Purpose == PaymentPurpose.SupplierPayment && request.Amount > supplier.Balance + 0.009m)
                 throw new BusinessRuleException(supplier.Balance <= 0
@@ -289,6 +292,7 @@ public sealed class VoucherService(
         Customer? customer = null;
         if (request.Purpose == PaymentPurpose.CustomerRefund)
         {
+            if (request.CustomerId is { } refundCustomerId) await db.LockRowAsync("Customers", refundCustomerId, ct);
             customer = await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.CustomerId, ct) ?? throw new ValidationFailedException("customerId", "العميل غير موجود");
             if (request.Amount > -customer.Balance + 0.009m)
                 throw new BusinessRuleException(customer.Balance >= 0

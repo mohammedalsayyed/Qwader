@@ -145,15 +145,20 @@ public sealed class CreateSaleRequestValidator : AbstractValidator<CreateSaleReq
         RuleForEach(x => x.Lines).ChildRules(l =>
         {
             l.RuleFor(x => x.ProductId).GreaterThan(0);
-            l.RuleFor(x => x.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر");
-            l.RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0).WithMessage("السعر لا يمكن أن يكون سالبًا");
-            l.RuleFor(x => x.LineDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا");
+            l.RuleFor(x => x.Quantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر")
+                .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
+            l.RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0).WithMessage("السعر لا يمكن أن يكون سالبًا")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
+            l.RuleFor(x => x.LineDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         });
-        RuleFor(x => x.InvoiceDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا");
+        RuleFor(x => x.InvoiceDiscount).GreaterThanOrEqualTo(0).WithMessage("الخصم لا يمكن أن يكون سالبًا")
+            .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleForEach(x => x.Payments).ChildRules(p =>
         {
             p.RuleFor(x => x.AccountId).GreaterThan(0).WithMessage("اختر الحساب المستلم");
-            p.RuleFor(x => x.Amount).GreaterThan(0).WithMessage("مبلغ الدفعة يجب أن يكون أكبر من صفر");
+            p.RuleFor(x => x.Amount).GreaterThan(0).WithMessage("مبلغ الدفعة يجب أن يكون أكبر من صفر")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
             p.RuleFor(x => x.Reference).MaximumLength(100);
         });
         RuleFor(x => x.CustomerName).MaximumLength(150);

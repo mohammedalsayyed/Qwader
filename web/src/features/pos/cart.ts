@@ -183,6 +183,25 @@ export function useCart() {
     });
   }, []);
 
+  // Two tabs of the till load the same saved cart, and so the same key. When the other tab finishes a sale with it (its
+  // cart empties under a new key), this tab takes a new key and keeps its lines: its sale is never taken for a repeat of
+  // the other one. (The server refuses a reused key with other goods too.)
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEY || !e.oldValue || !e.newValue) return;
+      try {
+        const before = JSON.parse(e.oldValue) as Cart;
+        const after = JSON.parse(e.newValue) as Cart;
+        if (after.key === before.key || after.lines.length > 0) return;
+        setCart((c) => (c.key === before.key ? { ...c, key: crypto.randomUUID() } : c));
+      } catch {
+        /* not a cart */
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   /** Adds one (of the base unit, or of `unit`). Returns an Arabic message when stock does not allow it. */
   const add = useCallback((p: ProductLike, quantity = 1, unit: ProductUnit | null = null): string | null => {
     let error: string | null = null;

@@ -312,6 +312,9 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
     const q = parseNumber(qty[l.id]) ?? 0;
     return sum + (Number.isNaN(q) ? 0 : (q * l.netTotal) / l.quantity);
   }, 0));
+  // Cash back is never more than was paid on the invoice, less what earlier returns already gave back.
+  const refundable = round2(sale.paidAmount - sale.returns.filter((r) => !r.voidedAt && r.settlement === 'Refund').reduce((t, r) => t + r.total, 0));
+  const tooMuchCash = settlement === 'Refund' && total > refundable + 0.004;
 
   const save = useMutation({
     mutationFn: () => salesApi.return(sale.id, {
@@ -335,6 +338,7 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
     }
     if (total <= 0) return setError('حدد كمية مرتجعة واحدة على الأقل');
     if (settlement === 'Refund' && !accountId) return setError('اختر الحساب الذي سيُدفع منه المبلغ');
+    if (tooMuchCash) return setError(`المدفوع على الفاتورة ${formatMoney(refundable)} فقط: اختر «خصم من دين العميل»`);
     setError(undefined);
     save.mutate();
   };
@@ -384,6 +388,12 @@ function ReturnSheet({ sale, onClose, onDone }: { sale: Sale; onClose: () => voi
             </Select>
           )}
         </Field>
+        {settlement === 'Refund' && (
+          <p className={cn('text-sm', tooMuchCash ? 'rounded-xl bg-red-50 p-3 text-danger' : 'text-muted')}>
+            يمكن إعادة {formatMoney(Math.max(0, refundable))} نقدًا على الأكثر (ما دُفع على الفاتورة)
+            {tooMuchCash && ' — المرتجع أكبر منه: اختر «خصم من دين العميل»، ثم أعد للعميل ما يبقى له من صفحته.'}
+          </p>
+        )}
         {settlement === 'Refund' && (
           <Field label="يُدفع من حساب" required>
             {(id) => (
