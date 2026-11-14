@@ -11,6 +11,8 @@ public enum AccountTransactionCategory
     SaleReceipt = 1,
     DebtCollection = 2,
     OtherIncome = 3,
+    /// <summary>A customer's advance («دفعة مقدمة»): their money until they buy with it.</summary>
+    CustomerDeposit = 4,
     SupplierPayment = 10,
     SupplierRefund = 11,
     Expense = 12,

@@ -15,6 +15,8 @@ public interface IVoucherService
     Task<PagedResult<VoucherDto>> ReceiptsAsync(VoucherListRequest request, CancellationToken ct = default);
     Task<VoucherDto> GetReceiptAsync(int id, CancellationToken ct = default);
     Task<VoucherDto> CreateReceiptAsync(CreateReceiptRequest request, CancellationToken ct = default);
+    /// <summary>The customer's credit pays (part of) a new invoice of theirs.</summary>
+    Task ApplyCreditAsync(int customerId, int saleInvoiceId, decimal open, decimal credit, CancellationToken ct = default);
     Task<VoucherDto> VoidReceiptAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
 
     Task<PagedResult<VoucherDto>> PaymentsAsync(VoucherListRequest request, CancellationToken ct = default);
@@ -146,11 +148,16 @@ public sealed class VoucherService(
         await db.SaveChangesAsync(ct);
 
         var source = new LedgerSource("ReceiptVoucher", voucher.Id, voucher.Number, $"سند قبض — {voucher.PayerName}");
-        await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.In, voucher.Amount,
-            voucher.Purpose == ReceiptPurpose.DebtCollection ? AccountTransactionCategory.DebtCollection : AccountTransactionCategory.OtherIncome,
-            source, voucher.Date, ct);
-        if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
-            await customers.PostAsync(customerId, CustomerEntryType.Payment, 0, voucher.Amount, source, voucher.Date, ct);
+        await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.In, voucher.Amount, voucher.Purpose switch
+            {
+                ReceiptPurpose.DebtCollection => AccountTransactionCategory.DebtCollection,
+                ReceiptPurpose.CustomerDeposit => AccountTransactionCategory.CustomerDeposit,
+                _ => AccountTransactionCategory.OtherIncome,
+            }, source, voucher.Date, ct);
+        // A collection or an advance goes to the customer's statement as a payment: their debt goes down, or their credit up.
+        if (voucher.CustomerId is { } customerId && voucher.Purpose is ReceiptPurpose.DebtCollection or ReceiptPurpose.CustomerDeposit)
+            await customers.PostAsync(customerId, CustomerEntryType.Payment, 0, voucher.Amount,
+                voucher.Purpose == ReceiptPurpose.CustomerDeposit ? source with { Description = $"دفعة مقدمة — {voucher.PayerName}" } : source, voucher.Date, ct);
         await AllocateAsync(voucher, ct);
 
         audit.Log("Voucher.Receipt", "ReceiptVoucher", voucher.Id.ToString(), null, new { voucher.Number, voucher.Amount, voucher.PayerName, voucher.Purpose });
@@ -165,7 +172,8 @@ public sealed class VoucherService(
     /// </summary>
     private async Task AllocateAsync(ReceiptVoucher voucher, CancellationToken ct)
     {
-        if (voucher.CustomerId is not { } customerId || voucher.Purpose != ReceiptPurpose.DebtCollection) return;
+        // An advance from a customer who still owes pays those debts first, as a collection would; the rest is their credit.
+        if (voucher.CustomerId is not { } customerId || voucher.Purpose is not (ReceiptPurpose.DebtCollection or ReceiptPurpose.CustomerDeposit)) return;
 
         var open = await db.SaleInvoices.Where(s => s.CustomerId == customerId && s.Status != SaleStatus.Voided)
             .Select(s => new
@@ -200,6 +208,33 @@ public sealed class VoucherService(
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + a.Amount), ct);
     }
 
+    /// <summary>
+    /// A customer with credit («له») buys on credit: the part of their receipts not yet used (an advance, a collection
+    /// beyond their debts, the money of a voided invoice) pays this invoice, so it does not show as owed while they are owed.
+    /// Never more than the invoice leaves open nor than the credit they hold.
+    /// </summary>
+    public async Task ApplyCreditAsync(int customerId, int saleInvoiceId, decimal open, decimal credit, CancellationToken ct = default)
+    {
+        var left = Math.Min(open, credit);
+        if (left <= 0.004m) return;
+        var receipts = await db.ReceiptVouchers.Where(v => v.CustomerId == customerId && v.Status == VoucherStatus.Posted
+                && (v.Purpose == ReceiptPurpose.DebtCollection || v.Purpose == ReceiptPurpose.CustomerDeposit))
+            .Select(v => new { v.Id, v.Date, Free = v.Amount - (db.ReceiptAllocations.Where(a => a.ReceiptVoucherId == v.Id).Sum(a => (decimal?)a.Amount) ?? 0) })
+            .Where(v => v.Free > 0.004m).OrderBy(v => v.Date).ThenBy(v => v.Id).ToListAsync(ct);
+        var applied = 0m;
+        foreach (var r in receipts)
+        {
+            var amount = Math.Min(left, r.Free);
+            if (amount <= 0.004m) break;
+            db.ReceiptAllocations.Add(new ReceiptAllocation { ReceiptVoucherId = r.Id, CustomerId = customerId, SaleInvoiceId = saleInvoiceId, Amount = amount });
+            applied += amount;
+            left -= amount;
+        }
+        if (applied > 0)
+            await db.SaleInvoices.Where(s => s.Id == saleInvoiceId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + applied), ct);
+    }
+
     /// <summary>A voided collection gives back what it paid: the invoices are owed again.</summary>
     private async Task ReleaseAsync(ReceiptVoucher voucher, CancellationToken ct)
     {
@@ -222,7 +257,7 @@ public sealed class VoucherService(
         var source = new LedgerSource("ReceiptVoucher", voucher.Id, voucher.Number, $"إلغاء سند قبض: {request.Reason.Trim()}");
         // The money must still be in the account (it may have been moved since): an account never goes below zero.
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, AccountTransactionCategory.Reversal, source, now, ct, requireFunds: true);
-        if (voucher.CustomerId is { } customerId && voucher.Purpose == ReceiptPurpose.DebtCollection)
+        if (voucher.CustomerId is { } customerId && voucher.Purpose is ReceiptPurpose.DebtCollection or ReceiptPurpose.CustomerDeposit)
             await customers.PostAsync(customerId, CustomerEntryType.Reversal, voucher.Amount, 0, source, now, ct);
         await ReleaseAsync(voucher, ct);
 
@@ -241,7 +276,7 @@ public sealed class VoucherService(
         var users = db.Users;
         return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.PayerName, v.PayerPhone, v.CustomerId, null, v.Amount,
             v.FinancialAccountId, v.FinancialAccount.Name, v.Purpose.ToString(),
-            v.Purpose == ReceiptPurpose.DebtCollection ? "تحصيل دين من عميل" : "إيراد آخر",
+            v.Purpose == ReceiptPurpose.DebtCollection ? "تحصيل دين من عميل" : v.Purpose == ReceiptPurpose.CustomerDeposit ? "دفعة مقدمة / رصيد للعميل" : "إيراد آخر",
             v.Reference, v.Notes, v.AttachmentFileId, v.Status, users.Where(u => u.Id == v.CreatedById).Select(u => u.FullName).FirstOrDefault(),
             v.VoidedAt, v.VoidReason, v.IncomingTransferId, v.SaleInvoiceId, null));
     }

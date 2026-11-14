@@ -74,7 +74,10 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   const [error, setError] = useState<string>();
 
   const discountN = parseNumber(discount) ?? 0;
-  const total = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
+  // No agorot on an invoice (the store's rule): what is left after the whole shekels is added to the discount.
+  const rawTotal = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
+  const decimalsOff = round2(rawTotal - Math.floor(rawTotal + 0.0001));
+  const total = round2(rawTotal - decimalsOff);
   // As the server counts it: line and invoice discounts against the lines at their (possibly changed) prices.
   const gross = subtotal + lineDiscounts;
   const discountPercent = gross > 0 ? round2(((gross - total) / gross) * 100) : 0;
@@ -105,7 +108,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     customerId: mode === 'customer' ? customer?.id ?? null : null,
     customerName: mode === 'customer' && !customer ? newName.trim() : null,
     customerPhone: mode === 'customer' && !customer ? newPhone.trim() : null,
-    invoiceDiscount: discountN,
+    invoiceDiscount: round2((Number.isNaN(discountN) ? 0 : discountN) + decimalsOff),
     lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount, productUnitId: l.productUnitId })),
     payments,
   });
@@ -118,7 +121,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     });
     // Just what the «تم البيع» sheet shows; id 0 marks a sale the server has not seen yet.
     return {
-      id: 0, number: q.number, total, invoiceDiscount: discountN, remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
+      id: 0, number: q.number, total, invoiceDiscount: round2(discountN + decimalsOff), remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
       lines: cart.lines.map((l) => ({ productName: l.name, quantity: l.quantity, unitName: l.unitName, unitFactor: l.factor, lineTotal: lineTotal(l) })),
     } as unknown as Sale;
   };
@@ -167,7 +170,9 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
         <div className="space-y-2">
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-medium text-danger">{error}</p>}
           <div className="flex items-center justify-between text-sm">
-            <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b></span>
+            <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b>
+              {decimalsOff > 0 && <span className="ms-2 whitespace-nowrap text-xs text-muted">خصم الأعشار −{formatMoney(decimalsOff)}</span>}
+            </span>
             {pendingPaid > 0 ? <span className="font-semibold text-amber-700">بانتظار التحقق: {formatMoney(pendingPaid)}</span>
               : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}

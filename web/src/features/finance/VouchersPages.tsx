@@ -103,7 +103,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const presetCustomer = params.get('customerId') ? Number(params.get('customerId')) : undefined;
   const presetSupplier = params.get('supplierId') ? Number(params.get('supplierId')) : undefined;
 
-  const [purpose, setPurpose] = useState<'party' | 'other'>('party');
+  // «deposit» (receipts only): a customer's advance — any amount, it becomes their credit.
+  const [purpose, setPurpose] = useState<'party' | 'other' | 'deposit'>('party');
   const [customer, setCustomer] = useState<CustomerListItem | null>(null);
   const [supplier, setSupplier] = useState<SupplierListItem | null>(null);
   const [name, setName] = useState('');
@@ -146,7 +147,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
         notes: notes.trim() || null, attachmentFileId: attachment, confirmDuplicate,
       };
       return kind === 'receipt'
-        ? receiptsApi.create({ ...base, purpose: (purpose === 'party' ? 'DebtCollection' : 'OtherIncome') as ReceiptPurpose, customerId: purpose === 'party' ? customer?.id : null, payerName: purpose === 'other' ? name.trim() : null, payerPhone: phone.trim() || null })
+        ? receiptsApi.create({ ...base, purpose: (purpose === 'party' ? 'DebtCollection' : purpose === 'deposit' ? 'CustomerDeposit' : 'OtherIncome') as ReceiptPurpose,
+          customerId: purpose !== 'other' ? customer?.id : null, payerName: purpose === 'other' ? name.trim() : null, payerPhone: phone.trim() || null })
         : paymentsApi.create({ ...base, purpose: (purpose === 'party' ? 'SupplierPayment' : 'Other') as PaymentPurpose, supplierId: purpose === 'party' ? supplier?.id : null, beneficiaryName: purpose === 'other' ? name.trim() : null });
     },
     onSuccess: (v) => {
@@ -166,7 +168,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
 
   const submit = () => {
     const e: Record<string, string> = {};
-    if (purpose === 'party' && !party) e.party = kind === 'receipt' ? 'اختر العميل' : 'اختر المورد';
+    if ((purpose === 'party' || purpose === 'deposit') && !party) e.party = kind === 'receipt' ? 'اختر العميل' : 'اختر المورد';
     if (purpose === 'other' && !name.trim()) e.name = `اسم ${meta.party} مطلوب`;
     const n = parseNumber(amount);
     if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
@@ -186,23 +188,29 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
       <PageHeader title={`${meta.one} جديد`} />
 
       <Card className="space-y-4 p-5">
-        <div className="grid grid-cols-2 rounded-xl bg-black/5 p-1">
-          {(['party', 'other'] as const).map((p) => (
+        <div className={cn('grid rounded-xl bg-black/5 p-1', kind === 'receipt' ? 'grid-cols-3' : 'grid-cols-2')}>
+          {(kind === 'receipt' ? (['party', 'deposit', 'other'] as const) : (['party', 'other'] as const)).map((p) => (
             <button key={p} type="button" aria-pressed={purpose === p} onClick={() => setPurpose(p)}
-              className={cn('h-10 rounded-lg text-sm font-semibold', purpose === p ? 'bg-surface shadow-sm' : 'text-muted')}>
-              {p === 'party' ? (kind === 'receipt' ? 'تحصيل دين من عميل' : 'دفعة لمورد') : kind === 'receipt' ? 'إيراد آخر' : 'صرف آخر'}
+              className={cn('min-h-10 rounded-lg px-1 text-sm font-semibold leading-tight', purpose === p ? 'bg-surface shadow-sm' : 'text-muted')}>
+              {p === 'party' ? (kind === 'receipt' ? 'تحصيل دين من عميل' : 'دفعة لمورد') : p === 'deposit' ? 'دفعة مقدمة / رصيد للعميل' : kind === 'receipt' ? 'إيراد آخر' : 'صرف آخر'}
             </button>
           ))}
         </div>
+        {purpose === 'deposit' && (
+          <p className="rounded-xl bg-brand-50 p-3 text-sm leading-6">
+            مال يتركه العميل عندك (باقٍ لم يأخذه، أو دفعة على طلبية): يدخل الحساب، ويصبح <b>رصيدًا له («له»)</b> يُخصم تلقائيًا من مشترياته الآجلة القادمة،
+            أو تعيده له من صفحته («إعادة رصيد»). إن كان عليه دين يُسدَّد منه أولًا.
+          </p>
+        )}
 
-        {purpose === 'party' ? (
+        {purpose !== 'other' ? (
           kind === 'receipt' ? (
             <Field label="العميل" required error={errors.party}>
               {(id) => (
                 <Picker<CustomerListItem> id={id} invalid={!!errors.party} valueLabel={customer ? customer.name : null} placeholder="ابحث بالاسم أو الجوال" title="اختيار العميل"
-                  queryKey="receipt-customers" search={async (q, signal) => (await customersApi.list({ search: q, pageSize: 20, withBalance: true }, signal)).items}
+                  queryKey={purpose === 'deposit' ? 'deposit-customers' : 'receipt-customers'} search={async (q, signal) => (await customersApi.list({ search: q, pageSize: 20, withBalance: purpose !== 'deposit', excludeWalkIn: true }, signal)).items}
                   getKey={(c) => c.id} renderItem={(c) => <span className="flex justify-between gap-2"><span>{c.name} <span className="ltr text-xs text-muted">{c.phone}</span></span><span className="tabular text-danger">{formatMoney(c.balance)}</span></span>}
-                  onSelect={(c) => { setCustomer(c); if (!amount) setAmount(String(c.balance)); }} onClear={() => setCustomer(null)} />
+                  onSelect={(c) => { setCustomer(c); if (!amount && purpose === 'party') setAmount(String(c.balance)); }} onClear={() => setCustomer(null)} />
               )}
             </Field>
           ) : (

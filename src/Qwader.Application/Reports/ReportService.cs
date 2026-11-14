@@ -269,7 +269,8 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var received = Financial
             ? await db.AccountTransactions.AsNoTracking().Where(t => t.Date >= start && t.Date < end
                     && ((t.Direction == MoneyDirection.In && (t.Category == AccountTransactionCategory.SaleReceipt
-                            || t.Category == AccountTransactionCategory.DebtCollection || t.Category == AccountTransactionCategory.OtherIncome))
+                            || t.Category == AccountTransactionCategory.DebtCollection || t.Category == AccountTransactionCategory.OtherIncome
+                            || t.Category == AccountTransactionCategory.CustomerDeposit))
                         || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund))
                     && !reversalEntries.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
                 .Select(t => new { t.Date, Amount = t.Direction == MoneyDirection.In ? t.Amount : -t.Amount }).ToListAsync(ct)

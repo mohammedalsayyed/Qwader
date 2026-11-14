@@ -31,7 +31,8 @@ public sealed class SaleService(
     ICurrentUser currentUser,
     IClock clock,
     IAuditService audit,
-    IPushNotifier push) : ISaleService
+    IPushNotifier push,
+    Finance.IVoucherService vouchers) : ISaleService
 {
     private const string CreateOperation = "Sale.Create";
     private const string ReturnOperation = "Sale.Return";
@@ -154,9 +155,15 @@ public sealed class SaleService(
         var lineDiscounts = lines.Sum(l => l.LineDiscount);
         var subtotal = lines.Sum(l => l.LineTotal);
         if (request.InvoiceDiscount > subtotal) throw new ValidationFailedException("invoiceDiscount", "الخصم أكبر من إجمالي الفاتورة");
-        var total = subtotal - request.InvoiceDiscount;
+        // The store's rule: no agorot on an invoice. What is left after the whole shekels is added to the invoice discount
+        // (the till already sends it so; a request that does not is completed here). That part needs no discount permission
+        // and does not count toward the discount limit.
+        var decimals = subtotal - request.InvoiceDiscount - decimal.Floor(subtotal - request.InvoiceDiscount);
+        var invoiceDiscount = request.InvoiceDiscount + decimals;
+        var decimalsDiscount = Math.Min(invoiceDiscount, subtotal - decimal.Floor(subtotal));
+        var total = subtotal - invoiceDiscount;
 
-        var shares = CostMath.AllocateDiscount(lines.Select(l => l.LineTotal).ToList(), request.InvoiceDiscount);
+        var shares = CostMath.AllocateDiscount(lines.Select(l => l.LineTotal).ToList(), invoiceDiscount);
         for (var i = 0; i < lines.Count; i++) lines[i].NetTotal = lines[i].LineTotal - shares[i];
 
         // ---- price & discount rules
@@ -164,7 +171,7 @@ public sealed class SaleService(
         // Discounts (per line or on the invoice) are separate: they need the discount permission and stay within the store's limit.
         var canOverride = currentUser.HasPermission(Permissions.SalesPriceOverride);
         // Typed discounts only, measured against the lines at the prices the seller charged.
-        var discountGiven = typedLineDiscounts + request.InvoiceDiscount;
+        var discountGiven = typedLineDiscounts + invoiceDiscount - decimalsDiscount;
         var chargedGross = grossTotal - (lineDiscounts - typedLineDiscounts);
         if (discountGiven > 0.009m)
         {
@@ -231,6 +238,17 @@ public sealed class SaleService(
             .Select(p => (Input: p, IsTransfer: accountTypes[p.AccountId] != FinancialAccountType.Cash))
             .Select(p => (p.Input, p.IsTransfer, Pending: p.IsTransfer && transfersPending))
             .ToList();
+        // Paid with the agorot the invoice no longer has (a sale saved offline, or an app not yet updated): that excess is
+        // the customer's change, taken off the last payment, so the sale is never refused for it.
+        var excess = payments.Sum(p => p.Input.Amount) - total;
+        if (excess > 0.004m && excess <= decimals + 0.004m)
+            for (var i = payments.Count - 1; i >= 0 && excess > 0.004m; i--)
+            {
+                var cut = Math.Min(excess, payments[i].Input.Amount);
+                payments[i] = (payments[i].Input with { Amount = payments[i].Input.Amount - cut }, payments[i].IsTransfer, payments[i].Pending);
+                excess -= cut;
+            }
+        payments.RemoveAll(p => p.Input.Amount <= 0);
         var paid = payments.Where(p => !p.Pending).Sum(p => p.Input.Amount);
         var pendingTotal = payments.Where(p => p.Pending).Sum(p => p.Input.Amount);
         if (paid + pendingTotal > total) throw new ValidationFailedException("payments", "مجموع الدفعات أكبر من إجمالي الفاتورة؛ سجّل المبلغ المستحق فقط واحسب الباقي للزبون");
@@ -276,7 +294,7 @@ public sealed class SaleService(
             PriceTier = request.PriceTier,
             GrossTotal = grossTotal,
             LineDiscountTotal = lineDiscounts,
-            InvoiceDiscount = request.InvoiceDiscount,
+            InvoiceDiscount = invoiceDiscount,
             Total = total,
             PaidAmount = paid,
             SalespersonId = replacing?.SalespersonId ?? currentUser.RequiredUserId,
@@ -333,8 +351,13 @@ public sealed class SaleService(
         // A free invoice (total 0) puts nothing on the customer's statement.
         if (!customer.IsWalkIn && total > 0)
         {
-            await customers.PostAsync(customer.Id, CustomerEntryType.Sale, total, 0, source, now, ct);
-            if (paid > 0) await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, paid, source with { Description = "مدفوع عند البيع" }, now, ct);
+            var balance = await customers.PostAsync(customer.Id, CustomerEntryType.Sale, total, 0, source, now, ct);
+            if (paid > 0) balance = await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, paid, source with { Description = "مدفوع عند البيع" }, now, ct);
+            // Left open (not paid, not waiting on a transfer) while the customer holds credit: the credit pays it.
+            var open = total - paid - pendingTotal;
+            var creditBefore = open - balance;
+            if (open > 0.004m && creditBefore > 0.004m)
+                await vouchers.ApplyCreditAsync(customer.Id, invoice.Id, open, creditBefore, ct);
         }
 
         // Unverified transfers are recorded for review; until confirmed they remain part of the customer's debt.
@@ -974,7 +997,8 @@ public sealed class SaleService(
         var reversals = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
         var received = db.AccountTransactions.AsNoTracking().Where(t => t.Date >= startUtc && t.Date < endUtc
             && ((t.Direction == MoneyDirection.In
-                    && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection)
+                    && (t.Category == AccountTransactionCategory.SaleReceipt || t.Category == AccountTransactionCategory.DebtCollection
+                        || t.Category == AccountTransactionCategory.CustomerDeposit)
                     && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
                 || (t.Direction == MoneyDirection.Out && t.Category == AccountTransactionCategory.SaleRefund
                     && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))));

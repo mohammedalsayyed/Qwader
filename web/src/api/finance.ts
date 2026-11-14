@@ -95,7 +95,8 @@ export interface IncomingTransfer {
   receiptVoucherNumber: string | null;
 }
 
-export type ReceiptPurpose = 'DebtCollection' | 'OtherIncome';
+/** CustomerDeposit: money a customer leaves with the store — their credit («له») until they buy with it or it is paid back. */
+export type ReceiptPurpose = 'DebtCollection' | 'OtherIncome' | 'CustomerDeposit';
 export type PaymentPurpose = 'SupplierPayment' | 'Expense' | 'Other' | 'CustomerRefund' | 'EmployeeAdvance';
 export type VoucherStatus = 'Posted' | 'Voided';
 

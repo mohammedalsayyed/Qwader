@@ -101,6 +101,7 @@ public static class FinanceNames
         AccountTransactionCategory.SaleReceipt => "مقبوضات مبيعات",
         AccountTransactionCategory.DebtCollection => "تحصيل دين",
         AccountTransactionCategory.OtherIncome => "إيراد آخر",
+        AccountTransactionCategory.CustomerDeposit => "دفعة مقدمة من عميل",
         AccountTransactionCategory.SupplierPayment => "دفعة لمورد",
         AccountTransactionCategory.SupplierRefund => "استرداد من مورد",
         AccountTransactionCategory.Expense => "مصروف",
@@ -114,7 +115,12 @@ public static class FinanceNames
         _ => c.ToString(),
     };
 
-    public static string Receipt(ReceiptPurpose p) => p == ReceiptPurpose.DebtCollection ? "تحصيل دين من عميل" : "إيراد آخر";
+    public static string Receipt(ReceiptPurpose p) => p switch
+    {
+        ReceiptPurpose.DebtCollection => "تحصيل دين من عميل",
+        ReceiptPurpose.CustomerDeposit => "دفعة مقدمة / رصيد للعميل",
+        _ => "إيراد آخر",
+    };
 
     public static string Payment(PaymentPurpose p) => p switch
     {
@@ -189,7 +195,7 @@ public sealed class CreateReceiptRequestValidator : AbstractValidator<CreateRece
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
         RuleFor(x => x.Purpose).IsInEnum();
-        RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose == ReceiptPurpose.DebtCollection).WithMessage("اختر العميل");
+        RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose is ReceiptPurpose.DebtCollection or ReceiptPurpose.CustomerDeposit).WithMessage("اختر العميل");
         RuleFor(x => x.PayerName).NotEmpty().When(x => x.CustomerId is null).WithMessage("اسم الدافع مطلوب");
         RuleFor(x => x.PayerName).MaximumLength(150);
         RuleFor(x => x.PayerPhone).MaximumLength(20).Must(Customers.PhoneNumbers.IsValid).WithMessage(Customers.PhoneNumbers.Invalid);

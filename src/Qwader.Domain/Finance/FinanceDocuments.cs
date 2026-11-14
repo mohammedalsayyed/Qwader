@@ -73,6 +73,9 @@ public enum ReceiptPurpose
     /// <summary>A customer paying (part of) what they owe — not a new sale.</summary>
     DebtCollection = 1,
     OtherIncome = 2,
+    /// <summary>Money a customer leaves with the store (change not taken, an advance on an order): it becomes their credit
+    /// («له»), pays their next purchases on credit, or is paid back («إعادة رصيد»).</summary>
+    CustomerDeposit = 3,
 }
 
 public class ReceiptVoucher : AuditableEntity
