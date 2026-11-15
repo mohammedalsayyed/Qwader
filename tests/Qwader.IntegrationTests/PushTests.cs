@@ -154,7 +154,8 @@ public sealed class PushTests(ApiFactory factory)
             [new(product.Id, 2, 30)], [new(cash.Id, 60)], null))).ReadAsync<SaleDetailDto>();
 
         (await factory.Push.WaitForAsync(phone, "تعديل الفاتورة — 60 ₪")).Should().BeTrue();
-        (await factory.Push.WaitForAsync(phone, $"فاتورة {edited.Number} (بدل {sale.Number})")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(phone, $"فاتورة {edited.Number}")).Should().BeTrue();
+        factory.Push.Received(phone, "بدل").Should().BeFalse("only the new invoice's number");
         await Task.Delay(300);
         factory.Push.Received(phone, $"إلغاء الفاتورة {sale.Number}").Should().BeFalse("an edit is one notification");
         factory.Push.Received(phone, "بيع جديد — 60 ₪").Should().BeFalse("an edit is one notification");

@@ -446,9 +446,10 @@ public sealed class SaleService(
     private async Task NotifySaleAsync(SaleInvoice invoice,
         IReadOnlyList<(int AccountId, decimal Amount, string? Reference, bool IsTransfer, bool Pending)> payments, string? replacedNumber, CancellationToken ct)
     {
-        // An edited invoice is one notification «تعديل الفاتورة» (no separate «إلغاء» for the one it replaces); the rest reads the same.
+        // An edited invoice is one notification «تعديل الفاتورة» (no separate «إلغاء» for the one it replaces); the rest reads the same,
+        // with the new invoice's number only.
         var head = replacedNumber is null ? "بيع جديد" : "تعديل الفاتورة";
-        var number = replacedNumber is null ? invoice.Number : $"{invoice.Number} (بدل {replacedNumber})";
+        var number = invoice.Number;
         var seller = await db.Users.Where(u => u.Id == invoice.SalespersonId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
         var accountIds = payments.Select(p => p.AccountId).Distinct().ToList();
         var accountNames = await db.FinancialAccounts.AsNoTracking().Where(a => accountIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
