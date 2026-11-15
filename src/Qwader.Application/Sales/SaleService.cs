@@ -425,7 +425,8 @@ public sealed class SaleService(
         // A notification that fails is only a missed notification, and the answer is read even if the client stopped waiting.
         try
         {
-            await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(), CancellationToken.None);
+            await NotifySaleAsync(invoice, payments.Select(p => (p.Input.AccountId, p.Input.Amount, p.Input.Reference, p.IsTransfer, p.Pending)).ToList(),
+                replacing?.Number, CancellationToken.None);
             if (invoice.ReviewNote is not null && invoice.ReviewedAt is null)
                 push.Notify(PushTopics.Sales, new PushMessage($"فاتورة تحتاج مراجعة — {invoice.Number}", invoice.ReviewNote, $"/sales/{invoice.Id}",
                     $"review-{invoice.Id}"),
@@ -443,8 +444,11 @@ public sealed class SaleService(
     /// taken at the till (to which account), and stock that ran low or out. One fact per line so a glance is enough.
     /// </summary>
     private async Task NotifySaleAsync(SaleInvoice invoice,
-        IReadOnlyList<(int AccountId, decimal Amount, string? Reference, bool IsTransfer, bool Pending)> payments, CancellationToken ct)
+        IReadOnlyList<(int AccountId, decimal Amount, string? Reference, bool IsTransfer, bool Pending)> payments, string? replacedNumber, CancellationToken ct)
     {
+        // An edited invoice is one notification «تعديل الفاتورة» (no separate «إلغاء» for the one it replaces); the rest reads the same.
+        var head = replacedNumber is null ? "بيع جديد" : "تعديل الفاتورة";
+        var number = replacedNumber is null ? invoice.Number : $"{invoice.Number} (بدل {replacedNumber})";
         var seller = await db.Users.Where(u => u.Id == invoice.SalespersonId).Select(u => u.FullName).FirstOrDefaultAsync(ct);
         var accountIds = payments.Select(p => p.AccountId).Distinct().ToList();
         var accountNames = await db.FinancialAccounts.AsNoTracking().Where(a => accountIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
@@ -457,20 +461,20 @@ public sealed class SaleService(
         // following transfers alike (each person once), instead of a sale notification and a transfer notification.
         var transfersPaid = payments.Where(p => p.IsTransfer).ToList();
         if (transfersPaid.Count == 0)
-            push.Notify(PushTopics.Sales, new PushMessage($"بيع جديد — {PushMessage.Money(invoice.Total)}",
+            push.Notify(PushTopics.Sales, new PushMessage($"{head} — {PushMessage.Money(invoice.Total)}",
                 string.Join('\n', new[]
                 {
                     $"العميل: {invoice.CustomerName}",
                     $"الدفع: {string.Join(" · ", paid)}",
-                    $"فاتورة {invoice.Number}{(seller is null ? "" : $" · الموظف: {seller}")}",
+                    $"فاتورة {number}{(seller is null ? "" : $" · الموظف: {seller}")}",
                 }), $"/sales/{invoice.Id}"), Permissions.SalesViewAll);
         else
             push.NotifyOnce(new PushMessage(
-                $"بيع جديد — {string.Join(" + ", transfersPaid.Select(t => $"حوالة {PushMessage.Money(t.Amount)} إلى {accountNames[t.AccountId]}"))}",
+                $"{head} — {string.Join(" + ", transfersPaid.Select(t => $"حوالة {PushMessage.Money(t.Amount)} إلى {accountNames[t.AccountId]}"))}",
                 string.Join('\n', new[]
                 {
                     $"من: {invoice.CustomerName}{string.Concat(transfersPaid.Where(t => t.Reference is not null).Select(t => $" · مرجع {t.Reference}"))}",
-                    $"فاتورة {invoice.Number} — {(transfersPaid.Any(t => t.Pending) ? "بانتظار التحقق" : "سُجّلت مؤكدة")}"
+                    $"فاتورة {number} — {(transfersPaid.Any(t => t.Pending) ? "بانتظار التحقق" : "سُجّلت مؤكدة")}"
                         + (transfersPaid.Count < payments.Count || invoice.Total - payments.Sum(p => p.Amount) > 0.004m ? $" · الدفع: {string.Join(" · ", paid)}" : ""),
                     $"سجّلها: {seller ?? "—"}",
                 }), transfersPaid.Any(t => t.Pending) ? "/transfers" : $"/sales/{invoice.Id}"),
@@ -744,7 +748,10 @@ public sealed class SaleService(
 
     // ------------------------------------------------------------------ void
 
-    public async Task<SaleDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default)
+    public Task<SaleDetailDto> VoidAsync(int id, VoidRequest request, CancellationToken ct = default) => VoidCoreAsync(id, request, notify: true, ct);
+
+    /// <summary>Voids the invoice; <paramref name="notify"/> is false when an edit replaces it (the edit sends one notification).</summary>
+    private async Task<SaleDetailDto> VoidCoreAsync(int id, VoidRequest request, bool notify, CancellationToken ct)
     {
         await using var tx = await TxScope.BeginAsync(db, ct);
         await db.LockRowAsync("SaleInvoices", id, ct);
@@ -794,8 +801,9 @@ public sealed class SaleService(
         audit.Log("Sale.Void", "SaleInvoice", id.ToString(), null, new { invoice.Number, invoice.Total }, reason);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        push.Notify(PushTopics.Sales, new PushMessage($"إلغاء الفاتورة {invoice.Number}", $"{PushMessage.Money(invoice.Total)} — {reason}", $"/sales/{id}"),
-            Permissions.SalesViewAll);
+        if (notify)
+            push.Notify(PushTopics.Sales, new PushMessage($"إلغاء الفاتورة {invoice.Number}", $"{PushMessage.Money(invoice.Total)} — {reason}", $"/sales/{id}"),
+                Permissions.SalesViewAll);
         return await GetAsync(id, ct);
     }
 
@@ -954,7 +962,7 @@ public sealed class SaleService(
         if (original.CollectedAmount > 0)
             throw new BusinessRuleException("دُفع على هذه الفاتورة بعد البيع (سند قبض أو حوالة)؛ لا تُعدَّل. ألغِها وأنشئ فاتورة جديدة إن لزم");
 
-        await VoidAsync(id, new VoidRequest("تعديل الفاتورة"), ct);
+        await VoidCoreAsync(id, new VoidRequest("تعديل الفاتورة"), notify: false, ct);
         var created = await CreateCoreAsync(request, original, ct);
 
         var old = await db.SaleInvoices.FirstAsync(s => s.Id == id, ct);

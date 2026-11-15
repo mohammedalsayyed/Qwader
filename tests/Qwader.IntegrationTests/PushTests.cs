@@ -137,4 +137,26 @@ public sealed class PushTests(ApiFactory factory)
         (await factory.Push.WaitForAsync(phone, $"فاتورة تحتاج مراجعة — {sale.Number}")).Should().BeTrue();
         factory.Push.Received(phone, "بدون إنترنت").Should().BeFalse("the sale notification looks the same as any other");
     }
+
+    [Fact]
+    public async Task Editing_an_invoice_sends_one_notification_headed_as_an_edit_not_a_void_and_a_sale()
+    {
+        var admin = await factory.LoginAsync();
+        var phone = Endpoint("edit-admin");
+        await SubscribeAsync(admin, phone, new PushTopicsDto(true, true, true));
+        var product = await admin.CreateProductAsync(retail: 30, openingQuantity: 5, openingCost: 10);
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash);
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 1, 30)], [new(cash.Id, 30)], null))).ReadAsync<SaleDetailDto>();
+        (await factory.Push.WaitForAsync(phone, $"فاتورة {sale.Number}")).Should().BeTrue();
+
+        var edited = await (await admin.PostAsJsonAsync($"/api/sales/{sale.Id}/replace", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 2, 30)], [new(cash.Id, 60)], null))).ReadAsync<SaleDetailDto>();
+
+        (await factory.Push.WaitForAsync(phone, "تعديل الفاتورة — 60 ₪")).Should().BeTrue();
+        (await factory.Push.WaitForAsync(phone, $"فاتورة {edited.Number} (بدل {sale.Number})")).Should().BeTrue();
+        await Task.Delay(300);
+        factory.Push.Received(phone, $"إلغاء الفاتورة {sale.Number}").Should().BeFalse("an edit is one notification");
+        factory.Push.Received(phone, "بيع جديد — 60 ₪").Should().BeFalse("an edit is one notification");
+    }
 }
