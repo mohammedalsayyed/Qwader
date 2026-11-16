@@ -18,8 +18,13 @@ public sealed class FinancialAccountsController(IAccountService accounts) : Cont
     public Task<AccountDto> Get(int id, CancellationToken ct) => accounts.GetAsync(id, ct);
 
     [HttpGet("day")]
-    public Task<AccountsDayDto> Day([FromQuery] DateOnly? date, [FromServices] Application.Abstractions.IClock clock, CancellationToken ct) =>
-        accounts.DayAsync(date ?? clock.LocalToday, ct);
+    public Task<AccountsDayDto> Day([FromQuery] DateOnly? date, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromServices] Application.Abstractions.IClock clock, CancellationToken ct)
+    {
+        // One day (date), or from–to; today when left out.
+        var f = from ?? date ?? to ?? clock.LocalToday;
+        return accounts.DayAsync(f, to ?? date ?? f, ct);
+    }
 
     [HttpGet("{id:int}/statement")]
     public Task<AccountStatementDto> Statement(int id, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to, [FromQuery] PagedRequest paging, CancellationToken ct) =>

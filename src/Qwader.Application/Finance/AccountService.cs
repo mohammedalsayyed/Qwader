@@ -11,8 +11,8 @@ namespace Qwader.Application.Finance;
 public interface IAccountService
 {
     Task<IReadOnlyList<AccountDto>> ListAsync(bool includeInactive, CancellationToken ct = default);
-    /// <summary>How much each account held on a day: at its start, what came in and went out, and at its end.</summary>
-    Task<AccountsDayDto> DayAsync(DateOnly day, CancellationToken ct = default);
+    /// <summary>How much each account held over days (from–to): at their start, what came in and went out, and at their end.</summary>
+    Task<AccountsDayDto> DayAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
     Task<AccountDto> GetAsync(int id, CancellationToken ct = default);
     Task<AccountDto> CreateAsync(SaveAccountRequest request, CancellationToken ct = default);
     Task<AccountDto> UpdateAsync(int id, SaveAccountRequest request, CancellationToken ct = default);
@@ -40,10 +40,12 @@ public sealed class AccountService(
     private static string? Mask(string? number) =>
         string.IsNullOrEmpty(number) ? null : number.Length <= 4 ? "••••" : "•••• " + number[^4..];
 
-    public async Task<AccountsDayDto> DayAsync(DateOnly day, CancellationToken ct = default)
+    public async Task<AccountsDayDto> DayAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
     {
-        if (day > clock.LocalToday) throw new ValidationFailedException("date", "اختر يومًا حتى اليوم");
-        var (start, end) = clock.LocalDaysToUtcRange(day, day);
+        if (to > clock.LocalToday) throw new ValidationFailedException("to", "اختر يومًا حتى اليوم");
+        if (to < from) throw new ValidationFailedException("to", "تاريخ النهاية قبل تاريخ البداية");
+        if (to.DayNumber - from.DayNumber > 3660) throw new ValidationFailedException("from", "الفترة طويلة جدًا (أكثر من 10 سنوات)");
+        var (start, end) = clock.LocalDaysToUtcRange(from, to);
         // Every movement counts, as in each account's statement: what was there when the day began, what moved during it.
         var before = await db.AccountTransactions.AsNoTracking().Where(t => t.Date < start).GroupBy(t => t.FinancialAccountId)
             .Select(g => new { Id = g.Key, Sum = g.Sum(t => t.Direction == MoneyDirection.In ? t.Amount : -t.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
@@ -83,7 +85,7 @@ public sealed class AccountService(
             moves.Where(m => !m.Voided && m.Category == AccountTransactionCategory.OpeningBalance).Sum(m => m.Signed),
             moves.Where(m => m.Voided).Sum(m => m.Signed),
             moves.Where(m => !m.Voided && m.Category is AccountTransactionCategory.TransferIn or AccountTransactionCategory.TransferOut).Sum(m => m.Signed));
-        return new AccountsDayDto(day, rows, rows.Sum(r => r.Opening), rows.Sum(r => r.In), rows.Sum(r => r.Out), rows.Sum(r => r.Closing), breakdown);
+        return new AccountsDayDto(from, to, rows, rows.Sum(r => r.Opening), rows.Sum(r => r.In), rows.Sum(r => r.Out), rows.Sum(r => r.Closing), breakdown);
     }
 
     public async Task<IReadOnlyList<AccountDto>> ListAsync(bool includeInactive, CancellationToken ct = default)

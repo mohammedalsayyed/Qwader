@@ -76,13 +76,28 @@ export interface CartEditing {
   notes: string | null;
 }
 
+/** Who the invoice is for, as typed or chosen at checkout: kept with the invoice (also when it is put aside). */
+export interface CartCustomer {
+  mode: 'walkin' | 'customer';
+  /** A registered customer chosen from the list. */
+  customer: { id: number; name: string; phone: string | null; code: string; balance: number } | null;
+  /** A new customer's name and phone, typed in. */
+  name: string;
+  phone: string;
+}
+
 export interface Cart {
   /** Idempotency key of this sale: the same key on every retry, a new one after success. */
   key: string;
   tier: PriceTier;
   lines: CartLine[];
   editing?: CartEditing | null;
+  customer?: CartCustomer | null;
 }
+
+/** The name a held invoice goes by: its customer's, if one was given. */
+export const customerLabel = (c: CartCustomer | null | undefined) =>
+  !c || c.mode !== 'customer' ? '' : c.customer?.name ?? c.name.trim();
 
 const STORAGE_KEY = 'qwader.pos.cart.v1';
 const HELD_KEY = 'qwader.pos.held.v1';
@@ -311,7 +326,7 @@ export function useCart() {
   const hold = useCallback((label?: string) => {
     if (cart.lines.length === 0) return;
     const current = loadHeld();
-    const name = label?.trim() || cart.editing?.number && `تعديل ${cart.editing.number}` || `زبون ${current.length + 1}`;
+    const name = label?.trim() || customerLabel(cart.customer) || cart.editing?.number && `تعديل ${cart.editing.number}` || `زبون ${current.length + 1}`;
     writeHeld([...current, { id: crypto.randomUUID(), label: name, heldAt: new Date().toISOString(), cart }]);
     setCart(() => newCart());
   }, [cart, writeHeld]);
@@ -323,14 +338,17 @@ export function useCart() {
     if (!chosen) return;
     const rest = current.filter((h) => h.id !== id);
     if (cart.lines.length > 0)
-      rest.push({ id: crypto.randomUUID(), label: cart.editing?.number ? `تعديل ${cart.editing.number}` : `زبون ${rest.length + 1}`, heldAt: new Date().toISOString(), cart });
+      rest.push({ id: crypto.randomUUID(), label: customerLabel(cart.customer) || (cart.editing?.number ? `تعديل ${cart.editing.number}` : `زبون ${rest.length + 1}`), heldAt: new Date().toISOString(), cart });
     writeHeld(rest);
     setCart(() => chosen.cart);
   }, [cart, writeHeld]);
+
+  /** Remembers who the invoice is for (from checkout), so it stays with it — also when it is put aside. */
+  const setCustomer = useCallback((customer: CartCustomer | null) => setCart((c) => ({ ...c, customer })), []);
 
   const dropHeld = useCallback((id: string) => writeHeld(loadHeld().filter((h) => h.id !== id)), [writeHeld]);
   const renameHeld = useCallback((id: string, label: string) =>
     writeHeld(loadHeld().map((h) => (h.id === id ? { ...h, label: label.trim() || h.label } : h))), [writeHeld]);
 
-  return { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld };
+  return { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld, setCustomer };
 }

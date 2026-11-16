@@ -176,10 +176,13 @@ function TransferSheet({ accounts, onClose }: { accounts: Account[]; onClose: ()
   );
 }
 
-/** «حركة الحسابات في يوم»: for a chosen day, how much each account went up or down — its end of day less its start. */
+/** «حركة الحسابات»: for chosen days (from–to, today by default), how much each account went up or down — its end less its start. */
 function AccountsOnDay() {
-  const [day, setDay] = useState(localToday());
-  const query = useQuery({ queryKey: ['accounts-day', day], queryFn: () => accountsApi.day(day), placeholderData: keepPreviousData });
+  const today = localToday();
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
+  const oneDay = from === to;
+  const query = useQuery({ queryKey: ['accounts-day', from, to], queryFn: () => accountsApi.day(from, to), placeholderData: keepPreviousData });
   const d = query.data;
   const net = (n: number) => (Math.abs(n) < 0.005 ? '—' : `${n > 0 ? '+' : '−'}${formatMoney(Math.abs(n))}`);
   const tone = (n: number) => (Math.abs(n) < 0.005 ? 'text-muted' : n > 0 ? 'text-success' : 'text-danger');
@@ -187,12 +190,17 @@ function AccountsOnDay() {
     <section className="mt-6">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-bold">حركة الحسابات في يوم</h2>
-          <p className="text-sm text-muted">قديش زاد أو نقص كل حساب في هذا اليوم (نهاية اليوم − بداية اليوم)</p>
+          <h2 className="font-bold">حركة الحسابات</h2>
+          <p className="text-sm text-muted">قديش زاد أو نقص كل حساب {oneDay ? 'في هذا اليوم (نهاية اليوم − بداية اليوم)' : 'في هذه الفترة (نهايتها − بدايتها)'}</p>
         </div>
-        <Field label="اليوم" className="w-44">
-          {(id) => <Input id={id} type="date" max={localToday()} value={day} onChange={(e) => setDay(e.target.value || localToday())} />}
-        </Field>
+        <div className="flex gap-2">
+          <Field label="من" className="w-40">
+            {(id) => <Input id={id} type="date" max={to} value={from} onChange={(e) => { const v = e.target.value || today; setFrom(v); if (v > to) setTo(v); }} />}
+          </Field>
+          <Field label="إلى" className="w-40">
+            {(id) => <Input id={id} type="date" min={from} max={today} value={to} onChange={(e) => { const v = e.target.value || today; setTo(v); if (v < from) setFrom(v); }} />}
+          </Field>
+        </div>
       </div>
       {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : d && (
         <div className={cn('overflow-hidden rounded-card border border-line bg-surface', query.isFetching && 'opacity-60')}>
@@ -200,7 +208,7 @@ function AccountsOnDay() {
             <thead className="bg-canvas text-muted">
               <tr>
                 <th className="px-3 py-2 text-start font-semibold">الحساب</th>
-                <th className="px-3 py-2 text-end font-semibold">صافي اليوم</th>
+                <th className="px-3 py-2 text-end font-semibold">{oneDay ? 'صافي اليوم' : 'صافي الفترة'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">

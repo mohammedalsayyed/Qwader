@@ -28,7 +28,7 @@ import { CheckoutSheet, SaleDoneSheet } from './CheckoutSheet';
 import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner';
 
 export function PosPage() {
-  const { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld } = useCart();
+  const { cart, add, update, remove, changeUnit, setTier, reset, startEdit, held, hold, resume, dropHeld, renameHeld, setCustomer } = useCart();
   const [params, setParams] = useSearchParams();
   const [loadingEdit, setLoadingEdit] = useState(false);
   useLookups(); // load accounts early so checkout opens instantly
@@ -406,6 +406,12 @@ export function PosPage() {
       {checkout && (
         <CheckoutSheet cart={cart} subtotal={totals.subtotal} lineDiscounts={totals.lineDiscounts} offline={offline} canSellOffline={!!snapshot && age.usable}
           onClose={() => setCheckout(false)}
+          onCustomer={setCustomer}
+          onHold={() => {
+            setCheckout(false); hold(); setQ('');
+            toast.success('عُلّقت الفاتورة — تجدها في «الفواتير المعلّقة»');
+            searchRef.current?.querySelector('input')?.focus();
+          }}
           onDone={(sale, change) => {
             setCheckout(false); reset(); setQ(''); setDone({ sale, change });
             // The sold stock leaves the device's copy now, not at the next refresh.

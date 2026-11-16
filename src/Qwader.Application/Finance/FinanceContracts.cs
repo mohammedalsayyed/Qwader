@@ -31,7 +31,7 @@ public sealed record AccountDayDto(int AccountId, string Name, FinancialAccountT
     decimal Opening, decimal In, decimal Out, decimal Closing);
 
 /// <summary>Every account on a day, with the store's totals.</summary>
-public sealed record AccountsDayDto(DateOnly Day, IReadOnlyList<AccountDayDto> Accounts, decimal Opening, decimal In, decimal Out, decimal Closing,
+public sealed record AccountsDayDto(DateOnly From, DateOnly To, IReadOnlyList<AccountDayDto> Accounts, decimal Opening, decimal In, decimal Out, decimal Closing,
     AccountsDayBreakdown? Breakdown = null);
 
 /// <summary>

@@ -220,6 +220,11 @@ public sealed class AccountLogoTests(ApiFactory factory)
         var before = await (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday:yyyy-MM-dd}")).ReadAsync<AccountsDayDto>();
         before.Accounts.Single(a => a.AccountId == drawer).Closing.Should().Be(0);
         (await admin.GetAsync($"/api/financial-accounts/day?date={yesterday.AddDays(3):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // From yesterday to today: yesterday's start, both days' movements, today's end.
+        var both = await (await admin.GetAsync($"/api/financial-accounts/day?from={yesterday:yyyy-MM-dd}&to={yesterday.AddDays(1):yyyy-MM-dd}")).ReadAsync<AccountsDayDto>();
+        var two = both.Accounts.Single(a => a.AccountId == drawer);
+        (two.Opening, two.In, two.Out, two.Closing).Should().Be((0m, 100m, 30m, 70m));
+        (await admin.GetAsync($"/api/financial-accounts/day?from={yesterday:yyyy-MM-dd}&to={yesterday.AddDays(-1):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
 

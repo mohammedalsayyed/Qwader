@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, CloudOff, Plus, Printer, Save, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
+import { CheckCircle2, CloudOff, Pause, Plus, Printer, Save, Share2, ShoppingCart, Trash2, UserRound, X } from 'lucide-react';
 import { ApiError } from '@/api/client';
 import { customersApi, salesApi, type CreateSaleInput, type CustomerListItem, type Sale } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
@@ -17,7 +17,7 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useDebouncedValue, useUnsavedChangesWarning } from '@/lib/hooks';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import { queueSale, searchCustomers, useOfflineState } from '@/lib/offline';
-import { lineTotal, type Cart } from './cart';
+import { lineTotal, type Cart, type CartCustomer } from './cart';
 import { AccountLogo } from '@/components/finance/FinanceBits';
 
 type CustomerMode = 'walkin' | 'customer';
@@ -28,7 +28,7 @@ interface PaymentRow {
   reference: string;
 }
 
-export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, canSellOffline = false, onClose, onDone }: {
+export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, canSellOffline = false, onClose, onDone, onCustomer, onHold }: {
   cart: Cart;
   subtotal: number;
   /** Discounts already given on lines; with `subtotal` they make the gross the discount limit is measured against. */
@@ -39,6 +39,10 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   canSellOffline?: boolean;
   onClose: () => void;
   onDone: (sale: Sale, change: number) => void;
+  /** The customer as typed or chosen, kept with the invoice. */
+  onCustomer?: (customer: CartCustomer) => void;
+  /** «تعليق الفاتورة»: puts the invoice aside, with its customer. */
+  onHold?: () => void;
 }) {
   const { can, user } = useAuth();
   const { snapshot } = useOfflineState();
@@ -54,11 +58,19 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   // Editing an invoice: everything starts as it was on it (customer, discount, payments).
   const editing = cart.editing ?? null;
   const editPaid = editing ? round2(editing.payments.reduce((s, p) => s + p.amount, 0)) : 0;
-  const [mode, setMode] = useState<CustomerMode>(editing && !editing.customer && !editing.walkInName ? 'walkin' : 'customer');
+  // A customer already given to this invoice (before it was put aside, or before this window was closed) comes back as it was.
+  const kept = cart.customer ?? null;
+  const [mode, setMode] = useState<CustomerMode>(kept?.mode ?? (editing && !editing.customer && !editing.walkInName ? 'walkin' : 'customer'));
   const [customer, setCustomer] = useState<CustomerListItem | null>(
-    editing?.customer ? { ...editing.customer, isActive: true, isWalkIn: false } : null);
-  const [newName, setNewName] = useState(editing?.walkInName ?? '');
-  const [newPhone, setNewPhone] = useState(editing?.walkInPhone ?? '');
+    kept ? (kept.customer ? { ...kept.customer, isActive: true, isWalkIn: false } : null)
+      : editing?.customer ? { ...editing.customer, isActive: true, isWalkIn: false } : null);
+  const [newName, setNewName] = useState(kept ? kept.name : editing?.walkInName ?? '');
+  const [newPhone, setNewPhone] = useState(kept ? kept.phone : editing?.walkInPhone ?? '');
+  // Kept with the invoice as it changes, so putting it aside (here or from the till) keeps the customer's name.
+  useEffect(() => {
+    onCustomer?.({ mode, customer: customer && { id: customer.id, name: customer.name, phone: customer.phone, code: customer.code, balance: customer.balance }, name: newName, phone: newPhone });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, customer, newName, newPhone]);
   // The discount starts with the total's agorot in it (the store's rule: no agorot left on an invoice), so the seller sees it
   // and can change it; when editing, on top of the invoice's own discount.
   const [discount, setDiscount] = useState(() => {
@@ -216,9 +228,16 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
           </div>
           {offline && <p className="flex items-center gap-1.5 text-xs text-amber-800"><CloudOff className="size-4" /> بدون إنترنت: تُحفظ على الجهاز وتُرسل عند عودة الاتصال</p>}
-          <Button block size="lg" variant="accent" loading={submit.isPending} onClick={confirmSale}>
-            <CheckCircle2 className="size-5" /> اعتماد الفاتورة
-          </Button>
+          <div className="flex gap-2">
+            {onHold && (
+              <Button size="lg" variant="outline" disabled={submit.isPending} onClick={onHold} className="shrink-0">
+                <Pause className="size-5" /> تعليق الفاتورة
+              </Button>
+            )}
+            <Button block size="lg" variant="accent" loading={submit.isPending} onClick={confirmSale}>
+              <CheckCircle2 className="size-5" /> اعتماد الفاتورة
+            </Button>
+          </div>
         </div>
       }>
       <div className="space-y-5">
