@@ -74,7 +74,9 @@ public sealed record CreateReceiptRequest(
 
 public sealed record CreatePaymentRequest(
     Guid IdempotencyKey, PaymentPurpose Purpose, int? SupplierId, string? BeneficiaryName,
-    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false, int? CustomerId = null);
+    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false, int? CustomerId = null,
+    /// <summary>The owner's expenses only: the day it was paid (today when left out; not in the future, not before the system started).</summary>
+    DateOnly? Date = null);
 
 public sealed record CreateExpenseRequest(
     Guid IdempotencyKey, int ExpenseCategoryId, string Description, decimal Amount, int FinancialAccountId,

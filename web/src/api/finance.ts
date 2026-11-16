@@ -238,6 +238,8 @@ export const paymentsApi = {
   create: (input: {
     idempotencyKey: string; purpose: PaymentPurpose; supplierId?: number | null; customerId?: number | null; beneficiaryName?: string | null;
     amount: number; financialAccountId: number; reference?: string | null; notes?: string | null; attachmentFileId?: string | null; confirmDuplicate?: boolean;
+    /** Owner's expenses only: the day it was paid (yyyy-mm-dd). */
+    date?: string | null;
   }) => api<Voucher>('/payment-vouchers', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Voucher>(`/payment-vouchers/${id}/void`, { method: 'POST', body: { reason } }),
   /** «مصاريف صاحب العمل» over a period: how many and how much. */

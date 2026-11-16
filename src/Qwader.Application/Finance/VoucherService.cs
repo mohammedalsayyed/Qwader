@@ -362,9 +362,14 @@ public sealed class VoucherService(
                 throw new ConflictException("سُجّل قبل دقائق سند صرف بنفس المبلغ لنفس المستفيد ونفس الحساب. إذا كانت دفعة جديدة فعلًا، أكّد التسجيل.");
         }
 
+        // Only an owner's expense may be dated back (paid yesterday, recorded today); every other payment is dated now.
+        if (request.Date is { } day && day != clock.LocalToday && request.Purpose != PaymentPurpose.OwnerWithdrawal)
+            throw new ValidationFailedException("date", "التاريخ متاح لمصاريف صاحب العمل فقط");
+        var date = request.Purpose == PaymentPurpose.OwnerWithdrawal ? await DocumentDates.ToUtcAsync(request.Date, clock, db, ct) : clock.UtcNow;
+
         var voucher = await PostPaymentAsync(new PaymentVoucher
         {
-            Date = clock.UtcNow,
+            Date = date,
             Purpose = request.Purpose,
             SupplierId = supplier?.Id,
             CustomerId = customer?.Id,

@@ -8,6 +8,9 @@ using Qwader.Application.Reports;
 using Qwader.Application.Sales;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Sales;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Qwader.Infrastructure.Persistence;
 using Xunit.Abstractions;
 
 namespace Qwader.IntegrationTests;
@@ -112,5 +115,43 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         (await (await admin.GetAsync("/api/payment-vouchers/owner-total")).ReadAsync<OwnerExpensesTotalDto>()).Total.Should().BeGreaterThanOrEqualTo(100);
 
         (await admin.GetAsync($"/api/reports/balance-sheet?date={DateTime.UtcNow.AddDays(3):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task An_owner_expense_paid_yesterday_is_dated_yesterday_and_only_owner_expenses_take_a_date()
+    {
+        var admin = await factory.LoginAsync();
+        // The store «started» on the system a month ago, so yesterday is a day it worked.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var monthAgo = DateTime.UtcNow.AddDays(-30);
+            await db.Users.Where(u => u.CreatedAt > monthAgo).OrderBy(u => u.Id).Take(1).ExecuteUpdateAsync(u => u.SetProperty(x => x.CreatedAt, monthAgo));
+        }
+        var cash = (await (await admin.PostAsJsonAsync("/api/financial-accounts",
+            new SaveAccountRequest(TestData.Unique("صندوق صاحب"), FinancialAccountType.Cash, null, null, null))).ReadAsync<AccountDto>()).Id;
+        await admin.FundAsync(cash, 500);
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var yesterday = today.AddDays(-1);
+        CreatePaymentRequest Owner(decimal amount, DateOnly? date) =>
+            new(Guid.NewGuid(), PaymentPurpose.OwnerWithdrawal, null, "صاحب المال", amount, cash, null, "مصروف البيت", null, Date: date);
+
+        async Task<decimal> Withdrawals(DateOnly day) =>
+            (await (await admin.GetAsync($"/api/reports/balance-sheet?date={day:yyyy-MM-dd}")).ReadAsync<BalanceSheetDto>())
+                .Equity.SelectMany(s => s.Lines).Single(l => l.Name.StartsWith("المسحوبات الشخصية")).Amount;
+        var beforeYesterday = await Withdrawals(yesterday);
+        var beforeToday = await Withdrawals(today);
+        var dayBefore = await Withdrawals(yesterday.AddDays(-1));
+
+        var voucher = await (await admin.PostAsJsonAsync("/api/payment-vouchers", Owner(70, yesterday))).ReadAsync<VoucherDto>();
+        DateOnly.FromDateTime(voucher.Date.ToLocalTime()).Should().Be(yesterday);
+        (await Withdrawals(yesterday)).Should().Be(beforeYesterday - 70, "it counts on the day it was paid");
+        (await Withdrawals(yesterday.AddDays(-1))).Should().Be(dayBefore, "not before it");
+        (await Withdrawals(today)).Should().Be(beforeToday - 70);
+
+        (await admin.PostAsJsonAsync("/api/payment-vouchers", Owner(5, today.AddDays(1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest, "not in the future");
+        (await admin.PostAsJsonAsync("/api/payment-vouchers", Owner(5, new DateOnly(1990, 1, 1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest, "not before the system");
+        (await admin.PostAsJsonAsync("/api/payment-vouchers", new CreatePaymentRequest(Guid.NewGuid(), PaymentPurpose.Other, null, "مورد كهرباء", 5, cash, null, null, null, Date: yesterday)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "only the owner's expenses take a date");
     }
 }

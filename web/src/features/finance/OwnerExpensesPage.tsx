@@ -17,7 +17,7 @@ import { useConfirm } from '@/components/ui/Confirm';
 import { AccountChips } from '@/components/finance/FinanceBits';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, localToday } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
@@ -93,13 +93,14 @@ function OwnerExpenseSheet({ onClose }: { onClose: () => void }) {
   const [key] = useIdempotencyKey();
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(localToday());
   const [accountId, setAccountId] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const save = useMutation({
     mutationFn: (confirmDuplicate: boolean) => paymentsApi.create({
       idempotencyKey: key, purpose: 'OwnerWithdrawal', beneficiaryName: 'صاحب المال', amount: parseNumber(amount)!,
-      financialAccountId: accountId!, notes: description.trim(), confirmDuplicate,
+      financialAccountId: accountId!, notes: description.trim(), confirmDuplicate, date,
     }),
     onSuccess: (v) => {
       for (const k of ['payment', 'accounts', 'balance-sheet']) void queryClient.invalidateQueries({ queryKey: [k] });
@@ -136,9 +137,14 @@ function OwnerExpenseSheet({ onClose }: { onClose: () => void }) {
         <Field label="البيان" required error={errors.description}>
           {(id) => <Input id={id} value={description} maxLength={500} invalid={!!errors.description} placeholder="مثال: مصروف البيت، بنزين السيارة" onChange={(e) => setDescription(e.target.value)} />}
         </Field>
-        <Field label="المبلغ (₪)" required error={errors.amount}>
-          {(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="المبلغ (₪)" required error={errors.amount}>
+            {(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}
+          </Field>
+          <Field label="التاريخ" hint="يوم الصرف">
+            {(id, d) => <Input id={id} aria-describedby={d} type="date" max={localToday()} value={date} onChange={(e) => setDate(e.target.value || localToday())} />}
+          </Field>
+        </div>
         <AccountChips label="دُفع من حساب" accounts={lookups.data?.accounts ?? []} value={accountId} onChange={setAccountId} error={errors.account} />
       </div>
     </Sheet>
