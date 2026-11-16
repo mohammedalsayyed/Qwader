@@ -51,6 +51,8 @@ public sealed record SaveProductUnit(int UnitId, decimal Factor, decimal RetailP
 public sealed class ProductListRequest : PagedRequest
 {
     public int? CategoryId { get; set; }
+    /// <summary>«الصنف العام»: products of every category under it.</summary>
+    public int? GroupId { get; set; }
     public int? SupplierId { get; set; }
     public StockFilter Stock { get; set; } = StockFilter.All;
     public bool Archived { get; set; }

@@ -60,6 +60,8 @@ export function ProductsPage() {
 
   const filter = (params.get('stock') as Filter | null) ?? 'All';
   const categoryId = params.get('categoryId') ? Number(params.get('categoryId')) : undefined;
+  const groupId = params.get('groupId') ? Number(params.get('groupId')) : undefined;
+  const groups = lookups.data?.categoryGroups ?? [];
   const page = Math.max(1, Number(params.get('page')) || 1);
   const term = useDebouncedValue(search.trim());
   const categoryName = lookups.data?.categories.find((c) => c.id === categoryId)?.name ?? null;
@@ -105,6 +107,7 @@ export function ProductsPage() {
   const listParams = {
     search: term,
     categoryId,
+    groupId,
     supplierId,
     priceFrom,
     priceTo,
@@ -190,6 +193,15 @@ export function ProductsPage() {
           <div className="min-w-0 flex-1">
             <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST, COST_ABOVE] : FILTERS} />
           </div>
+          {groups.length > 0 && (
+            <div className="sm:w-52">
+              <Select aria-label="الصنف العام" value={groupId ?? ''}
+                onChange={(e) => setMany({ groupId: e.target.value || undefined, categoryId: undefined })}>
+                <option value="">كل الأصناف العامة</option>
+                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+            </div>
+          )}
           <div className="sm:w-64">
             <CategoryPicker
               allowCreate={false}
@@ -260,7 +272,7 @@ export function ProductsPage() {
               <span className="text-brand-700"><SlidersHorizontal className="size-5" /></span> إضافة منتج بكل التفاصيل
             </Link>
           )}
-          <MenuButton icon={<Download className="size-5" />} label={filter !== 'All' || term || categoryId || advanced.length ? 'تصدير القائمة إلى Excel (حسب الفلتر)' : 'تصدير القائمة إلى Excel'}
+          <MenuButton icon={<Download className="size-5" />} label={filter !== 'All' || term || categoryId || groupId || advanced.length ? 'تصدير القائمة إلى Excel (حسب الفلتر)' : 'تصدير القائمة إلى Excel'}
             onClick={() => { setMenuOpen(false); exportExcel.mutate(); }} />
           {can(P.ProductsManage) && (
             <>

@@ -13,12 +13,16 @@ public sealed record AccountLookupItem(int Id, string Name, FinancialAccountType
 /// <summary>A unit of measure; <see cref="WholeNumbersOnly"/>: no fractions of it (a piece, a set).</summary>
 public sealed record UnitLookupItem(int Id, string Name, bool WholeNumbersOnly);
 
+/// <summary>A category and its general category («الصنف العام»), if any.</summary>
+public sealed record CategoryLookupItem(int Id, string Name, int? GroupId = null);
+
 public sealed record LookupsDto(
     IReadOnlyList<UnitLookupItem> Units,
     IReadOnlyList<LookupItem> Warehouses,
     IReadOnlyList<LookupItem> ExpenseCategories,
-    IReadOnlyList<LookupItem> Categories,
-    IReadOnlyList<AccountLookupItem> Accounts);
+    IReadOnlyList<CategoryLookupItem> Categories,
+    IReadOnlyList<AccountLookupItem> Accounts,
+    IReadOnlyList<LookupItem>? CategoryGroups = null);
 
 public interface ILookupService
 {
@@ -65,8 +69,9 @@ public sealed class LookupService(IAppDbContext db, IAuditService audit) : ILook
         await db.Warehouses.Where(w => w.IsActive).OrderByDescending(w => w.IsDefault).ThenBy(w => w.Id)
             .Select(w => new LookupItem(w.Id, w.Name)).ToListAsync(ct),
         await db.ExpenseCategories.Where(c => c.IsActive).OrderBy(c => c.Id).Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct),
-        await db.Categories.Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => new LookupItem(c.Id, c.Name)).ToListAsync(ct),
+        await db.Categories.Where(c => c.IsActive).OrderBy(c => c.Name).Select(c => new CategoryLookupItem(c.Id, c.Name, c.GroupId)).ToListAsync(ct),
         // Names and types only; account numbers are never part of lookups.
         await db.FinancialAccounts.Where(a => a.IsActive).OrderBy(a => a.Type).ThenBy(a => a.Id)
-            .Select(a => new AccountLookupItem(a.Id, a.Name, a.Type, a.LogoFileId)).ToListAsync(ct));
+            .Select(a => new AccountLookupItem(a.Id, a.Name, a.Type, a.LogoFileId)).ToListAsync(ct),
+        await db.CategoryGroups.OrderBy(g => g.Name).Select(g => new LookupItem(g.Id, g.Name)).ToListAsync(ct));
 }

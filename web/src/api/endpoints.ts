@@ -113,7 +113,10 @@ export interface Lookups {
   units: UnitLookup[];
   warehouses: LookupItem[];
   expenseCategories: LookupItem[];
-  categories: LookupItem[];
+  /** groupId: its «الصنف العام». */
+  categories: (LookupItem & { groupId?: number | null })[];
+  /** «الأصناف العامة». */
+  categoryGroups?: LookupItem[] | null;
   /** logoFileId: the account's logo, shown on its buttons. */
   accounts: (LookupItem & { type: AccountType; logoFileId?: string | null })[];
 }

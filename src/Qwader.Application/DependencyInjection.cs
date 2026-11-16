@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<ICustomerLedger, CustomerLedger>();
 
         services.AddScoped<ICategoryService, CategoryService>();
+        services.AddScoped<ICategoryGroupService, CategoryGroupService>();
         services.AddScoped<IProductService, ProductService>();
         services.AddScoped<IProductExcelService, ProductExcelService>();
         services.AddScoped<IInventoryService, InventoryService>();

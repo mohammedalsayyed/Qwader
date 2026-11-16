@@ -26,6 +26,32 @@ public sealed class CategoriesController(ICategoryService categories) : Controll
     public Task<CategoryDto> Update(int id, SaveCategoryRequest request, CancellationToken ct) => categories.UpdateAsync(id, request, ct);
 }
 
+/// <summary>«الأصناف العامة»: general categories above the categories.</summary>
+[ApiController]
+[Route("api/category-groups")]
+[HasPermission(Permissions.ProductsView)]
+public sealed class CategoryGroupsController(ICategoryGroupService groups) : ControllerBase
+{
+    [HttpGet]
+    public Task<IReadOnlyList<CategoryGroupDto>> List(CancellationToken ct) => groups.ListAsync(ct);
+
+    [HttpPost]
+    [HasPermission(Permissions.ProductsManage)]
+    public Task<CategoryGroupDto> Create(SaveCategoryGroupRequest request, CancellationToken ct) => groups.CreateAsync(request, ct);
+
+    [HttpPut("{id:int}")]
+    [HasPermission(Permissions.ProductsManage)]
+    public Task<CategoryGroupDto> Rename(int id, SaveCategoryGroupRequest request, CancellationToken ct) => groups.RenameAsync(id, request, ct);
+
+    [HttpDelete("{id:int}")]
+    [HasPermission(Permissions.ProductsManage)]
+    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    {
+        await groups.DeleteAsync(id, ct);
+        return NoContent();
+    }
+}
+
 [ApiController]
 [Route("api/products")]
 [HasPermission(Permissions.ProductsView)]

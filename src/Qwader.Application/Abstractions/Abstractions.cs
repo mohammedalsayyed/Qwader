@@ -24,6 +24,7 @@ public interface IAppDbContext
     DbSet<AccountTransaction> AccountTransactions { get; }
 
     DbSet<Category> Categories { get; }
+    DbSet<CategoryGroup> CategoryGroups { get; }
     DbSet<Brand> Brands { get; }
     DbSet<Product> Products { get; }
     DbSet<ProductUnit> ProductUnits { get; }

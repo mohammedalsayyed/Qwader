@@ -26,6 +26,16 @@ public sealed class CategoryConfiguration : IEntityTypeConfiguration<Category>
         b.HasIndex(c => c.Code).IsUnique();
         b.HasIndex(c => c.Name).IsUnique();
         b.HasIndex(c => c.NormalizedName);
+        b.HasOne(c => c.Group).WithMany(g => g.Categories).HasForeignKey(c => c.GroupId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CategoryGroupConfiguration : IEntityTypeConfiguration<CategoryGroup>
+{
+    public void Configure(EntityTypeBuilder<CategoryGroup> b)
+    {
+        b.Property(g => g.Name).HasMaxLength(100).IsRequired();
+        b.HasIndex(g => g.Name).IsUnique();
     }
 }
 

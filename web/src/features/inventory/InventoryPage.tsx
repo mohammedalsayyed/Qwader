@@ -14,6 +14,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { CategoryPicker, ProductThumb, StockBadge } from '@/components/catalog/CatalogBits';
 import { AdjustmentSheet, MovementList, type MovementFilter } from '@/components/catalog/StockWidgets';
+import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, formatQuantity } from '@/lib/format';
 
@@ -74,6 +75,35 @@ function Overview() {
           <Stat label="منخفضة المخزون" value={summary.data?.lowCount ?? '…'} tone={summary.data?.lowCount ? 'warning' : 'default'} onClick={() => navigate('/products?stock=Low')} />
           <Stat label="نفدت من المخزون" value={summary.data?.outCount ?? '…'} tone={summary.data?.outCount ? 'danger' : 'default'} onClick={() => navigate('/products?stock=Out')} />
         </div>
+      )}
+
+      {summary.data?.groups && summary.data.groups.length > 0 && (
+        <section>
+          <h2 className="mb-2 font-bold">حسب الصنف العام</h2>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            <table className="w-full text-sm">
+              <thead className="bg-canvas text-muted">
+                <tr>
+                  <th className="px-3 py-2 text-start font-semibold">الصنف العام</th>
+                  <th className="px-3 py-2 text-end font-semibold">المنتجات</th>
+                  <th className="px-3 py-2 text-end font-semibold">الكمية الباقية</th>
+                  {summary.data.stockValue != null && <th className="px-3 py-2 text-end font-semibold">التكلفة</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {summary.data.groups.map((g) => (
+                  <tr key={g.groupId ?? 'none'} className="cursor-pointer hover:bg-canvas"
+                    onClick={() => navigate(g.groupId ? `/products?groupId=${g.groupId}` : '/categories')}>
+                    <td className={cn('px-3 py-2 font-semibold', g.groupId == null && 'font-normal text-muted')}>{g.name}</td>
+                    <td className="tabular px-3 py-2 text-end">{g.productCount}</td>
+                    <td className="tabular px-3 py-2 text-end">{formatQuantity(g.quantity)}</td>
+                    {summary.data!.stockValue != null && <td className="tabular px-3 py-2 text-end font-bold">{formatMoney(g.value)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       <section>

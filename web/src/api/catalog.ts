@@ -10,6 +10,9 @@ export interface Category {
   description: string | null;
   isActive: boolean;
   productCount: number;
+  /** «الصنف العام» it belongs to. */
+  groupId: number | null;
+  groupName: string | null;
 }
 
 export interface SaveCategoryInput {
@@ -17,6 +20,15 @@ export interface SaveCategoryInput {
   name: string;
   description?: string | null;
   isActive: boolean;
+  groupId?: number | null;
+}
+
+/** «الصنف العام»: a general category above the categories («أجهزة كهربائية»، «أدوات منزلية»). */
+export interface CategoryGroup {
+  id: number;
+  name: string;
+  categoryCount: number;
+  productCount: number;
 }
 
 export interface ProductListItem {
@@ -140,6 +152,8 @@ export interface ProductListParams {
   pageSize?: number;
   search?: string;
   categoryId?: number;
+  /** «الصنف العام»: products of every category under it. */
+  groupId?: number;
   supplierId?: number;
   stock?: StockFilter;
   archived?: boolean;
@@ -167,8 +181,15 @@ export interface ImportResult {
   succeeded: boolean;
 }
 
+export const categoryGroupsApi = {
+  list: () => api<CategoryGroup[]>('/category-groups'),
+  create: (name: string) => api<CategoryGroup>('/category-groups', { method: 'POST', body: { name } }),
+  rename: (id: number, name: string) => api<CategoryGroup>(`/category-groups/${id}`, { method: 'PUT', body: { name } }),
+  remove: (id: number) => api<void>(`/category-groups/${id}`, { method: 'DELETE' }),
+};
+
 export const categoriesApi = {
-  list: (params: { page?: number; pageSize?: number; search?: string; isActive?: boolean }) =>
+  list: (params: { page?: number; pageSize?: number; search?: string; isActive?: boolean; groupId?: number }) =>
     api<PagedResult<Category>>('/categories', { query: params }),
   create: (input: SaveCategoryInput) => api<Category>('/categories', { method: 'POST', body: input }),
   update: (id: number, input: SaveCategoryInput) => api<Category>(`/categories/${id}`, { method: 'PUT', body: input }),

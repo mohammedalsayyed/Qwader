@@ -34,6 +34,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<AccountTransaction> AccountTransactions => Set<AccountTransaction>();
 
     public DbSet<Category> Categories => Set<Category>();
+    public DbSet<CategoryGroup> CategoryGroups => Set<CategoryGroup>();
     public DbSet<Brand> Brands => Set<Brand>();
     public DbSet<Product> Products => Set<Product>();
     public DbSet<ProductUnit> ProductUnits => Set<ProductUnit>();

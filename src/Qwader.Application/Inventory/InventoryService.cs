@@ -75,7 +75,11 @@ public enum MovementGroup
 
 public sealed record MovementTotalDto(int Count, decimal Quantity, decimal? Value);
 
-public sealed record InventorySummaryDto(int ProductCount, decimal TotalQuantity, decimal? StockValue, int LowCount, int OutCount);
+/// <summary>Stock under one general category (GroupId null: categories without one): products, pieces left, their cost.</summary>
+public sealed record InventoryGroupRow(int? GroupId, string Name, int ProductCount, decimal Quantity, decimal? Value);
+
+public sealed record InventorySummaryDto(int ProductCount, decimal TotalQuantity, decimal? StockValue, int LowCount, int OutCount,
+    IReadOnlyList<InventoryGroupRow>? Groups = null);
 
 public sealed record StockCountListItemDto(int Id, string Number, StockCountStatus Status, string WarehouseName, int LineCount, int CountedLines, DateTime CreatedAt, DateTime? PostedAt, string? Notes);
 
@@ -144,10 +148,31 @@ public sealed class InventoryService(
             Out = g.Count(x => x.Qty <= 0),
         }).FirstOrDefaultAsync(ct);
 
+        var seeCost = currentUser.HasPermission(Permissions.ProductsViewCost);
+        // By general category, only once there are some: what is left and what it cost.
+        IReadOnlyList<InventoryGroupRow>? groups = null;
+        if (await db.CategoryGroups.AnyAsync(ct))
+        {
+            var byGroup = await db.Products.AsNoTracking().Where(p => !p.IsArchived)
+                .Select(p => new { p.Category.GroupId, Qty = p.StockBalances.Sum(s => (decimal?)s.Quantity) ?? 0, p.AverageCost })
+                .GroupBy(x => x.GroupId)
+                .Select(g => new { GroupId = g.Key, Count = g.Count(), Qty = g.Sum(x => x.Qty), Value = g.Sum(x => x.Qty * x.AverageCost) })
+                .ToListAsync(ct);
+            var names = await db.CategoryGroups.AsNoTracking().ToDictionaryAsync(g => g.Id, g => g.Name, ct);
+            groups = names.Select(n => (Id: (int?)n.Key, n.Value)).Append((null, "بدون صنف عام"))
+                .Select(n =>
+                {
+                    var row = byGroup.FirstOrDefault(r => r.GroupId == n.Id);
+                    return new InventoryGroupRow(n.Id, n.Value, row?.Count ?? 0, row?.Qty ?? 0, seeCost ? CostMath.RoundMoney(row?.Value ?? 0) : null);
+                })
+                .Where(r => r.GroupId != null || r.ProductCount > 0)
+                .OrderBy(r => r.GroupId == null).ThenByDescending(r => r.Value ?? r.Quantity)
+                .ToList();
+        }
+
         return totals is null
-            ? new InventorySummaryDto(0, 0, currentUser.HasPermission(Permissions.ProductsViewCost) ? 0 : null, 0, 0)
-            : new InventorySummaryDto(totals.Count, totals.Qty,
-                currentUser.HasPermission(Permissions.ProductsViewCost) ? CostMath.RoundMoney(totals.Value) : null, totals.Low, totals.Out);
+            ? new InventorySummaryDto(0, 0, seeCost ? 0 : null, 0, 0, groups)
+            : new InventorySummaryDto(totals.Count, totals.Qty, seeCost ? CostMath.RoundMoney(totals.Value) : null, totals.Low, totals.Out, groups);
     }
 
     public async Task<StockAdjustmentResult> AdjustAsync(StockAdjustmentRequest request, CancellationToken ct = default)

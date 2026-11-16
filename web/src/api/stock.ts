@@ -71,6 +71,8 @@ export interface InventorySummary {
   stockValue: number | null;
   lowCount: number;
   outCount: number;
+  /** By «الصنف العام» (groupId null: categories without one); only once there are general categories. */
+  groups?: { groupId: number | null; name: string; productCount: number; quantity: number; value: number | null }[] | null;
 }
 
 export type AdjustmentKind = 'Damaged' | 'Lost' | 'Found';

@@ -118,6 +118,7 @@ public sealed class SystemResetService(
                 deleted += await db.Products.ExecuteDeleteAsync(ct);
                 deleted += await db.Brands.ExecuteDeleteAsync(ct);
                 deleted += await db.Categories.ExecuteDeleteAsync(ct);
+                deleted += await db.CategoryGroups.ExecuteDeleteAsync(ct);
                 deleted += await db.Customers.Where(c => !c.IsWalkIn).ExecuteDeleteAsync(ct);
                 deleted += await db.Suppliers.ExecuteDeleteAsync(ct);
                 deleted += await db.FinancialAccounts.ExecuteDeleteAsync(ct);

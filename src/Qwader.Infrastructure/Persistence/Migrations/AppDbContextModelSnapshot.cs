@@ -286,6 +286,9 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
@@ -310,12 +313,35 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.HasIndex("Code")
                         .IsUnique();
 
+                    b.HasIndex("GroupId");
+
                     b.HasIndex("Name")
                         .IsUnique();
 
                     b.HasIndex("NormalizedName");
 
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("Qwader.Domain.Catalog.CategoryGroup", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("CategoryGroups");
                 });
 
             modelBuilder.Entity("Qwader.Domain.Catalog.Product", b =>
@@ -2841,6 +2867,16 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Catalog.Category", b =>
+                {
+                    b.HasOne("Qwader.Domain.Catalog.CategoryGroup", "Group")
+                        .WithMany("Categories")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("Qwader.Domain.Catalog.Product", b =>
                 {
                     b.HasOne("Qwader.Domain.Catalog.Brand", "Brand")
@@ -3467,6 +3503,11 @@ namespace Qwader.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Qwader.Domain.Catalog.Category", b =>
                 {
                     b.Navigation("Products");
+                });
+
+            modelBuilder.Entity("Qwader.Domain.Catalog.CategoryGroup", b =>
+                {
+                    b.Navigation("Categories");
                 });
 
             modelBuilder.Entity("Qwader.Domain.Catalog.Product", b =>
