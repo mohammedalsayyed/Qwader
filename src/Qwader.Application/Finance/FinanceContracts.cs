@@ -104,7 +104,12 @@ public sealed class VoucherListRequest : PagedRequest
     public int? CustomerId { get; set; }
     public int? SupplierId { get; set; }
     public int? CategoryId { get; set; }
+    /// <summary>Payment vouchers of one kind only (e.g. «مسحوبات شخصية»: the owner's expenses).</summary>
+    public PaymentPurpose? Purpose { get; set; }
 }
+
+/// <summary>The owner's expenses over a period: how many and how much (vouchers not voided).</summary>
+public sealed record OwnerExpensesTotalDto(int Count, decimal Total);
 
 public sealed record SaveExpenseCategoryRequest(string Name, bool IsActive = true);
 

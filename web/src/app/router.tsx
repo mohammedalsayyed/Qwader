@@ -40,6 +40,7 @@ const VouchersPage = page(() => import('@/features/finance/VouchersPages'), 'Vou
 const NewVoucherPage = page(() => import('@/features/finance/VouchersPages'), 'NewVoucherPage');
 const VoucherDetailPage = page(() => import('@/features/finance/VouchersPages'), 'VoucherDetailPage');
 const ExpensesPage = page(() => import('@/features/finance/ExpensesPage'), 'ExpensesPage');
+const OwnerExpensesPage = page(() => import('@/features/finance/OwnerExpensesPage'), 'OwnerExpensesPage');
 const PayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'PayrollPage');
 const EmployeePayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'EmployeePayrollPage');
 const MyPayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'MyPayrollPage');
@@ -196,6 +197,7 @@ export const router = createBrowserRouter([
           guarded('payments/new', <NewVoucherPage kind="payment" />, [P.VouchersCreate]),
           guarded('payments/:id', <VoucherDetailPage kind="payment" />, [P.VouchersCreate, P.ReportsFinancial]),
           guarded('expenses', <ExpensesPage />, [P.ExpensesManage]),
+          guarded('owner-expenses', <OwnerExpensesPage />, [P.VouchersCreate, P.ReportsFinancial]),
           guarded('payroll', <PayrollPage />, [P.PayrollManage]),
           guarded('payroll/:id', <EmployeePayrollPage />, [P.PayrollManage]),
           guarded('audit', <AuditLogPage />, [P.AuditView]),

@@ -188,6 +188,8 @@ export interface VoucherListParams {
   customerId?: number;
   supplierId?: number;
   categoryId?: number;
+  /** Payment vouchers of one kind only. */
+  purpose?: PaymentPurpose;
 }
 
 export const accountsApi = {
@@ -238,6 +240,8 @@ export const paymentsApi = {
     amount: number; financialAccountId: number; reference?: string | null; notes?: string | null; attachmentFileId?: string | null; confirmDuplicate?: boolean;
   }) => api<Voucher>('/payment-vouchers', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Voucher>(`/payment-vouchers/${id}/void`, { method: 'POST', body: { reason } }),
+  /** «مصاريف صاحب العمل» over a period: how many and how much. */
+  ownerTotal: (from?: string, to?: string) => api<{ count: number; total: number }>('/payment-vouchers/owner-total', { query: { from, to } }),
 };
 
 export const expensesApi = {

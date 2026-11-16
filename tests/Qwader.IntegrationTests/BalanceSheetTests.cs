@@ -106,6 +106,11 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         (Account(now, cashName), Line(now, "المسحوبات الشخصية") - Line(was, "المسحوبات الشخصية"), Line(now, "صافي ربح") - Line(was, "صافي ربح"))
             .Should().Be((880m, -100m, 0m));
 
+        // «مصاريف صاحب العمل» lists it (and only the owner's), with the period's total.
+        var owner = await (await admin.GetAsync("/api/payment-vouchers?purpose=OwnerWithdrawal&pageSize=100")).ReadAsync<Application.Common.PagedResult<VoucherDto>>();
+        owner.Items.Should().Contain(v => v.Amount == 100 && v.FinancialAccountId == cash).And.OnlyContain(v => v.Purpose == "OwnerWithdrawal");
+        (await (await admin.GetAsync("/api/payment-vouchers/owner-total")).ReadAsync<OwnerExpensesTotalDto>()).Total.Should().BeGreaterThanOrEqualTo(100);
+
         (await admin.GetAsync($"/api/reports/balance-sheet?date={DateTime.UtcNow.AddDays(3):yyyy-MM-dd}")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

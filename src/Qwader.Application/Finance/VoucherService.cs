@@ -21,6 +21,8 @@ public interface IVoucherService
 
     Task<PagedResult<VoucherDto>> PaymentsAsync(VoucherListRequest request, CancellationToken ct = default);
     Task<VoucherDto> GetPaymentAsync(int id, CancellationToken ct = default);
+    /// <summary>«مصاريف صاحب العمل»: the owner's withdrawals over a period (not voided).</summary>
+    Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);
     Task<VoucherDto> CreatePaymentAsync(CreatePaymentRequest request, CancellationToken ct = default);
     Task<VoucherDto> VoidPaymentAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
 
@@ -290,6 +292,7 @@ public sealed class VoucherService(
         if (request.IncludeVoided != true) query = query.Where(v => v.Status == VoucherStatus.Posted);
         if (request.AccountId is { } accountId) query = query.Where(v => v.FinancialAccountId == accountId);
         if (request.SupplierId is { } supplierId) query = query.Where(v => v.SupplierId == supplierId);
+        if (request.Purpose is { } purpose) query = query.Where(v => v.Purpose == purpose);
         if (request.MinAmount is { } min) query = query.Where(v => v.Amount >= min);
         if (request.MaxAmount is { } max) query = query.Where(v => v.Amount <= max);
         if (request.From is not null || request.To is not null)
@@ -303,6 +306,14 @@ public sealed class VoucherService(
             query = query.Where(v => v.Number.EndsWith(raw) || v.BeneficiaryName.Contains(raw) || v.Reference == raw);
         }
         return await ProjectPayments(query.OrderByDescending(v => v.Id)).ToPagedAsync(request, ct);
+    }
+
+    public async Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default)
+    {
+        var (start, end) = clock.LocalDaysToUtcRange(from ?? new DateOnly(2000, 1, 1), to ?? clock.LocalToday);
+        var rows = db.PaymentVouchers.AsNoTracking()
+            .Where(v => v.Purpose == PaymentPurpose.OwnerWithdrawal && v.Status == VoucherStatus.Posted && v.Date >= start && v.Date < end);
+        return new OwnerExpensesTotalDto(await rows.CountAsync(ct), await rows.SumAsync(v => (decimal?)v.Amount, ct) ?? 0);
     }
 
     public async Task<VoucherDto> GetPaymentAsync(int id, CancellationToken ct = default) =>

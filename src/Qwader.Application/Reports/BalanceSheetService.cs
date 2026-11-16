@@ -205,7 +205,7 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
             Section("حقوق الملكية",
                 new BalanceLine("رأس المال الافتتاحي (أرصدة بداية النظام)", openingCapital),
                 new BalanceLine("رأس مال مضاف", Money(AccountTransactionCategory.CapitalContribution)),
-                new BalanceLine("المسحوبات الشخصية", Money(AccountTransactionCategory.OwnerWithdrawal)),
+                new BalanceLine("المسحوبات الشخصية (مصاريف صاحب العمل)", Money(AccountTransactionCategory.OwnerWithdrawal), "/owner-expenses"),
                 new BalanceLine($"الأرباح المحتجزة (قبل {yearStart.Year})", priorProfit),
                 new BalanceLine($"صافي ربح {yearStart.Year} حتى التاريخ", yearProfit),
                 new BalanceLine("تسويات المخزون (تالف، مفقود، فائض جرد)", stockAdjustments, "/inventory?tab=movements"),
