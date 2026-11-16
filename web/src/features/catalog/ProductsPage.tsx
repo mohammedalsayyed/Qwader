@@ -189,28 +189,23 @@ export function ProductsPage() {
             )}
           </div>
         )}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
-            <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST, COST_ABOVE] : FILTERS} />
-          </div>
+        {/* The stock chips on their own row; the general category and the category under them, side by side. */}
+        <FilterChips value={filter} onChange={(v) => setParam('stock', v === 'All' ? undefined : v)} options={can(P.ProductsViewCost) ? [...FILTERS, NO_COST, COST_ABOVE] : FILTERS} />
+        <div className={cn('grid gap-2', groups.length > 0 ? 'sm:grid-cols-2 lg:max-w-2xl' : 'sm:max-w-xs')}>
           {groups.length > 0 && (
-            <div className="sm:w-52">
-              <Select aria-label="الصنف العام" value={groupId ?? ''}
-                onChange={(e) => setMany({ groupId: e.target.value || undefined, categoryId: undefined })}>
-                <option value="">كل الأصناف العامة</option>
-                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </Select>
-            </div>
+            <Select aria-label="الصنف العام" value={groupId ?? ''}
+              onChange={(e) => setMany({ groupId: e.target.value || undefined, categoryId: undefined })}>
+              <option value="">كل الأصناف العامة</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </Select>
           )}
-          <div className="sm:w-64">
-            <CategoryPicker
-              allowCreate={false}
-              placeholder="كل الأصناف"
-              value={categoryName}
-              onSelect={(c) => setParam('categoryId', String(c.id))}
-              onClear={() => setParam('categoryId', undefined)}
-            />
-          </div>
+          <CategoryPicker
+            allowCreate={false}
+            placeholder="كل الأصناف"
+            value={categoryName}
+            onSelect={(c) => setParam('categoryId', String(c.id))}
+            onClear={() => setParam('categoryId', undefined)}
+          />
         </div>
       </div>
 
