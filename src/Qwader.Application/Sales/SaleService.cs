@@ -112,8 +112,8 @@ public sealed class SaleService(
 
         // ---- amounts (always recomputed here; client totals are never trusted)
         // A price lowered at the till is recorded as a discount: the line keeps the product's price and the difference
-        // becomes part of its line discount, so invoices and reports show it as «خصم». Only the floor (minimum sale price)
-        // limits it; the store's discount limit applies to the discounts the seller types (line + invoice).
+        // becomes part of its line discount, so invoices and reports show it as «خصم» — only below the product's average cost
+        // (see the line rule). Only the minimum sale price limits it; the store's discount limit applies to the discounts the seller types (line + invoice).
         decimal typedLineDiscounts = 0;
         (decimal Percent, decimal Limit, decimal Amount)? discountOverLimit = null;
         // The unit each line is sold in: its own prices, and how many base units it takes from stock.
@@ -133,11 +133,11 @@ public sealed class SaleService(
             if (l.LineDiscount > CostMath.RoundMoney(l.Quantity * l.UnitPrice))
                 throw new ValidationFailedException("lines", $"خصم «{p.Name}» أكبر من قيمته");
             var listPrice = request.PriceTier == PriceTier.Wholesale ? unit.WholesalePrice : unit.RetailPrice;
-            // The store's rule: down to the minimum sale price a lowered price is the selling price, not a discount (sold at 200
-            // of 220 with a minimum of 200: price 200, no discount). Only what goes under the minimum is a discount — 190 is
-            // the minimum 200 less a 10 discount. No minimum set: a changed price is never a discount.
-            var minimum = request.PriceTier == PriceTier.Wholesale ? Math.Min(unit.MinSalePrice, unit.WholesalePrice) : unit.MinSalePrice;
-            var floor = Math.Min(minimum, listPrice);
+            // The store's rule: down to the product's average cost a lowered price is the selling price, not a discount (cost 180,
+            // sold at 190: price 190, no discount). Only what goes under the cost is a discount — 170 is the cost 180 less a
+            // 10 discount. No cost entered (zero): a changed price is never a discount. (The minimum sale price still limits
+            // who may sell under it; see the rules below.)
+            var floor = Math.Min(CostMath.RoundMoney(p.AverageCost * unit.Factor), listPrice);
             var unitPrice = l.UnitPrice < floor ? floor : l.UnitPrice;
             // Each rounded as the till rounds it, so the line's total is exactly quantity × price charged (rounded once).
             var lowered = unitPrice > l.UnitPrice ? CostMath.RoundMoney(l.Quantity * unitPrice) - CostMath.RoundMoney(l.Quantity * l.UnitPrice) : 0;
