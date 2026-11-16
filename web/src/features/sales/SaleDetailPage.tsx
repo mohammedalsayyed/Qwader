@@ -597,7 +597,7 @@ function SaleLineRow({ line: l }: { line: Sale['lines'][number] }) {
                 </div>
                 {p.averageCost != null && (
                   <div>
-                    <dt className="text-xs text-muted">تكلفة {per === p.unitName ? 'القطعة' : `الـ${per}`}</dt>
+                    <dt className="text-xs text-muted">تكلفة {withAl(per ?? p.unitName)}</dt>
                     <dd className="tabular font-bold">{formatMoney(p.averageCost * factor)}</dd>
                   </div>
                 )}
@@ -618,3 +618,6 @@ function SaleLineRow({ line: l }: { line: Sale['lines'][number] }) {
     </li>
   );
 }
+
+/** «كيلو» → «الكيلو», «قطعة» → «القطعة»; a name already starting with «ال» stays. */
+const withAl = (unit: string) => (unit.startsWith('ال') ? unit : `ال${unit}`);
