@@ -12,6 +12,7 @@ import {
   Package,
   Receipt,
   ReceiptText,
+  Scale,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -59,6 +60,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/expenses', label: 'المصروفات', icon: Wallet, anyOf: [P.ExpensesManage], group: 'finance' },
   { to: '/payroll', label: 'الرواتب', icon: Banknote, anyOf: [P.PayrollManage], group: 'finance' },
   { to: '/reports', label: 'التقارير', icon: BarChart3, anyOf: [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial], group: 'finance' },
+  { to: '/balance-sheet', label: 'الميزانية العمومية', icon: Scale, anyOf: [P.ReportsFinancial], group: 'finance' },
 
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },
   { to: '/settings', label: 'الإعدادات', icon: Settings, anyOf: [P.SettingsManage], group: 'admin' },

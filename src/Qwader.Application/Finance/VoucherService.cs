@@ -152,6 +152,7 @@ public sealed class VoucherService(
             {
                 ReceiptPurpose.DebtCollection => AccountTransactionCategory.DebtCollection,
                 ReceiptPurpose.CustomerDeposit => AccountTransactionCategory.CustomerDeposit,
+                ReceiptPurpose.CapitalContribution => AccountTransactionCategory.CapitalContribution,
                 _ => AccountTransactionCategory.OtherIncome,
             }, source, voucher.Date, ct);
         // A collection or an advance goes to the customer's statement as a payment: their debt goes down, or their credit up.
@@ -276,7 +277,7 @@ public sealed class VoucherService(
         var users = db.Users;
         return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.PayerName, v.PayerPhone, v.CustomerId, null, v.Amount,
             v.FinancialAccountId, v.FinancialAccount.Name, v.Purpose.ToString(),
-            v.Purpose == ReceiptPurpose.DebtCollection ? "تحصيل دين من عميل" : v.Purpose == ReceiptPurpose.CustomerDeposit ? "دفعة مقدمة / رصيد للعميل" : "إيراد آخر",
+            FinanceNames.Receipt(v.Purpose),
             v.Reference, v.Notes, v.AttachmentFileId, v.Status, users.Where(u => u.Id == v.CreatedById).Select(u => u.FullName).FirstOrDefault(),
             v.VoidedAt, v.VoidReason, v.IncomingTransferId, v.SaleInvoiceId, null));
     }
@@ -383,6 +384,7 @@ public sealed class VoucherService(
             PaymentPurpose.Expense => AccountTransactionCategory.Expense,
             PaymentPurpose.CustomerRefund => AccountTransactionCategory.SaleRefund,
             PaymentPurpose.EmployeeAdvance => AccountTransactionCategory.EmployeeAdvance,
+            PaymentPurpose.OwnerWithdrawal => AccountTransactionCategory.OwnerWithdrawal,
             _ => AccountTransactionCategory.OtherPayment,
         };
         await accounts.PostAsync(voucher.FinancialAccountId, MoneyDirection.Out, voucher.Amount, category, source, voucher.Date, ct, requireFunds: true);
@@ -436,9 +438,7 @@ public sealed class VoucherService(
         var expenses = db.Expenses;
         return query.Select(v => new VoucherDto(v.Id, v.Number, v.Date, v.BeneficiaryName, null, v.CustomerId, v.SupplierId, v.Amount,
             v.FinancialAccountId, v.FinancialAccount.Name, v.Purpose.ToString(),
-            v.Purpose == PaymentPurpose.SupplierPayment ? "دفعة لمورد" : v.Purpose == PaymentPurpose.Expense ? "مصروف"
-                : v.Purpose == PaymentPurpose.CustomerRefund ? "إعادة رصيد لعميل"
-                : v.Purpose == PaymentPurpose.EmployeeAdvance ? "سلفة موظف" : "صرف آخر",
+            FinanceNames.Payment(v.Purpose),
             v.Reference, v.Notes, v.AttachmentFileId, v.Status, users.Where(u => u.Id == v.CreatedById).Select(u => u.FullName).FirstOrDefault(),
             v.VoidedAt, v.VoidReason, null, null,
             expenses.Where(e => e.PaymentVoucherId == v.Id).Select(e => e.Category.Name).FirstOrDefault()));

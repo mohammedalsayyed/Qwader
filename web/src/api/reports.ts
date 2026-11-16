@@ -41,6 +41,34 @@ export interface PeriodReport {
   inventoryValue: number | null;
 }
 
+export interface BalanceLine {
+  name: string;
+  amount: number;
+  /** Where the figure comes from in the app. */
+  link: string | null;
+}
+
+export interface BalanceSection {
+  title: string;
+  lines: BalanceLine[];
+  total: number;
+}
+
+/** «الميزانية العمومية» at the end of a day; difference = assets − liabilities − equity, shown as it is. */
+export interface BalanceSheet {
+  asOf: string;
+  yearStart: string;
+  assets: BalanceSection[];
+  totalAssets: number;
+  liabilities: BalanceSection[];
+  totalLiabilities: number;
+  equity: BalanceSection[];
+  totalEquity: number;
+  difference: number;
+  yearProfit: BalanceLine[];
+  notRecorded: string[];
+}
+
 export interface DailyRow {
   day: string;
   invoices: number;
@@ -94,6 +122,7 @@ type Range = { from?: string; to?: string };
 
 export const reportsApi = {
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
+  balanceSheet: (date?: string) => api<BalanceSheet>('/reports/balance-sheet', { query: { date } }),
   daily: (r: Range) => api<DailyRow[]>('/reports/daily', { query: r }),
   products: (r: Range, sort: ProductSort, take = 15, categoryId?: number) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take, categoryId } }),
   categories: (r: Range) => api<GroupRow[]>('/reports/categories', { query: r }),

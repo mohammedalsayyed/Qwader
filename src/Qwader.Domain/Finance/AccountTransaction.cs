@@ -13,6 +13,8 @@ public enum AccountTransactionCategory
     OtherIncome = 3,
     /// <summary>A customer's advance («دفعة مقدمة»): their money until they buy with it.</summary>
     CustomerDeposit = 4,
+    /// <summary>Money the owner puts in («إضافة رأس مال»).</summary>
+    CapitalContribution = 5,
     SupplierPayment = 10,
     SupplierRefund = 11,
     Expense = 12,
@@ -20,6 +22,8 @@ public enum AccountTransactionCategory
     OtherPayment = 14,
     /// <summary>An advance to an employee: not an expense until a salary settlement takes it.</summary>
     EmployeeAdvance = 15,
+    /// <summary>Money the owner takes for themself («مسحوبات شخصية»).</summary>
+    OwnerWithdrawal = 16,
     TransferIn = 20,
     TransferOut = 21,
     Reversal = 30,

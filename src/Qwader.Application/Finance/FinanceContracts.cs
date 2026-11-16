@@ -118,6 +118,8 @@ public static class FinanceNames
         AccountTransactionCategory.DebtCollection => "تحصيل دين",
         AccountTransactionCategory.OtherIncome => "إيراد آخر",
         AccountTransactionCategory.CustomerDeposit => "دفعة مقدمة من عميل",
+        AccountTransactionCategory.CapitalContribution => "إضافة رأس مال",
+        AccountTransactionCategory.OwnerWithdrawal => "مسحوبات شخصية",
         AccountTransactionCategory.SupplierPayment => "دفعة لمورد",
         AccountTransactionCategory.SupplierRefund => "استرداد من مورد",
         AccountTransactionCategory.Expense => "مصروف",
@@ -135,6 +137,7 @@ public static class FinanceNames
     {
         ReceiptPurpose.DebtCollection => "تحصيل دين من عميل",
         ReceiptPurpose.CustomerDeposit => "دفعة مقدمة / رصيد للعميل",
+        ReceiptPurpose.CapitalContribution => "إضافة رأس مال",
         _ => "إيراد آخر",
     };
 
@@ -144,6 +147,7 @@ public static class FinanceNames
         PaymentPurpose.Expense => "مصروف",
         PaymentPurpose.CustomerRefund => "إعادة رصيد لعميل",
         PaymentPurpose.EmployeeAdvance => "سلفة موظف",
+        PaymentPurpose.OwnerWithdrawal => "مسحوبات شخصية",
         _ => "صرف آخر",
     };
 }
@@ -228,7 +232,7 @@ public sealed class CreatePaymentRequestValidator : AbstractValidator<CreatePaym
     public CreatePaymentRequestValidator()
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
-        RuleFor(x => x.Purpose).Must(p => p is PaymentPurpose.SupplierPayment or PaymentPurpose.Other or PaymentPurpose.CustomerRefund)
+        RuleFor(x => x.Purpose).Must(p => p is PaymentPurpose.SupplierPayment or PaymentPurpose.Other or PaymentPurpose.CustomerRefund or PaymentPurpose.OwnerWithdrawal)
             .WithMessage("لتسجيل مصروف استخدم شاشة المصروفات");
         RuleFor(x => x.SupplierId).NotNull().When(x => x.Purpose == PaymentPurpose.SupplierPayment).WithMessage("اختر المورد");
         RuleFor(x => x.CustomerId).NotNull().When(x => x.Purpose == PaymentPurpose.CustomerRefund).WithMessage("اختر العميل");

@@ -104,7 +104,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const presetSupplier = params.get('supplierId') ? Number(params.get('supplierId')) : undefined;
 
   // «deposit» (receipts only): a customer's advance — any amount, it becomes their credit.
-  const [purpose, setPurpose] = useState<'party' | 'other' | 'deposit'>('party');
+  // «owner»: the store's owner — capital added (receipt) or a personal withdrawal (payment), not income or an expense.
+  const [purpose, setPurpose] = useState<'party' | 'other' | 'deposit' | 'owner'>('party');
   const [customer, setCustomer] = useState<CustomerListItem | null>(null);
   const [supplier, setSupplier] = useState<SupplierListItem | null>(null);
   const [name, setName] = useState('');
@@ -147,9 +148,13 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
         notes: notes.trim() || null, attachmentFileId: attachment, confirmDuplicate,
       };
       return kind === 'receipt'
-        ? receiptsApi.create({ ...base, purpose: (purpose === 'party' ? 'DebtCollection' : purpose === 'deposit' ? 'CustomerDeposit' : 'OtherIncome') as ReceiptPurpose,
-          customerId: purpose !== 'other' ? customer?.id : null, payerName: purpose === 'other' ? name.trim() : null, payerPhone: phone.trim() || null })
-        : paymentsApi.create({ ...base, purpose: (purpose === 'party' ? 'SupplierPayment' : 'Other') as PaymentPurpose, supplierId: purpose === 'party' ? supplier?.id : null, beneficiaryName: purpose === 'other' ? name.trim() : null });
+        ? receiptsApi.create({ ...base,
+          purpose: (purpose === 'party' ? 'DebtCollection' : purpose === 'deposit' ? 'CustomerDeposit' : purpose === 'owner' ? 'CapitalContribution' : 'OtherIncome') as ReceiptPurpose,
+          customerId: purpose === 'party' || purpose === 'deposit' ? customer?.id : null,
+          payerName: purpose === 'other' ? name.trim() : purpose === 'owner' ? name.trim() || 'صاحب المال' : null, payerPhone: phone.trim() || null })
+        : paymentsApi.create({ ...base, purpose: (purpose === 'party' ? 'SupplierPayment' : purpose === 'owner' ? 'OwnerWithdrawal' : 'Other') as PaymentPurpose,
+          supplierId: purpose === 'party' ? supplier?.id : null,
+          beneficiaryName: purpose === 'other' ? name.trim() : purpose === 'owner' ? name.trim() || 'صاحب المال' : null });
     },
     onSuccess: (v) => {
       for (const k of [kind, 'accounts', 'customers', 'customer', 'suppliers', 'supplier', 'sales-summary']) void queryClient.invalidateQueries({ queryKey: [k] });
@@ -188,11 +193,12 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
       <PageHeader title={`${meta.one} جديد`} />
 
       <Card className="space-y-4 p-5">
-        <div className={cn('grid rounded-xl bg-black/5 p-1', kind === 'receipt' ? 'grid-cols-3' : 'grid-cols-2')}>
-          {(kind === 'receipt' ? (['party', 'deposit', 'other'] as const) : (['party', 'other'] as const)).map((p) => (
+        <div className={cn('grid rounded-xl bg-black/5 p-1', kind === 'receipt' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
+          {(kind === 'receipt' ? (['party', 'deposit', 'other', 'owner'] as const) : (['party', 'other', 'owner'] as const)).map((p) => (
             <button key={p} type="button" aria-pressed={purpose === p} onClick={() => setPurpose(p)}
               className={cn('min-h-10 rounded-lg px-1 text-sm font-semibold leading-tight', purpose === p ? 'bg-surface shadow-sm' : 'text-muted')}>
-              {p === 'party' ? (kind === 'receipt' ? 'تحصيل دين من عميل' : 'دفعة لمورد') : p === 'deposit' ? 'دفعة مقدمة / رصيد للعميل' : kind === 'receipt' ? 'إيراد آخر' : 'صرف آخر'}
+              {p === 'party' ? (kind === 'receipt' ? 'تحصيل دين من عميل' : 'دفعة لمورد') : p === 'deposit' ? 'دفعة مقدمة / رصيد للعميل'
+                : p === 'owner' ? (kind === 'receipt' ? 'إضافة رأس مال' : 'مسحوبات شخصية') : kind === 'receipt' ? 'إيراد آخر' : 'صرف آخر'}
             </button>
           ))}
         </div>
@@ -203,7 +209,19 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
           </p>
         )}
 
-        {purpose !== 'other' ? (
+        {purpose === 'owner' && (
+          <>
+            <p className="rounded-xl bg-brand-50 p-3 text-sm leading-6">
+              {kind === 'receipt'
+                ? <>مال يضعه <b>صاحب المعرض</b> في المعرض: يزيد <b>رأس المال</b> في الميزانية العمومية — ليس إيرادًا ولا ربحًا.</>
+                : <>مال يأخذه <b>صاحب المعرض</b> لنفسه: يُخصم من <b>حقوق الملكية</b> في الميزانية العمومية — ليس مصروفًا ولا يُنقص الربح.</>}
+            </p>
+            <Field label="الاسم" hint="اتركه فارغًا ليُكتب «صاحب المال»">
+              {(id, d) => <Input id={id} aria-describedby={d} value={name} placeholder="صاحب المال" onChange={(e) => setName(e.target.value)} />}
+            </Field>
+          </>
+        )}
+        {purpose === 'owner' ? null : purpose !== 'other' ? (
           kind === 'receipt' ? (
             <Field label="العميل" required error={errors.party}>
               {(id) => (

@@ -76,6 +76,8 @@ public enum ReceiptPurpose
     /// <summary>Money a customer leaves with the store (change not taken, an advance on an order): it becomes their credit
     /// («له»), pays their next purchases on credit, or is paid back («إعادة رصيد»).</summary>
     CustomerDeposit = 3,
+    /// <summary>«إضافة رأس مال»: money the owner puts into the store — capital, not income.</summary>
+    CapitalContribution = 4,
 }
 
 public class ReceiptVoucher : AuditableEntity
@@ -112,6 +114,8 @@ public enum PaymentPurpose
     CustomerRefund = 4,
     /// <summary>An advance to an employee: money out now, owed by the employee until their next settlement takes it off the salary.</summary>
     EmployeeAdvance = 5,
+    /// <summary>«مسحوبات شخصية»: money the owner takes for themself — off the capital, not an expense.</summary>
+    OwnerWithdrawal = 6,
 }
 
 public class PaymentVoucher : AuditableEntity

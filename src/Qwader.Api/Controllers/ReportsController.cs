@@ -27,6 +27,12 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
         return reports.PeriodAsync(f, t, ct);
     }
 
+    /// <summary>«الميزانية العمومية» as at the end of a day (today when left out).</summary>
+    [HttpGet("balance-sheet")]
+    [HasPermission(Permissions.ReportsFinancial)]
+    public Task<BalanceSheetDto> BalanceSheet([FromQuery] DateOnly? date, [FromServices] IBalanceSheetService sheets, CancellationToken ct) =>
+        sheets.AsOfAsync(date ?? clock.LocalToday, ct);
+
     [HttpGet("daily")]
     public Task<IReadOnlyList<DailyRowDto>> Daily([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
     {
