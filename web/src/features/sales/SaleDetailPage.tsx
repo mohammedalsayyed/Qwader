@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Ban, FilePen, NotebookPen, Printer, RotateCcw, Share2, Undo2 } from 'lucide-react';
+import { ArrowRight, Ban, ChevronDown, FilePen, NotebookPen, Printer, RotateCcw, Share2, Undo2 } from 'lucide-react';
 import { customersApi, salesApi, SALE_STATUS, type CustomerListItem, type ReturnCondition, type Sale } from '@/api/sales';
+import { productsApi } from '@/api/catalog';
 import { Picker } from '@/components/ui/Picker';
 import type { ReturnSettlement } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
@@ -150,23 +151,7 @@ export function SaleDetailPage() {
 
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
-            {s.lines.map((l) => (
-              <li key={l.id} className="p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold">{l.productName}</p>
-                    <p className="text-xs text-muted">
-                      <span className="tabular">{formatQuantity(l.quantity)}</span> {l.unitName} × {formatMoney(l.unitPrice)}
-                      {l.lineDiscount > 0 && <> − خصم {formatMoney(l.lineDiscount)}</>}
-                      {l.unitCost != null && <> · التكلفة {formatMoney(l.unitCost)}</>}
-                    </p>
-                    {l.returnedQuantity > 0 && <p className="text-xs text-warning">مرتجع: <span className="tabular">{formatQuantity(l.returnedQuantity)}</span></p>}
-                    {l.priceOverridden && <p className="text-xs text-danger">بيع بأقل من الحد الأدنى بصلاحية خاصة</p>}
-                  </div>
-                  <p className="tabular shrink-0 font-bold">{formatMoney(l.lineTotal)}</p>
-                </div>
-              </li>
-            ))}
+            {s.lines.map((l) => <SaleLineRow key={l.id} line={l} />)}
           </ul>
           <div className="border-t border-line bg-canvas px-4">
             <InfoList items={[
@@ -569,5 +554,67 @@ function CancelReturnSheet({ sale, ret, onClose, onDone }: { sale: Sale; ret: Sa
         </Field>
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * A line of the invoice; tapped, it opens the product as it is now: how much is left in stock, the cost of one, and its
+ * lowest and highest sale price — for the unit the line was sold in (a dozen: per dozen).
+ */
+function SaleLineRow({ line: l }: { line: Sale['lines'][number] }) {
+  const [open, setOpen] = useState(false);
+  const product = useQuery({ queryKey: ['product', l.productId], queryFn: () => productsApi.get(l.productId), enabled: open, staleTime: 30_000 });
+  const p = product.data;
+  const unit = p && l.productUnitId ? p.units?.find((u) => u.id === l.productUnitId) : undefined;
+  const factor = unit?.factor ?? l.unitFactor ?? 1;
+  const per = unit ? unit.unitName : p?.unitName;
+  return (
+    <li>
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex w-full items-start justify-between gap-3 p-3 text-start hover:bg-canvas">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1 font-semibold">
+            {l.productName}
+            <ChevronDown className={cn('size-4 shrink-0 text-muted transition-transform print:hidden', open && 'rotate-180')} />
+          </p>
+          <p className="text-xs text-muted">
+            <span className="tabular">{formatQuantity(l.quantity)}</span> {l.unitName} × {formatMoney(l.unitPrice)}
+            {l.lineDiscount > 0 && <> − خصم {formatMoney(l.lineDiscount)}</>}
+            {l.unitCost != null && <> · التكلفة {formatMoney(l.unitCost)}</>}
+          </p>
+          {l.returnedQuantity > 0 && <p className="text-xs text-warning">مرتجع: <span className="tabular">{formatQuantity(l.returnedQuantity)}</span></p>}
+          {l.priceOverridden && <p className="text-xs text-danger">بيع بأقل من الحد الأدنى بصلاحية خاصة</p>}
+        </div>
+        <p className="tabular shrink-0 font-bold">{formatMoney(l.lineTotal)}</p>
+      </button>
+      {open && (
+        <div className="mx-3 mb-3 rounded-control border border-line bg-canvas p-3 text-sm print:hidden">
+          {product.isPending ? <Spinner /> : product.isError ? <p className="text-danger">{errorMessage(product.error)}</p> : p && (
+            <>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-muted">الباقي في المخزون</dt>
+                  <dd className={cn('tabular font-bold', p.quantity <= 0 && 'text-danger')}>{formatQuantity(p.quantity)} {p.unitName}</dd>
+                </div>
+                {p.averageCost != null && (
+                  <div>
+                    <dt className="text-xs text-muted">تكلفة {per === p.unitName ? 'القطعة' : `الـ${per}`}</dt>
+                    <dd className="tabular font-bold">{formatMoney(p.averageCost * factor)}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-xs text-muted">أقل سعر بيع</dt>
+                  <dd className="tabular font-bold">{formatMoney(unit?.minSalePrice ?? p.minSalePrice)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted">أعلى سعر بيع (مفرق)</dt>
+                  <dd className="tabular font-bold">{formatMoney(unit?.retailPrice ?? p.retailPrice)}</dd>
+                </div>
+              </dl>
+              <Link to={`/products/${p.id}`} className="mt-2 inline-block text-xs font-semibold text-brand-700 underline">فتح المنتج</Link>
+            </>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
