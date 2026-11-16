@@ -256,8 +256,8 @@ export function PosPage() {
                             <span className="ltr inline-block">{p.sku}</span> · {out ? <span className="text-danger">نفد</span> : <>متوفر {formatQuantity(p.quantity - inCart)}</>}
                             {inCart > 0 && <> · في الفاتورة {formatQuantity(inCart)}</>}
                             {p.minSalePrice > 0 && <> · <span className="whitespace-nowrap">أقل سعر <span className="tabular font-semibold text-gray-700">{formatMoney(p.minSalePrice)}</span></span></>}
-                            {/* Average cost, for those who may see it (others get no cost from the server). */}
-                            {p.averageCost != null && p.averageCost > 0 && <> · <span className="whitespace-nowrap">التكلفة <span className="tabular font-semibold text-gray-700">{formatMoney(p.averageCost)}</span></span></>}
+                            {/* Average cost, for those who may see it (others get no cost from the server); zero shows as zero. */}
+                            {p.averageCost != null && <> · <span className="whitespace-nowrap">التكلفة <span className="tabular font-semibold text-gray-700">{formatMoney(p.averageCost)}</span></span></>}
                           </span>
                         </span>
                         <span className="tabular shrink-0 font-bold">{formatMoney(tierPrice(p, cart.tier))}</span>
