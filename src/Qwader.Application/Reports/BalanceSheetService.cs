@@ -138,10 +138,21 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
             """).ToListAsync(ct);
         decimal Stock(Func<StockMovementType, bool> of, bool? thisYear = null) =>
             movements.Where(m => of(m.Type) && (thisYear is null || m.ThisYear == thisYear)).Sum(m => m.Value);
-        var stockOpening = Stock(t => t == StockMovementType.OpeningBalance);
-        var stockAdjustments = Stock(AdjustmentTypes.Contains);
-        var costCorrections = revaluations.Where(r => r.Type == (int)StockMovementType.CostCorrection).Sum(r => r.Value);
-        var revaluationDifferences = revaluations.Where(r => r.Type != (int)StockMovementType.CostCorrection).Sum(r => r.Value);
+        // Every stock figure in whole agorot, as the money and the documents are.
+        var stockOpening = CostMath.RoundMoney(Stock(t => t == StockMovementType.OpeningBalance));
+        var stockAdjustments = CostMath.RoundMoney(Stock(AdjustmentTypes.Contains));
+        var costCorrections = CostMath.RoundMoney(revaluations.Where(r => r.Type == (int)StockMovementType.CostCorrection).Sum(r => r.Value));
+        decimal Cogs(bool? thisYear) => CostMath.RoundMoney(-Stock(SaleTypes.Contains, thisYear));
+
+        // What the purchases put into stock as their documents say (the supplier's side): bought, less returned, less voided.
+        // The stock itself took them at the cost per piece, kept to 4 decimals (100 ₪ for 3 pieces = 33.3333 each), so the two
+        // can differ by fractions of an agora; that, goods bought again after the stock went below zero, and the rounding of the
+        // average are the stock's valuation differences — shown as their own line, worked out from the recorded figures.
+        var purchaseDocuments = await db.SupplierLedgerEntries.AsNoTracking().Where(e => e.Date < end
+                && (e.Type == SupplierEntryType.Purchase || e.Type == SupplierEntryType.Return
+                    || (e.Type == SupplierEntryType.Reversal && e.SourceType == "PurchaseInvoice")))
+            .SumAsync(e => (decimal?)(e.Type == SupplierEntryType.Purchase ? e.Credit : -e.Debit), ct) ?? 0;
+        var revaluationDifferences = inventory - stockOpening - stockAdjustments - costCorrections + Cogs(false) + Cogs(true) - purchaseDocuments;
 
         // ---------------------------------------------------------------- profit (cumulative and this year)
         var invoices = await db.SaleInvoices.AsNoTracking()
@@ -166,13 +177,13 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
         {
             var sales = invoices.Where(i => thisYear is null || i.ThisYear == thisYear).Sum(i => i.Total)
                 - returns.Where(r => thisYear is null || r.ThisYear == thisYear).Sum(r => r.Total);
-            var cogs = -Stock(SaleTypes.Contains, thisYear);
+            var cogs = Cogs(thisYear);
             return sales - cogs - Expenses(false, thisYear) - Expenses(true, thisYear) - AdvanceSalaries(thisYear)
                 + Money(AccountTransactionCategory.OtherIncome, thisYear) + Money(AccountTransactionCategory.OtherPayment, thisYear);
         }
 
         var yearSales = invoices.Where(i => i.ThisYear).Sum(i => i.Total) - returns.Where(r => r.ThisYear).Sum(r => r.Total);
-        var yearCogs = -Stock(SaleTypes.Contains, true);
+        var yearCogs = Cogs(true);
         var yearProfit = Profit(true);
         var priorProfit = Profit(false);
 
@@ -209,8 +220,8 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
                 new BalanceLine($"الأرباح المحتجزة (قبل {yearStart.Year})", priorProfit),
                 new BalanceLine($"صافي ربح {yearStart.Year} حتى التاريخ", yearProfit),
                 new BalanceLine("تسويات المخزون (تالف، مفقود، فائض جرد)", stockAdjustments, "/inventory?tab=movements"),
-                new BalanceLine("تصحيح تكلفة المخزون", CostMath.RoundMoney(costCorrections), "/inventory?tab=movements"),
-                new BalanceLine("فروق تقييم المخزون (شراء بعد رصيد سالب، تقريب المتوسط)", CostMath.RoundMoney(revaluationDifferences))),
+                new BalanceLine("تصحيح تكلفة المخزون", costCorrections, "/inventory?tab=movements"),
+                new BalanceLine("فروق تقييم المخزون (كسور تكلفة القطعة، شراء بعد رصيد سالب)", revaluationDifferences)),
         };
 
         var yearLines = new List<BalanceLine>

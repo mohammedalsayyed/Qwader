@@ -71,6 +71,14 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         now = await Sheet();
         (Line(now, "المخزون") - Line(was, "المخزون"), Line(now, "حسابات الموردين") - Line(was, "حسابات الموردين")).Should().Be((30m, 30m));
 
+        // 300 pieces for 100 ₪ after a discount: 0.3333 a piece, so the stock holds 99.99 while the supplier is owed 100 —
+        // a valuation difference of an agora, shown on its own line; the sheet still balances.
+        var bulk = await admin.CreateProductAsync(retail: 1);
+        was = await Step("شراء بخصم يقسم على القطع", () => admin.PurchaseAsync(supplier.Id, [new PurchaseLineInput(bulk.Id, 300, 1)], discount: 200));
+        now = await Sheet();
+        (Line(now, "المخزون") - Line(was, "المخزون"), Line(now, "حسابات الموردين") - Line(was, "حسابات الموردين"), Line(now, "فروق تقييم") - Line(was, "فروق تقييم"))
+            .Should().Be((99.99m, 100m, -0.01m));
+
         // Sold for cash: 2 × 25 — cash +50, stock −20, profit +30.
         was = await Step("بيع نقدي", async () => (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
             [new(product.Id, 2, 25)], [new(cash, 50)], null))).EnsureSuccessStatusCode());
