@@ -70,7 +70,9 @@ public sealed class TransferListRequest : PagedRequest
 
 public sealed record CreateReceiptRequest(
     Guid IdempotencyKey, ReceiptPurpose Purpose, int? CustomerId, string? PayerName, string? PayerPhone,
-    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false);
+    decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false,
+    /// <summary>The day the money came in (today when left out; not in the future, not before the system started).</summary>
+    DateOnly? Date = null);
 
 public sealed record CreatePaymentRequest(
     Guid IdempotencyKey, PaymentPurpose Purpose, int? SupplierId, string? BeneficiaryName,

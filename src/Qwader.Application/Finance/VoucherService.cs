@@ -123,9 +123,12 @@ public sealed class VoucherService(
                 throw new ConflictException("سُجّل قبل دقائق سند قبض بنفس المبلغ لنفس الدافع ونفس الحساب. إذا كانت دفعة جديدة فعلًا، أكّد التسجيل.");
         }
 
+        // Every receipt is dated on the day the money came in (today by default) — not in the future, not before the system.
+        var receiptDate = await DocumentDates.ToUtcAsync(request.Date, clock, db, ct);
+
         var voucher = await PostReceiptAsync(new ReceiptVoucher
         {
-            Date = clock.UtcNow,
+            Date = receiptDate,
             Purpose = request.Purpose,
             CustomerId = customer?.Id,
             PayerName = payerName,

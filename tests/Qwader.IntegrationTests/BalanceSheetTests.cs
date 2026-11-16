@@ -153,5 +153,24 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         (await admin.PostAsJsonAsync("/api/payment-vouchers", Owner(5, new DateOnly(1990, 1, 1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest, "not before the system");
         (await admin.PostAsJsonAsync("/api/payment-vouchers", new CreatePaymentRequest(Guid.NewGuid(), PaymentPurpose.Other, null, "مورد كهرباء", 5, cash, null, null, null, Date: yesterday)))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest, "only the owner's expenses take a date");
+
+        // Capital added yesterday counts from yesterday; other receipts take no date.
+        async Task<decimal> Capital(DateOnly day) =>
+            (await (await admin.GetAsync($"/api/reports/balance-sheet?date={day:yyyy-MM-dd}")).ReadAsync<BalanceSheetDto>())
+                .Equity.SelectMany(s => s.Lines).Single(l => l.Name.StartsWith("رأس مال مضاف")).Amount;
+        var capitalYesterday = await Capital(yesterday);
+        var capitalDayBefore = await Capital(yesterday.AddDays(-1));
+        (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.CapitalContribution, null, "صاحب المال", null,
+            300, cash, null, null, null, Date: yesterday))).EnsureSuccessStatusCode();
+        (await Capital(yesterday)).Should().Be(capitalYesterday + 300);
+        (await Capital(yesterday.AddDays(-1))).Should().Be(capitalDayBefore);
+        // Every receipt takes its day; never in the future or before the system.
+        var income = await (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null, "إيراد", null,
+            5, cash, null, null, null, Date: yesterday))).ReadAsync<VoucherDto>();
+        DateOnly.FromDateTime(income.Date.ToLocalTime()).Should().Be(yesterday);
+        (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null, "إيراد", null,
+            5, cash, null, null, null, Date: today.AddDays(1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null, "إيراد", null,
+            5, cash, null, null, null, Date: new DateOnly(1990, 1, 1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

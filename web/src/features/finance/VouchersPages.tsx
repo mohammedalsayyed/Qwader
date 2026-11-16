@@ -20,7 +20,7 @@ import { useToast } from '@/components/ui/Toast';
 import { AccountChips, AttachmentPicker, PrintableVoucher, PrivateFileThumb } from '@/components/finance/FinanceBits';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatDateTime, formatMoney } from '@/lib/format';
+import { formatDateTime, formatMoney, localToday } from '@/lib/format';
 import { useDebouncedValue, useIdempotencyKey, useUnsavedChangesWarning } from '@/lib/hooks';
 import { parseNumber } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
@@ -111,6 +111,9 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [amount, setAmount] = useState('');
+  // The day the money came in (every receipt) or the owner took it («مسحوبات شخصية»); today by default.
+  const [date, setDate] = useState(localToday());
+  const datable = kind === 'receipt' || purpose === 'owner';
   const [accountId, setAccountId] = useState<number | null>(null);
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -146,6 +149,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
       const base = {
         idempotencyKey: key, amount: parseNumber(amount)!, financialAccountId: accountId!, reference: reference.trim() || null,
         notes: notes.trim() || null, attachmentFileId: attachment, confirmDuplicate,
+        date: datable ? date : null,
       };
       return kind === 'receipt'
         ? receiptsApi.create({ ...base,
@@ -260,9 +264,16 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
           </p>
         )}
 
-        <Field label="المبلغ (₪)" required error={errors.amount} hint={n && !Number.isNaN(n) ? amountInWords(n) : undefined}>
-          {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" invalid={!!errors.amount} value={amount} onChange={(e) => setAmount(e.target.value)} />}
-        </Field>
+        <div className={cn('grid gap-3', datable && 'grid-cols-[1fr_auto]')}>
+          <Field label="المبلغ (₪)" required error={errors.amount} hint={n && !Number.isNaN(n) ? amountInWords(n) : undefined}>
+            {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr text-lg" invalid={!!errors.amount} value={amount} onChange={(e) => setAmount(e.target.value)} />}
+          </Field>
+          {datable && (
+            <Field label="التاريخ" className="w-40">
+              {(id) => <Input id={id} type="date" max={localToday()} value={date} onChange={(e) => setDate(e.target.value || localToday())} />}
+            </Field>
+          )}
+        </div>
         <AccountChips label={kind === 'receipt' ? 'الحساب المستلم' : 'يُدفع من حساب'} accounts={accounts} value={accountId} onChange={setAccountId} error={errors.account} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="المرجع" hint="رقم حوالة/شيك">{(id, h) => <Input id={id} aria-describedby={h} className="ltr" value={reference} onChange={(e) => setReference(e.target.value)} />}</Field>

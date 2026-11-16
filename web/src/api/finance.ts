@@ -228,6 +228,8 @@ export const receiptsApi = {
   create: (input: {
     idempotencyKey: string; purpose: ReceiptPurpose; customerId?: number | null; payerName?: string | null; payerPhone?: string | null;
     amount: number; financialAccountId: number; reference?: string | null; notes?: string | null; attachmentFileId?: string | null; confirmDuplicate?: boolean;
+    /** The day the money came in (yyyy-mm-dd; today when left out). */
+    date?: string | null;
   }) => api<Voucher>('/receipt-vouchers', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Voucher>(`/receipt-vouchers/${id}/void`, { method: 'POST', body: { reason } }),
 };
