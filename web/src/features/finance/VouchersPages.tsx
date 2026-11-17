@@ -51,7 +51,7 @@ export function VouchersPage({ kind }: { kind: Kind }) {
 
   return (
     <>
-      <PageHeader title={meta.title} />
+      <PageHeader title={meta.title} actions={<div className="hidden lg:flex">{can(P.VouchersCreate) && <Button onClick={() => navigate(`${meta.path}/new`)}><Plus className="size-5" /> {meta.one} جديد</Button>}</div>} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder={`رقم السند أو اسم ${meta.party} أو المرجع`} />
         <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} />
@@ -81,7 +81,7 @@ export function VouchersPage({ kind }: { kind: Kind }) {
           </>
         )}
       {can(P.VouchersCreate) && (
-        <Button size="lg" onClick={() => navigate(`${meta.path}/new`)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => navigate(`${meta.path}/new`)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> {meta.one} جديد
         </Button>
       )}

@@ -38,7 +38,7 @@ export function SalesPage() {
 
   return (
     <>
-      <PageHeader title="فواتير المبيعات" subtitle={can(P.SalesViewAll) ? undefined : 'فواتيرك أنت فقط'} />
+      <PageHeader title="فواتير المبيعات" subtitle={can(P.SalesViewAll) ? undefined : 'فواتيرك أنت فقط'} actions={<div className="hidden lg:flex">{can(P.SalesCreate) && <Button onClick={() => navigate('/pos')}><Plus className="size-5" /> بيع جديد</Button>}</div>} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="رقم الفاتورة أو اسم العميل أو جواله" />
         <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'all', 'custom']} />
@@ -88,7 +88,7 @@ export function SalesPage() {
       )}
 
       {can(P.SalesCreate) && (
-        <Button size="lg" onClick={() => navigate('/pos')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => navigate('/pos')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> بيع جديد
         </Button>
       )}

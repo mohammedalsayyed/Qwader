@@ -14,7 +14,24 @@ public sealed record SupplierDto(
 
 public sealed record SupplierListItemDto(int Id, string Code, string Name, string? Phone, decimal Balance, bool IsActive);
 
-public sealed record SaveSupplierRequest(string Name, string? Phone, string? Address, string? Notes, bool IsActive = true, decimal OpeningBalance = 0);
+/// <param name="OpeningIsAdvance">The opening balance is money the store paid the supplier ahead (goods not arrived yet): theirs to deliver, not ours to pay.</param>
+public sealed record SaveSupplierRequest(string Name, string? Phone, string? Address, string? Notes, bool IsActive = true, decimal OpeningBalance = 0,
+    bool OpeningIsAdvance = false);
+
+/// <summary>
+/// An old balance from before the system, added to an existing supplier: owed to them («علينا له», OwedToSupplier = true) or
+/// paid to them ahead for goods not arrived yet («لنا عنده»).
+/// </summary>
+public sealed record SupplierOldBalanceRequest(decimal Amount, bool OwedToSupplier, string? Notes);
+
+public sealed class SupplierOldBalanceRequestValidator : AbstractValidator<SupplierOldBalanceRequest>
+{
+    public SupplierOldBalanceRequestValidator()
+    {
+        RuleFor(x => x.Amount).GreaterThan(0).WithMessage("أدخل مبلغًا أكبر من صفر").LessThanOrEqualTo(10_000_000).WithMessage("المبلغ كبير جدًا");
+        RuleFor(x => x.Notes).MaximumLength(300);
+    }
+}
 
 public sealed class SupplierListRequest : PagedRequest
 {
@@ -34,6 +51,8 @@ public interface ISupplierService
     Task<SupplierDto> GetAsync(int id, CancellationToken ct = default);
     Task<SupplierDto> CreateAsync(SaveSupplierRequest request, CancellationToken ct = default);
     Task<SupplierDto> UpdateAsync(int id, SaveSupplierRequest request, CancellationToken ct = default);
+    /// <summary>Adds an old balance (owed to them, or paid to them ahead) to an existing supplier.</summary>
+    Task<SupplierDto> AddOldBalanceAsync(int id, SupplierOldBalanceRequest request, CancellationToken ct = default);
     Task<StatementDto> StatementAsync(int id, DateOnly? from, DateOnly? to, CancellationToken ct = default);
 }
 
@@ -58,7 +77,7 @@ public sealed class SupplierService(
 {
     public static readonly IReadOnlyDictionary<SupplierEntryType, string> EntryNames = new Dictionary<SupplierEntryType, string>
     {
-        [SupplierEntryType.Opening] = "رصيد افتتاحي",
+        [SupplierEntryType.Opening] = "رصيد سابق",
         [SupplierEntryType.Purchase] = "فاتورة شراء",
         [SupplierEntryType.Payment] = "دفعة للمورد",
         [SupplierEntryType.Return] = "مردود مشتريات",
@@ -105,8 +124,10 @@ public sealed class SupplierService(
         await db.SaveChangesAsync(ct);
 
         if (request.OpeningBalance > 0)
-            await ledger.PostAsync(supplier.Id, SupplierEntryType.Opening, 0, request.OpeningBalance,
-                new LedgerSource("Supplier", supplier.Id, supplier.Code, "رصيد افتتاحي مستحق للمورد"), clock.UtcNow, ct);
+            await ledger.PostAsync(supplier.Id, SupplierEntryType.Opening,
+                request.OpeningIsAdvance ? request.OpeningBalance : 0, request.OpeningIsAdvance ? 0 : request.OpeningBalance,
+                new LedgerSource("Supplier", supplier.Id, supplier.Code,
+                    request.OpeningIsAdvance ? "دفعة مقدمة للمورد قبل استخدام النظام (لحين وصول البضاعة)" : "رصيد افتتاحي مستحق للمورد"), clock.UtcNow, ct);
 
         audit.Log("Supplier.Create", "Supplier", supplier.Id.ToString(), null, request);
         await db.SaveChangesAsync(ct);
@@ -122,6 +143,24 @@ public sealed class SupplierService(
         await EnsureUniqueNameAsync(supplier, ct);
         audit.Log("Supplier.Update", "Supplier", id.ToString(), before, new { supplier.Name, supplier.Phone, supplier.Address, supplier.IsActive });
         await db.SaveChangesAsync(ct);
+        return await GetAsync(id, ct);
+    }
+
+    public async Task<SupplierDto> AddOldBalanceAsync(int id, SupplierOldBalanceRequest request, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("Suppliers", id, ct);
+        var supplier = await db.Suppliers.AsNoTracking().Where(s => s.Id == id).Select(s => new { s.Id, s.Code }).FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("المورد غير موجود");
+        var amount = Domain.Inventory.CostMath.RoundMoney(request.Amount);
+        var notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        var description = (request.OwedToSupplier ? "رصيد سابق مستحق للمورد قبل استخدام النظام" : "دفعة مقدمة للمورد قبل استخدام النظام (لحين وصول البضاعة)")
+            + (notes is null ? "" : $" — {notes}");
+        await ledger.PostAsync(id, SupplierEntryType.Opening, request.OwedToSupplier ? 0 : amount, request.OwedToSupplier ? amount : 0,
+            new LedgerSource("Supplier", id, supplier.Code, description), clock.UtcNow, ct);
+        audit.Log("Supplier.OldBalance", "Supplier", id.ToString(), null, new { amount, request.OwedToSupplier, notes });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return await GetAsync(id, ct);
     }
 

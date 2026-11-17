@@ -181,4 +181,26 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         (await admin.PostAsJsonAsync("/api/receipt-vouchers", new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.OtherIncome, null, "إيراد", null,
             5, cash, null, null, null, Date: new DateOnly(1990, 1, 1)))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task A_supplier_paid_ahead_before_the_system_owes_the_store_until_the_goods_arrive()
+    {
+        var admin = await factory.LoginAsync();
+        async Task<BalanceSheetDto> Sheet() => await (await admin.GetAsync("/api/reports/balance-sheet")).ReadAsync<BalanceSheetDto>();
+        var before = await Sheet();
+
+        var supplier = await (await admin.PostAsJsonAsync("/api/suppliers",
+            new SaveSupplierRequest(TestData.Unique("مورد مقدم"), null, null, null, true, 200, OpeningIsAdvance: true))).ReadAsync<SupplierDto>();
+        supplier.Balance.Should().Be(-200, "the store paid 200 ahead: theirs to deliver");
+        (await (await admin.PostAsJsonAsync($"/api/suppliers/{supplier.Id}/old-balance", new SupplierOldBalanceRequest(50, true, "فاتورة قديمة")))
+            .ReadAsync<SupplierDto>()).Balance.Should().Be(-150);
+        var product = await admin.CreateProductAsync(retail: 20);
+        await admin.PurchaseAsync(supplier.Id, [new PurchaseLineInput(product.Id, 10, 10)]);
+        (await (await admin.GetAsync($"/api/suppliers/{supplier.Id}")).ReadAsync<SupplierDto>()).Balance.Should().Be(-50, "the goods (100) came against what was paid");
+
+        var after = await Sheet();
+        static decimal Line(BalanceSheetDto b, string name) => b.Assets.Concat(b.Liabilities).Concat(b.Equity).SelectMany(s => s.Lines).Where(l => l.Name.StartsWith(name)).Sum(l => l.Amount);
+        (Line(after, "دفعات مقدمة للموردين") - Line(before, "دفعات مقدمة للموردين")).Should().Be(50);
+        after.Difference.Should().Be(before.Difference, "the sheet stays balanced");
+    }
 }

@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ArrowRight, Pencil, Phone, Plus, ReceiptText, ShoppingBag, Truck } from 'lucide-react';
+import { ArrowRight, History, Pencil, Phone, Plus, ReceiptText, ShoppingBag, Truck } from 'lucide-react';
 import { purchasesApi, suppliersApi, type Supplier } from '@/api/stock';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -15,10 +15,12 @@ import { InfoList, Stat, Tabs } from '@/components/ui/Layout';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { StatementView } from '@/components/finance/StatementView';
+import { useConfirm } from '@/components/ui/Confirm';
+import { cn } from '@/lib/cn';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
-import { zOptionalAmount } from '@/lib/numbers';
+import { parseNumber, zOptionalAmount } from '@/lib/numbers';
 import { PurchaseStatusBadge } from './PurchasesPage';
 
 type Filter = 'active' | 'balance' | 'all';
@@ -39,7 +41,7 @@ export function SuppliersPage() {
 
   return (
     <>
-      <PageHeader title="الموردون" />
+      <PageHeader title="الموردون" actions={<div className="hidden lg:flex">{can(P.SuppliersManage) && <Button onClick={() => setCreating(true)}><Plus className="size-5" /> مورد جديد</Button>}</div>} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="ابحث بالاسم أو الجوال أو الكود" />
         <FilterChips value={filter} onChange={(v) => { setFilter(v); setPage(1); }}
@@ -73,7 +75,7 @@ export function SuppliersPage() {
         </>
       )}
       {can(P.SuppliersManage) && (
-        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> مورد جديد
         </Button>
       )}
@@ -102,9 +104,12 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
     defaultValues: { name: supplier?.name ?? '', phone: supplier?.phone ?? '', address: supplier?.address ?? '', notes: supplier?.notes ?? '', isActive: supplier?.isActive ?? true, openingBalance: '' },
   });
 
+  // The opening balance: owed to the supplier, or paid to them ahead for goods not arrived yet.
+  const [advance, setAdvance] = useState(false);
   const save = useMutation({
     mutationFn: (v: FormValues) => {
-      const input = { name: v.name, phone: blankToNull(v.phone), address: blankToNull(v.address), notes: blankToNull(v.notes), isActive: v.isActive, openingBalance: v.openingBalance ?? 0 };
+      const input = { name: v.name, phone: blankToNull(v.phone), address: blankToNull(v.address), notes: blankToNull(v.notes), isActive: v.isActive,
+        openingBalance: v.openingBalance ?? 0, openingIsAdvance: advance };
       return supplier ? suppliersApi.update(supplier.id, input) : suppliersApi.create(input);
     },
     onSuccess: (saved) => {
@@ -133,9 +138,21 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
         </Field>
         <Field label="العنوان" error={errors.address?.message}>{(id) => <Input id={id} {...register('address')} />}</Field>
         {!supplier && (
-          <Field label="رصيد افتتاحي مستحق للمورد" error={errors.openingBalance?.message} hint="المبلغ الذي يدين به المعرض للمورد قبل بدء استخدام النظام">
-            {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.openingBalance} {...register('openingBalance')} />}
-          </Field>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">رصيد سابق (قبل استخدام النظام)</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([[false, 'علينا له (مستحق للمورد)'], [true, 'لنا عنده (دفعنا مقدمًا)']] as const).map(([v, label]) => (
+                <button key={label} type="button" onClick={() => setAdvance(v)}
+                  className={cn('min-h-11 rounded-control border px-2 text-sm font-semibold', advance === v ? (v ? 'border-success bg-success/10 text-success' : 'border-danger bg-danger/10 text-danger') : 'border-line bg-surface')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Field label="المبلغ" error={errors.openingBalance?.message}
+              hint={advance ? 'مبلغ دفعه المعرض للمورد ولم تصل بضاعته بعد — يبقى على المورد حتى تصل البضاعة' : 'المبلغ الذي يدين به المعرض للمورد قبل بدء استخدام النظام'}>
+              {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.openingBalance} {...register('openingBalance')} />}
+            </Field>
+          </div>
         )}
         <Field label="ملاحظات" error={errors.notes?.message}>{(id) => <TextArea id={id} rows={2} {...register('notes')} />}</Field>
         {supplier && (
@@ -154,6 +171,7 @@ export function SupplierDetailPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<DetailTab>('statement');
   const [editing, setEditing] = useState(false);
+  const [oldBalance, setOldBalance] = useState(false);
   const supplier = useQuery({ queryKey: ['supplier', id], queryFn: () => suppliersApi.get(id) });
 
   if (supplier.isPending) return <Spinner />;
@@ -192,6 +210,9 @@ export function SupplierDetailPage() {
           <Button block variant="secondary"><ShoppingBag className="size-4" /> فاتورة شراء جديدة من هذا المورد</Button>
         </Link>
       )}
+      {can(P.SuppliersManage) && (
+        <Button block variant="outline" onClick={() => setOldBalance(true)}><History className="size-4" /> رصيد سابق (علينا له / لنا عنده)</Button>
+      )}
 
       {(s.address || s.notes) && (
         <Card className="px-4"><InfoList items={[s.address && { label: 'العنوان', value: s.address }, s.notes && { label: 'ملاحظات', value: s.notes }]} /></Card>
@@ -206,6 +227,7 @@ export function SupplierDetailPage() {
       )}
 
       {editing && <SupplierSheet supplier={s} onClose={() => setEditing(false)} />}
+      {oldBalance && <SupplierOldBalanceSheet supplier={s} onClose={() => setOldBalance(false)} />}
     </div>
   );
 }
@@ -240,5 +262,73 @@ function SupplierPurchases({ supplierId }: { supplierId: number }) {
       </ul>
       <Pagination page={query.data.page} totalPages={query.data.totalPages} onChange={setPage} />
     </>
+  );
+}
+
+/**
+ * «رصيد سابق» for a supplier: what stood between the store and them before the system — owed to them («علينا له») or paid to
+ * them ahead for goods not arrived yet («لنا عنده»). No money moves in any account; it goes on their statement.
+ */
+function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const [owed, setOwed] = useState<boolean | null>(null);
+  const [amount, setAmount] = useState('');
+  const [notes, setNotes] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const n = parseNumber(amount);
+  const after = owed == null || !n || Number.isNaN(n) ? null : supplier.balance + (owed ? n : -n);
+  const describe = (b: number) => (b >= 0 ? `المستحق للمورد ${formatMoney(b)}` : `لنا عنده ${formatMoney(-b)}`);
+
+  const save = useMutation({
+    mutationFn: () => suppliersApi.oldBalance(supplier.id, { amount: n!, owedToSupplier: owed!, notes: notes.trim() || null }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(['supplier', saved.id], saved);
+      for (const k of ['suppliers', 'supplier-statement', 'balance-sheet']) void queryClient.invalidateQueries({ queryKey: [k] });
+      toast.success(owed ? `سُجّل ${formatMoney(n)} مستحقًا لـ ${supplier.name}` : `سُجّل ${formatMoney(n)} دفعة مقدمة عند ${supplier.name}`);
+      onClose();
+    },
+    onError: (e) => setErrors({ form: errorMessage(e) }),
+  });
+
+  const submit = async () => {
+    const e: Record<string, string> = {};
+    if (owed == null) e.owed = 'اختر: علينا له أو لنا عنده';
+    if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    if (await confirm({ title: 'تسجيل رصيد سابق للمورد', message: `يصبح ${describe(after!)}. لا تتحرك أموال في أي حساب.`, confirmLabel: 'تسجيل' })) save.mutate();
+  };
+
+  return (
+    <Sheet open onClose={onClose} dirty={amount !== '' || owed != null} title="رصيد سابق للمورد"
+      footer={<Button block size="lg" loading={save.isPending} onClick={() => void submit()}>تسجيل</Button>}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted">حساب قديم بين المعرض و{supplier.name} من قبل استخدام النظام. يظهر في كشفه باسم «رصيد سابق»، ولا يتحرك مال في أي حساب.</p>
+        <div>
+          <div className="grid grid-cols-2 gap-2">
+            {([[true, 'علينا له (مستحق للمورد)'], [false, 'لنا عنده (دفعنا مقدمًا)']] as const).map(([v, label]) => (
+              <button key={label} type="button" onClick={() => setOwed(v)}
+                className={cn('min-h-12 rounded-control border px-2 text-sm font-semibold', owed === v ? (v ? 'border-danger bg-danger/10 text-danger' : 'border-success bg-success/10 text-success') : 'border-line bg-surface')}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {errors.owed && <p className="mt-1 text-sm text-danger">{errors.owed}</p>}
+        </div>
+        <Field label="المبلغ" required error={errors.amount}>
+          {(id) => <Input id={id} inputMode="decimal" className="ltr" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}
+        </Field>
+        <Field label="ملاحظة" hint="مثلًا: دفعة على طلبية لم تصل">
+          {(id) => <Input id={id} value={notes} maxLength={300} onChange={(e) => setNotes(e.target.value)} />}
+        </Field>
+        <div className="rounded-control bg-canvas p-3 text-sm">
+          <p>الآن: <b className="tabular">{describe(supplier.balance)}</b></p>
+          {after != null && <p>بعد التسجيل: <b className="tabular">{describe(after)}</b></p>}
+        </div>
+        {errors.form && <p className="text-sm text-danger">{errors.form}</p>}
+      </div>
+    </Sheet>
   );
 }

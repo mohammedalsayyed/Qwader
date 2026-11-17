@@ -44,7 +44,7 @@ export function CustomersPage() {
 
   return (
     <>
-      <PageHeader title="العملاء" />
+      <PageHeader title="العملاء" actions={<div className="hidden lg:flex"><Button onClick={() => setCreating(true)}><Plus className="size-5" /> عميل جديد</Button></div>} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="ابحث بالاسم أو رقم الجوال" />
         <FilterChips value={filter} onChange={(v) => { setFilter(v); setPage(1); }} options={[{ value: 'all', label: 'الكل' }, { value: 'debt', label: 'عليهم ديون' }]} />
@@ -79,7 +79,7 @@ export function CustomersPage() {
           <Pagination page={query.data.page} totalPages={query.data.totalPages} totalCount={query.data.totalCount} pageSize={PAGE_SIZE} onChange={setPage} />
         </>
       )}
-      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
         <Plus className="size-5" /> عميل جديد
       </Button>
       {creating && <CustomerSheet customer={null} onClose={() => setCreating(false)} />}

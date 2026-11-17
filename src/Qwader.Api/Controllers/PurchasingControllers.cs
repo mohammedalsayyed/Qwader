@@ -28,6 +28,10 @@ public sealed class SuppliersController(ISupplierService suppliers) : Controller
     [HttpPut("{id:int}")]
     [HasPermission(Permissions.SuppliersManage)]
     public Task<SupplierDto> Update(int id, SaveSupplierRequest request, CancellationToken ct) => suppliers.UpdateAsync(id, request, ct);
+
+    [HttpPost("{id:int}/old-balance")]
+    [HasPermission(Permissions.SuppliersManage)]
+    public Task<SupplierDto> OldBalance(int id, SupplierOldBalanceRequest request, CancellationToken ct) => suppliers.AddOldBalanceAsync(id, request, ct);
 }
 
 [ApiController]

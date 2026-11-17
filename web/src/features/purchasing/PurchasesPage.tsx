@@ -39,7 +39,7 @@ export function PurchasesPage() {
 
   return (
     <>
-      <PageHeader title="المشتريات" subtitle="فواتير شراء البضائع من الموردين" />
+      <PageHeader title="المشتريات" subtitle="فواتير شراء البضائع من الموردين" actions={<div className="hidden lg:flex">{can(P.PurchasesManage) && <Button onClick={() => navigate('/purchases/new')}><Plus className="size-5" /> فاتورة شراء</Button>}</div>} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="رقم الفاتورة أو رقم فاتورة المورد أو اسمه" />
         <FilterChips value={status} onChange={(v) => { setStatus(v); setPage(1); }}
@@ -79,7 +79,7 @@ export function PurchasesPage() {
         </>
       )}
       {can(P.PurchasesManage) && (
-        <Button size="lg" onClick={() => navigate('/purchases/new')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => navigate('/purchases/new')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> فاتورة شراء
         </Button>
       )}

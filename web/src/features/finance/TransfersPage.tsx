@@ -46,7 +46,7 @@ export function TransfersPage() {
 
   return (
     <>
-      <PageHeader title="الحوالات" subtitle="الحوالات البنكية والمحافظ الواردة — لا تُحسب أموالًا قبل التأكيد" />
+      <PageHeader title="الحوالات" subtitle="الحوالات البنكية والمحافظ الواردة — لا تُحسب أموالًا قبل التأكيد" actions={<div className="hidden lg:flex">{can(P.TransfersCreate) && <Button onClick={() => setCreating(true)}><Plus className="size-5" /> تسجيل حوالة</Button>}</div>} />
       <Tabs value={tab} onChange={(t) => { setTab(t); setPage(1); }}
         tabs={[{ value: 'Pending', label: 'بانتظار التحقق', badge: pendingCount.data?.totalCount }, { value: 'Confirmed', label: 'المؤكدة' }, { value: 'Rejected', label: 'المرفوضة' }]} />
       <div className="mb-3"><SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="اسم صاحب الحوالة أو رقم المرجع أو الجوال" /></div>
@@ -76,7 +76,7 @@ export function TransfersPage() {
         )}
 
       {can(P.TransfersCreate) && (
-        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> تسجيل حوالة
         </Button>
       )}

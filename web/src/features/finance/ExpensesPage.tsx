@@ -38,7 +38,7 @@ export function ExpensesPage() {
 
   return (
     <>
-      <PageHeader title="المصروفات" actions={<Button variant="outline" onClick={() => setManaging(true)}><Settings2 className="size-4" /> الأنواع</Button>} />
+      <PageHeader title="المصروفات" actions={<div className="flex gap-2"><Button variant="outline" onClick={() => setManaging(true)}><Settings2 className="size-4" /> الأنواع</Button><span className="hidden lg:block"><Button onClick={() => setCreating(true)}><Plus className="size-5" /> مصروف جديد</Button></span></div>} />
       <div className="mb-3 space-y-3">
         <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} />
         <FilterChips value={category} onChange={(v) => { setCategory(v); setPage(1); }}
@@ -69,7 +69,7 @@ export function ExpensesPage() {
             <Pagination page={query.data.page} totalPages={query.data.totalPages} totalCount={query.data.totalCount} pageSize={25} onChange={setPage} />
           </>
         )}
-      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+      <Button size="lg" onClick={() => setCreating(true)} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
         <Plus className="size-5" /> مصروف جديد
       </Button>
       {creating && <NewExpenseSheet onClose={() => setCreating(false)} />}

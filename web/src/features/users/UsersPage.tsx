@@ -79,6 +79,10 @@ function UsersTab() {
             { value: 'all', label: 'الكل' },
           ]}
         />
+        {/* On a computer the add button is at the top; on a phone it floats above the tab bar. */}
+        <div className="hidden lg:block">
+          <Button onClick={() => setEditing('new')}><Plus className="size-5" /> مستخدم جديد</Button>
+        </div>
       </div>
 
       {query.isPending ? (
@@ -125,7 +129,7 @@ function UsersTab() {
       <Button
         size="lg"
         onClick={() => setEditing('new')}
-        className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4"
+        className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden"
       >
         <Plus className="size-5" /> مستخدم جديد
       </Button>

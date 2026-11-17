@@ -160,6 +160,8 @@ export interface SaveSupplierInput {
   notes?: string | null;
   isActive: boolean;
   openingBalance?: number;
+  /** The opening balance was paid to the supplier ahead (goods not arrived yet): theirs to deliver. */
+  openingIsAdvance?: boolean;
 }
 
 export interface StatementLine {
@@ -267,6 +269,9 @@ export const suppliersApi = {
   statement: (id: number, from?: string, to?: string) => api<Statement>(`/suppliers/${id}/statement`, { query: { from, to } }),
   create: (input: SaveSupplierInput) => api<Supplier>('/suppliers', { method: 'POST', body: input }),
   update: (id: number, input: SaveSupplierInput) => api<Supplier>(`/suppliers/${id}`, { method: 'PUT', body: input }),
+  /** An old balance from before the system: owed to the supplier, or paid to them ahead. */
+  oldBalance: (id: number, input: { amount: number; owedToSupplier: boolean; notes: string | null }) =>
+    api<Supplier>(`/suppliers/${id}/old-balance`, { method: 'POST', body: input }),
 };
 
 export const purchasesApi = {

@@ -37,7 +37,7 @@ export function CategoriesPage() {
 
   return (
     <>
-      <PageHeader title="الأصناف" subtitle="المجموعات الرئيسية التي تندرج تحتها المنتجات" />
+      <PageHeader title="الأصناف" subtitle="المجموعات الرئيسية التي تندرج تحتها المنتجات" actions={<div className="hidden lg:flex">{can(P.ProductsManage) && <Button onClick={() => setEditing('new')}><Plus className="size-5" /> صنف جديد</Button>}</div>} />
       <GroupsBar selected={groupId} onSelect={(id) => { setGroupId(id); setPage(1); }} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="ابحث باسم الصنف أو الكود" />
@@ -80,7 +80,7 @@ export function CategoriesPage() {
       )}
 
       {can(P.ProductsManage) && (
-        <Button size="lg" onClick={() => setEditing('new')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:static lg:mt-4">
+        <Button size="lg" onClick={() => setEditing('new')} className="fixed bottom-fab end-4 z-30 rounded-full shadow-lg lg:hidden">
           <Plus className="size-5" /> صنف جديد
         </Button>
       )}
