@@ -24,6 +24,12 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { cn } from '@/lib/cn';
 
+interface PayRow {
+  key: string;
+  accountId: string;
+  amount: string;
+}
+
 interface Line {
   key: string;
   productId: number;
@@ -77,8 +83,11 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   const posted = existing?.status === 'Posted';
   const [notes, setNotes] = useState((existing?.notes ?? '').replace(/^بدل الفاتورة \S+ \(تعديل\)( — )?/, ''));
   const [discount, setDiscount] = useState(existing?.discount ? String(existing.discount) : '');
-  const [paid, setPaid] = useState(existing?.paidAmount ? String(existing.paidAmount) : '');
-  const [accountId, setAccountId] = useState(existing?.paymentAccountId ? String(existing.paymentAccountId) : '');
+  // Paid now, account by account: part cash, part bank… (one row is the usual case).
+  const [pays, setPays] = useState<PayRow[]>(() =>
+    existing?.payments.length
+      ? existing.payments.map((p) => ({ key: crypto.randomUUID(), accountId: String(p.accountId), amount: String(p.amount) }))
+      : [{ key: crypto.randomUUID(), accountId: '', amount: '' }]);
   const [lines, setLines] = useState<Line[]>(() =>
     existing?.lines.map((l) => ({
       key: crypto.randomUUID(), productId: l.productId, name: l.productName, unitName: l.unitName,
@@ -103,9 +112,14 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     const subtotal = round2(rows.reduce((a, b) => a + b, 0));
     const disc = parseNumber(discount) ?? 0;
     const total = round2(subtotal - (Number.isNaN(disc) ? 0 : disc));
-    const paidN = parseNumber(paid) ?? 0;
-    return { rows, subtotal, total, remaining: round2(total - (Number.isNaN(paidN) ? 0 : paidN)) };
-  }, [lines, discount, paid]);
+    const paidN = round2(pays.reduce((sum, p) => { const n = parseNumber(p.amount) ?? 0; return sum + (Number.isNaN(n) ? 0 : n); }, 0));
+    return { rows, subtotal, total, paid: paidN, remaining: round2(total - paidN) };
+  }, [lines, discount, pays]);
+  const updatePay = (k: string, patch: Partial<PayRow>) => {
+    setTouched(true);
+    setErrors((x) => ({ ...x, [`pa${k}`]: '', [`pc${k}`]: '', paid: '' }));
+    setPays((ps) => ps.map((p) => (p.key === k ? { ...p, ...patch } : p)));
+  };
 
   const update = (k: string, patch: Partial<Line>) => {
     setTouched(true);
@@ -154,10 +168,12 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     });
     const disc = parseNumber(discount) ?? 0;
     if (Number.isNaN(disc) || disc < 0 || disc > computed.subtotal) e.discount = 'الخصم غير صالح أو أكبر من الإجمالي';
-    const paidN = parseNumber(paid) ?? 0;
-    if (Number.isNaN(paidN) || paidN < 0) e.paid = 'المبلغ غير صالح';
-    else if (paidN > computed.total) e.paid = 'المدفوع أكبر من إجمالي الفاتورة';
-    else if (paidN > 0 && !accountId) e.account = 'اختر الحساب الذي دُفع منه';
+    for (const p of pays) {
+      const n = parseNumber(p.amount) ?? 0;
+      if (Number.isNaN(n) || n < 0) e[`pa${p.key}`] = 'المبلغ غير صالح';
+      else if (n > 0 && !p.accountId) e[`pc${p.key}`] = 'اختر الحساب الذي دُفع منه';
+    }
+    if (computed.paid > computed.total) e.paid = 'المدفوع أكبر من إجمالي الفاتورة';
     setErrors(e);
     return Object.keys(e).length ? 'يرجى تصحيح الحقول المشار إليها' : null;
   };
@@ -170,8 +186,9 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
         date,
         supplierInvoiceNo: supplierInvoiceNo.trim() || null,
         discount: parseNumber(discount) ?? 0,
-        paidAmount: parseNumber(paid) ?? 0,
-        paymentAccountId: (parseNumber(paid) ?? 0) > 0 ? Number(accountId) : null,
+        paidAmount: computed.paid,
+        paymentAccountId: null,
+        payments: pays.filter((p) => (parseNumber(p.amount) ?? 0) > 0).map((p) => ({ accountId: Number(p.accountId), amount: parseNumber(p.amount)! })),
         notes: notes.trim() || null,
         lines: lines.map((l) => ({ productId: l.productId, quantity: parseNumber(l.quantity)!, unitCost: parseNumber(l.unitCost)!, lineDiscount: parseNumber(l.lineDiscount) ?? 0, productUnitId: l.productUnitId })),
         post,
@@ -192,7 +209,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       navigate(`/purchases/${saved.id}`, { replace: true });
     },
     onError: (e) => {
-      if (e instanceof ApiError && e.fieldErrors) setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k === 'paymentAccountId' ? 'account' : k === 'paidAmount' ? 'paid' : k === 'supplierId' ? 'supplier' : k, v[0]])));
+      if (e instanceof ApiError && e.fieldErrors) setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k === 'paymentAccountId' || k === 'paidAmount' || k.startsWith('payments') ? 'paid' : k === 'supplierId' ? 'supplier' : k, v[0]])));
       toast.error(errorMessage(e));
     },
   });
@@ -295,25 +312,41 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
           <Field label="خصم على الفاتورة" error={errors.discount}>
             {(id) => <Input id={id} inputMode="decimal" className="ltr" invalid={!!errors.discount} value={discount} onChange={(e) => { setDiscount(e.target.value); setTouched(true); }} />}
           </Field>
-          <Field label="المبلغ المدفوع الآن" error={errors.paid}>
-            {(id) => (
-              <div className="flex gap-1">
-                <Input id={id} inputMode="decimal" className="ltr" invalid={!!errors.paid} value={paid} onChange={(e) => { setPaid(e.target.value); setTouched(true); }} />
-                <Button variant="outline" size="sm" className="shrink-0 px-2" onClick={() => setPaid(String(computed.total))}>الكل</Button>
-              </div>
-            )}
-          </Field>
         </div>
-        {(parseNumber(paid) ?? 0) > 0 && (
-          <Field label="دُفع من حساب" required error={errors.account}>
-            {(id) => (
-              <Select id={id} invalid={!!errors.account} value={accountId} onChange={(e) => { setAccountId(e.target.value); setErrors((x) => ({ ...x, account: '' })); }}>
-                <option value="">اختر الحساب…</option>
-                {lookups.data?.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </Select>
-            )}
-          </Field>
-        )}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">المدفوع الآن {pays.length > 1 && <span className="text-muted">(من أكثر من حساب)</span>}</p>
+          {pays.map((p, i) => {
+            // «الكل» / «الباقي»: what is left of the invoice after the other rows.
+            const others = round2(computed.paid - (Number.isNaN(parseNumber(p.amount) ?? 0) ? 0 : parseNumber(p.amount) ?? 0));
+            const rest = Math.max(0, round2(computed.total - others));
+            return (
+              <div key={p.key} className="space-y-1">
+                <div className={cn('grid gap-1', pays.length > 1 ? 'grid-cols-[minmax(0,1fr)_7rem_auto_auto]' : 'grid-cols-[minmax(0,1fr)_7rem_auto]')}>
+                  <Select aria-label="دُفع من حساب" invalid={!!errors[`pc${p.key}`]} value={p.accountId}
+                    onChange={(e) => updatePay(p.key, { accountId: e.target.value })}>
+                    <option value="">اختر الحساب…</option>
+                    {lookups.data?.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </Select>
+                  <Input aria-label="المبلغ" inputMode="decimal" className="ltr" placeholder="0" invalid={!!errors[`pa${p.key}`]} value={p.amount}
+                    onChange={(e) => updatePay(p.key, { amount: e.target.value })} />
+                  <Button variant="outline" size="sm" className="shrink-0 px-2" onClick={() => updatePay(p.key, { amount: String(rest) })}>
+                    {i === 0 && pays.length === 1 ? 'الكل' : 'الباقي'}
+                  </Button>
+                  {pays.length > 1 && (
+                    <IconButton label="حذف" onClick={() => { setTouched(true); setPays((ps) => ps.filter((x) => x.key !== p.key)); }}>
+                      <Trash2 className="size-4" />
+                    </IconButton>
+                  )}
+                </div>
+                {(errors[`pc${p.key}`] || errors[`pa${p.key}`]) && <p className="text-sm text-danger">{errors[`pc${p.key}`] || errors[`pa${p.key}`]}</p>}
+              </div>
+            );
+          })}
+          <Button variant="ghost" size="sm" onClick={() => { setTouched(true); setPays((ps) => [...ps, { key: crypto.randomUUID(), accountId: '', amount: '' }]); }}>
+            <Plus className="size-4" /> الدفع من حساب آخر
+          </Button>
+          {errors.paid && <p className="text-sm text-danger">{errors.paid}</p>}
+        </div>
         <Collapsible title="ملاحظات">
           <TextArea aria-label="ملاحظات" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Collapsible>

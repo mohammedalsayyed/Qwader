@@ -247,6 +247,8 @@ export interface Purchase {
   voidReason: string | null;
   lines: PurchaseLine[];
   returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null }[];
+  /** Paid at purchase, account by account (an old invoice's single account is one row). */
+  payments: { accountId: number; accountName: string; amount: number }[];
 }
 
 export interface SavePurchaseInput {
@@ -257,6 +259,8 @@ export interface SavePurchaseInput {
   discount: number;
   paidAmount: number;
   paymentAccountId?: number | null;
+  /** Paid from several accounts (cash and bank together); replaces paidAmount/paymentAccountId when sent. */
+  payments?: { accountId: number; amount: number }[];
   notes?: string | null;
   lines: { productId: number; quantity: number; unitCost: number; lineDiscount: number; productUnitId?: number | null }[];
   post: boolean;

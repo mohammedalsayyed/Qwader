@@ -7,6 +7,11 @@ namespace Qwader.Application.Purchasing;
 /// <summary>ProductUnitId = bought in an extra unit (dozen); null = the base unit. Quantity and cost are per that unit.</summary>
 public sealed record PurchaseLineInput(int ProductId, decimal Quantity, decimal UnitCost, decimal LineDiscount = 0, int? ProductUnitId = null);
 
+/// <summary>Part of the payment at purchase from one account.</summary>
+public sealed record PurchasePaymentInput(int AccountId, decimal Amount);
+
+/// <param name="Payments">Paid from several accounts (cash and bank together). When given, it replaces PaidAmount/PaymentAccountId
+/// (PaidAmount becomes its sum); when null, the single PaidAmount from PaymentAccountId as before.</param>
 public sealed record SavePurchaseRequest(
     Guid IdempotencyKey,
     int SupplierId,
@@ -19,7 +24,8 @@ public sealed record SavePurchaseRequest(
     string? Notes,
     IReadOnlyList<PurchaseLineInput> Lines,
     /// <summary>True posts immediately (stock, supplier balance, payment); false keeps a draft.</summary>
-    bool Post);
+    bool Post,
+    IReadOnlyList<PurchasePaymentInput>? Payments = null);
 
 public sealed record PostPurchaseRequest(Guid IdempotencyKey);
 
@@ -48,6 +54,8 @@ public sealed record PurchaseLineDto(
     decimal Quantity, decimal UnitCost, decimal LineDiscount, decimal LineTotal, decimal NetUnitCost, decimal ReturnedQuantity,
     int? ProductUnitId = null, decimal UnitFactor = 1);
 
+public sealed record PurchasePaymentDto(int AccountId, string AccountName, decimal Amount);
+
 public sealed record PurchaseReturnSummaryDto(int Id, string Number, DateTime Date, decimal Total, ReturnSettlement Settlement, string? Reason);
 
 public sealed record PurchaseDetailDto(
@@ -56,7 +64,9 @@ public sealed record PurchaseDetailDto(
     decimal Subtotal, decimal Discount, decimal Total, decimal PaidAmount, decimal Remaining,
     int? PaymentAccountId, string? PaymentAccountName, string? Notes,
     string? CreatedByName, DateTime CreatedAt, DateTime? PostedAt, DateTime? VoidedAt, string? VoidReason,
-    IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<PurchaseReturnSummaryDto> Returns);
+    IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<PurchaseReturnSummaryDto> Returns,
+    /// <summary>Paid at purchase, account by account (an old invoice's single account shows as one row).</summary>
+    IReadOnlyList<PurchasePaymentDto> Payments);
 
 public sealed class PurchaseListRequest : PagedRequest
 {
@@ -92,7 +102,13 @@ public sealed class SavePurchaseRequestValidator : AbstractValidator<SavePurchas
             .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
         RuleFor(x => x.PaidAmount).GreaterThanOrEqualTo(0).WithMessage("المبلغ المدفوع لا يمكن أن يكون سالبًا")
             .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
-        RuleFor(x => x.PaymentAccountId).NotNull().When(x => x.PaidAmount > 0).WithMessage("اختر الحساب الذي دُفع منه المبلغ");
+        RuleFor(x => x.PaymentAccountId).NotNull().When(x => x.PaidAmount > 0 && x.Payments is null).WithMessage("اختر الحساب الذي دُفع منه المبلغ");
+        RuleForEach(x => x.Payments).ChildRules(p =>
+        {
+            p.RuleFor(x => x.AccountId).GreaterThan(0).WithMessage("اختر الحساب الذي دُفع منه المبلغ");
+            p.RuleFor(x => x.Amount).GreaterThan(0).WithMessage("أدخل مبلغًا أكبر من صفر")
+                .Must(Common.Decimals.Money).WithMessage(Common.Decimals.MoneyMessage);
+        });
         RuleFor(x => x.Lines).NotEmpty().WithMessage("أضف منتجًا واحدًا على الأقل");
         RuleForEach(x => x.Lines).ChildRules(line =>
         {

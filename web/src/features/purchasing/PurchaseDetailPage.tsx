@@ -124,7 +124,7 @@ export function PurchaseDetailPage() {
             p.discount > 0 && { label: 'المجموع قبل الخصم', value: formatMoney(p.subtotal) },
             p.discount > 0 && { label: 'خصم الفاتورة', value: formatMoney(p.discount) },
             { label: 'الإجمالي', value: <b className="tabular text-lg">{formatMoney(p.total)}</b> },
-            { label: 'المدفوع', value: <span className="tabular">{formatMoney(p.paidAmount)}{p.paymentAccountName && ` (${p.paymentAccountName})`}</span> },
+            { label: 'المدفوع', value: <span className="tabular">{formatMoney(p.paidAmount)}{p.payments.length > 0 && ` (${p.payments.map((x) => p.payments.length > 1 ? `${x.accountName} ${formatMoney(x.amount)}` : x.accountName).join(' + ')})`}</span> },
             { label: 'المتبقي عند الشراء', value: <span className={cn('tabular', p.remaining > 0 && 'text-danger')}>{formatMoney(p.remaining)}</span> },
           ]} />
         </div>

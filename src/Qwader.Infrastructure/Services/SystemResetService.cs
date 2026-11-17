@@ -100,6 +100,7 @@ public sealed class SystemResetService(
 
             deleted += await db.PurchaseReturnLines.ExecuteDeleteAsync(ct);
             deleted += await db.PurchaseReturns.ExecuteDeleteAsync(ct);
+            deleted += await db.PurchaseInvoicePayments.ExecuteDeleteAsync(ct);
             deleted += await db.PurchaseInvoiceLines.ExecuteDeleteAsync(ct);
             deleted += await db.PurchaseInvoices.ExecuteDeleteAsync(ct);
             deleted += await db.SupplierLedgerEntries.ExecuteDeleteAsync(ct);

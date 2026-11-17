@@ -37,6 +37,7 @@ public interface IAppDbContext
     DbSet<SupplierLedgerEntry> SupplierLedgerEntries { get; }
     DbSet<PurchaseInvoice> PurchaseInvoices { get; }
     DbSet<PurchaseInvoiceLine> PurchaseInvoiceLines { get; }
+    DbSet<PurchaseInvoicePayment> PurchaseInvoicePayments { get; }
     DbSet<PurchaseReturn> PurchaseReturns { get; }
     DbSet<PurchaseReturnLine> PurchaseReturnLines { get; }
 

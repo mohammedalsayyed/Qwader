@@ -70,10 +70,14 @@ public sealed class PurchaseService(
         var returns = await db.PurchaseReturns.AsNoTracking().Where(r => r.PurchaseInvoiceId == id).OrderBy(r => r.Id)
             .Select(r => new PurchaseReturnSummaryDto(r.Id, r.Number, r.Date, r.Total, r.Settlement, r.Reason)).ToListAsync(ct);
 
+        var payments = await db.PurchaseInvoicePayments.AsNoTracking().Where(x => x.PurchaseInvoiceId == id).OrderBy(x => x.Id)
+            .Select(x => new PurchasePaymentDto(x.FinancialAccountId, x.FinancialAccount.Name, x.Amount)).ToListAsync(ct);
         var i = p.Invoice;
+        if (payments.Count == 0 && i.PaidAmount > 0 && i.PaymentAccountId is { } legacy)
+            payments.Add(new PurchasePaymentDto(legacy, p.AccountName ?? "", i.PaidAmount));
         return new PurchaseDetailDto(i.Id, i.Number, i.Date, i.Status, i.SupplierId, p.SupplierName, i.SupplierInvoiceNo, i.WarehouseId, p.WarehouseName,
             i.Subtotal, i.Discount, i.Total, i.PaidAmount, i.Total - i.PaidAmount, i.PaymentAccountId, p.AccountName, i.Notes,
-            p.CreatedBy, i.CreatedAt, i.PostedAt, i.VoidedAt, i.VoidReason, p.Lines, returns);
+            p.CreatedBy, i.CreatedAt, i.PostedAt, i.VoidedAt, i.VoidReason, p.Lines, returns, payments);
     }
 
     public async Task<PurchaseDetailDto> CreateAsync(SavePurchaseRequest request, CancellationToken ct = default)
@@ -104,12 +108,14 @@ public sealed class PurchaseService(
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await db.LockRowAsync("PurchaseInvoices", id, ct);
-        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
+        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).Include(p => p.Payments).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Draft) throw new BusinessRuleException("لا يمكن تعديل فاتورة معتمدة أو ملغاة");
 
         db.PurchaseInvoiceLines.RemoveRange(invoice.Lines);
         invoice.Lines.Clear();
+        db.PurchaseInvoicePayments.RemoveRange(invoice.Payments);
+        invoice.Payments.Clear();
         await ApplyAsync(invoice, request, ct);
         await db.SaveChangesAsync(ct);
 
@@ -131,7 +137,7 @@ public sealed class PurchaseService(
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await db.LockRowAsync("PurchaseInvoices", id, ct);
-        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
+        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).Include(p => p.Payments).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status != PurchaseStatus.Draft) throw new BusinessRuleException("هذه الفاتورة معتمدة أو ملغاة من قبل");
 
@@ -151,7 +157,7 @@ public sealed class PurchaseService(
     {
         await using var tx = await TxScope.BeginAsync(db, ct);
         await db.LockRowAsync("PurchaseInvoices", id, ct);
-        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).FirstOrDefaultAsync(p => p.Id == id, ct)
+        var invoice = await db.PurchaseInvoices.Include(p => p.Lines).Include(p => p.Payments).FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new NotFoundException("فاتورة الشراء غير موجودة");
         if (invoice.Status == PurchaseStatus.Voided) throw new BusinessRuleException("الفاتورة ملغاة من قبل");
         if (invoice.Lines.Any(l => l.ReturnedQuantity > 0))
@@ -170,7 +176,9 @@ public sealed class PurchaseService(
             if (invoice.PaidAmount > 0)
             {
                 await suppliers.PostAsync(invoice.SupplierId, SupplierEntryType.Reversal, 0, invoice.PaidAmount, source, now, ct);
-                await accounts.PostAsync(invoice.PaymentAccountId!.Value, MoneyDirection.In, invoice.PaidAmount, AccountTransactionCategory.Reversal, source, now, ct);
+                // Each part goes back to the account it was paid from.
+                foreach (var (accountId, amount) in PaymentsOf(invoice))
+                    await accounts.PostAsync(accountId, MoneyDirection.In, amount, AccountTransactionCategory.Reversal, source, now, ct);
             }
         }
 
@@ -358,11 +366,19 @@ public sealed class PurchaseService(
         if (r.Discount > invoice.Subtotal) throw new ValidationFailedException("discount", "الخصم أكبر من إجمالي الفاتورة");
         invoice.Discount = r.Discount;
         invoice.Total = invoice.Subtotal - r.Discount;
-        if (r.PaidAmount > invoice.Total) throw new ValidationFailedException("paidAmount", "المبلغ المدفوع أكبر من إجمالي الفاتورة");
-        invoice.PaidAmount = r.PaidAmount;
-        invoice.PaymentAccountId = r.PaidAmount > 0 ? r.PaymentAccountId : null;
-        if (invoice.PaymentAccountId is { } accountId && !await db.FinancialAccounts.AnyAsync(a => a.Id == accountId && a.IsActive, ct))
-            throw new ValidationFailedException("paymentAccountId", "الحساب المالي غير موجود أو معطّل");
+        // The payment: one part per account (the same account twice is one part). The old single-account fields fill the list
+        // when no list is sent.
+        var parts = (r.Payments ?? (r.PaidAmount > 0 && r.PaymentAccountId is { } single ? [new PurchasePaymentInput(single, r.PaidAmount)] : []))
+            .GroupBy(x => x.AccountId).Select(g => new PurchasePaymentInput(g.Key, g.Sum(x => x.Amount))).Where(x => x.Amount > 0).ToList();
+        var paid = parts.Sum(x => x.Amount);
+        if (paid > invoice.Total) throw new ValidationFailedException("paidAmount", "المبلغ المدفوع أكبر من إجمالي الفاتورة");
+        var accountIds = parts.Select(x => x.AccountId).ToList();
+        if (await db.FinancialAccounts.CountAsync(a => accountIds.Contains(a.Id) && a.IsActive, ct) != accountIds.Count)
+            throw new ValidationFailedException(r.Payments is null ? "paymentAccountId" : "payments", "الحساب المالي غير موجود أو معطّل");
+        invoice.PaidAmount = paid;
+        // The old field keeps the account when there is exactly one (as before); a split payment lives in Payments only.
+        invoice.PaymentAccountId = parts.Count == 1 ? parts[0].AccountId : null;
+        foreach (var part in parts) invoice.Payments.Add(new PurchaseInvoicePayment { FinancialAccountId = part.AccountId, Amount = part.Amount });
 
         var shares = CostMath.AllocateDiscount(lines.Select(l => l.LineTotal).ToList(), invoice.Discount);
         for (var i = 0; i < lines.Count; i++)
@@ -371,6 +387,15 @@ public sealed class PurchaseService(
             invoice.Lines.Add(lines[i]);
         }
     }
+
+    /// <summary>
+    /// What was paid and from where: the invoice's payment rows, or — for an invoice from before them (no rows) — its single
+    /// account. <see cref="PurchaseInvoice.Payments"/> must be loaded.
+    /// </summary>
+    private static IEnumerable<(int AccountId, decimal Amount)> PaymentsOf(PurchaseInvoice invoice) =>
+        invoice.Payments.Count > 0
+            ? invoice.Payments.OrderBy(p => p.FinancialAccountId).Select(p => (p.FinancialAccountId, p.Amount))
+            : invoice.PaidAmount > 0 && invoice.PaymentAccountId is { } accountId ? [(accountId, invoice.PaidAmount)] : [];
 
     private async Task PostInternalAsync(PurchaseInvoice invoice, CancellationToken ct)
     {
@@ -393,8 +418,9 @@ public sealed class PurchaseService(
         if (invoice.PaidAmount > 0)
         {
             await suppliers.PostAsync(invoice.SupplierId, SupplierEntryType.Payment, invoice.PaidAmount, 0, source with { Description = "دفعة عند الشراء" }, invoice.Date, ct);
-            await accounts.PostAsync(invoice.PaymentAccountId!.Value, MoneyDirection.Out, invoice.PaidAmount, AccountTransactionCategory.SupplierPayment,
-                source with { Description = "دفعة لفاتورة شراء" }, invoice.Date, ct, requireFunds: true);
+            foreach (var (accountId, amount) in PaymentsOf(invoice))
+                await accounts.PostAsync(accountId, MoneyDirection.Out, amount, AccountTransactionCategory.SupplierPayment,
+                    source with { Description = "دفعة لفاتورة شراء" }, invoice.Date, ct, requireFunds: true);
         }
 
         invoice.Status = PurchaseStatus.Posted;

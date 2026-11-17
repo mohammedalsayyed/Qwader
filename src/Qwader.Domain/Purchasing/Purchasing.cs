@@ -55,6 +55,22 @@ public class PurchaseInvoice : AuditableEntity
     public Warehouse Warehouse { get; set; } = null!;
     public FinancialAccount? PaymentAccount { get; set; }
     public ICollection<PurchaseInvoiceLine> Lines { get; set; } = new List<PurchaseInvoiceLine>();
+    /// <summary>
+    /// What was paid at purchase, account by account (cash and bank together). Invoices from before this list carry their single
+    /// account in <see cref="PaymentAccountId"/> and have no rows here.
+    /// </summary>
+    public ICollection<PurchaseInvoicePayment> Payments { get; set; } = new List<PurchaseInvoicePayment>();
+}
+
+/// <summary>Part of a purchase invoice's payment from one account. Σ Amount = the invoice's PaidAmount.</summary>
+public class PurchaseInvoicePayment : Entity
+{
+    public int PurchaseInvoiceId { get; set; }
+    public int FinancialAccountId { get; set; }
+    public decimal Amount { get; set; }
+
+    public PurchaseInvoice PurchaseInvoice { get; set; } = null!;
+    public FinancialAccount FinancialAccount { get; set; } = null!;
 }
 
 public class PurchaseInvoiceLine : Entity

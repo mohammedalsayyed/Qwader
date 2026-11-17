@@ -2110,6 +2110,36 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseInvoicePayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("FinancialAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PurchaseInvoiceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FinancialAccountId");
+
+                    b.HasIndex("PurchaseInvoiceId");
+
+                    b.ToTable("PurchaseInvoicePayments", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseInvoicePayments_Positive", "[Amount] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseReturn", b =>
                 {
                     b.Property<int>("Id")
@@ -3326,6 +3356,25 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Navigation("PurchaseInvoice");
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseInvoicePayment", b =>
+                {
+                    b.HasOne("Qwader.Domain.Finance.FinancialAccount", "FinancialAccount")
+                        .WithMany()
+                        .HasForeignKey("FinancialAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Purchasing.PurchaseInvoice", "PurchaseInvoice")
+                        .WithMany("Payments")
+                        .HasForeignKey("PurchaseInvoiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("FinancialAccount");
+
+                    b.Navigation("PurchaseInvoice");
+                });
+
             modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseReturn", b =>
                 {
                     b.HasOne("Qwader.Domain.Purchasing.PurchaseInvoice", "PurchaseInvoice")
@@ -3539,6 +3588,8 @@ namespace Qwader.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseInvoice", b =>
                 {
                     b.Navigation("Lines");
+
+                    b.Navigation("Payments");
                 });
 
             modelBuilder.Entity("Qwader.Domain.Purchasing.PurchaseReturn", b =>

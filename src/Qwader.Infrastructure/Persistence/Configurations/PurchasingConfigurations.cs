@@ -50,7 +50,17 @@ public sealed class PurchaseInvoiceConfiguration : IEntityTypeConfiguration<Purc
         b.HasOne(p => p.Warehouse).WithMany().HasForeignKey(p => p.WarehouseId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(p => p.PaymentAccount).WithMany().HasForeignKey(p => p.PaymentAccountId).OnDelete(DeleteBehavior.Restrict);
         b.HasMany(p => p.Lines).WithOne(l => l.PurchaseInvoice).HasForeignKey(l => l.PurchaseInvoiceId).OnDelete(DeleteBehavior.Cascade);
+        b.HasMany(p => p.Payments).WithOne(x => x.PurchaseInvoice).HasForeignKey(x => x.PurchaseInvoiceId).OnDelete(DeleteBehavior.Cascade);
         b.ToTable(t => t.HasCheckConstraint("CK_PurchaseInvoices_Amounts", "[Discount] >= 0 AND [Total] >= 0 AND [PaidAmount] >= 0 AND [PaidAmount] <= [Total]"));
+    }
+}
+
+public sealed class PurchaseInvoicePaymentConfiguration : IEntityTypeConfiguration<PurchaseInvoicePayment>
+{
+    public void Configure(EntityTypeBuilder<PurchaseInvoicePayment> b)
+    {
+        b.HasOne(p => p.FinancialAccount).WithMany().HasForeignKey(p => p.FinancialAccountId).OnDelete(DeleteBehavior.Restrict);
+        b.ToTable(t => t.HasCheckConstraint("CK_PurchaseInvoicePayments_Positive", "[Amount] > 0"));
     }
 }
 
