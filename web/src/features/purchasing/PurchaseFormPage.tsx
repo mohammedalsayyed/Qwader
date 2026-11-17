@@ -115,6 +115,11 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     const paidN = round2(pays.reduce((sum, p) => { const n = parseNumber(p.amount) ?? 0; return sum + (Number.isNaN(n) ? 0 : n); }, 0));
     return { rows, subtotal, total, paid: paidN, remaining: round2(total - paidN) };
   }, [lines, discount, pays]);
+  // The supplier's balance once this invoice is in: what they hold of ours (advances) or what we owe them already counts.
+  const supplierQuery = useQuery({ queryKey: ['supplier', supplier?.id], queryFn: () => suppliersApi.get(supplier!.id), enabled: !!supplier });
+  const balanceAfter = supplierQuery.data
+    ? round2(supplierQuery.data.balance - (posted && existing ? existing.total - existing.paidAmount : 0) + computed.remaining)
+    : null;
   const updatePay = (k: string, patch: Partial<PayRow>) => {
     setTouched(true);
     setErrors((x) => ({ ...x, [`pa${k}`]: '', [`pc${k}`]: '', paid: '' }));
@@ -127,8 +132,8 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
   };
 
   const addProduct = (p: ProductListItem | ProductDetail) => {
-    // A product just created has no average cost yet: its purchase price is the starting cost.
-    const cost = p.averageCost || ('purchasePrice' in p ? p.purchasePrice : null) || null;
+    // The last purchase price (what is usually written on the supplier's invoice); the average cost only when there is none.
+    const cost = ('purchasePrice' in p ? p.purchasePrice : null) || p.averageCost || null;
     setPicking(false);
     setTouched(true);
     setErrors((e) => ({ ...e, lines: '' }));
@@ -225,7 +230,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
     }))) return;
     if (post && !posted && !(await confirm({
       title: 'اعتماد فاتورة الشراء',
-      message: `سيُضاف ${lines.length} بند إلى المخزون بإجمالي ${formatMoney(computed.total)}${computed.remaining > 0 ? `، ويُسجَّل ${formatMoney(computed.remaining)} مستحقًا للمورد` : ''}. لا يمكن تعديل الفاتورة بعد الاعتماد.`,
+      message: `سيُضاف ${lines.length} بند إلى المخزون بإجمالي ${formatMoney(computed.total)}${computed.remaining > 0 ? `، ويُسجَّل ${formatMoney(computed.remaining)} مستحقًا للمورد` : ''}. يمكن تعديلها لاحقًا من «تعديل الفاتورة» (تُلغى وتُعتمد بدلها فاتورة جديدة).`,
       confirmLabel: 'اعتماد',
     }))) return;
     save.mutate(post);
@@ -356,8 +361,16 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
         <div className="flex w-full flex-col gap-2">
           <div className="flex items-center justify-between text-sm">
             <span>الإجمالي: <b className="tabular text-base">{formatMoney(computed.total)}</b></span>
-            <span className={computed.remaining > 0 ? 'text-danger' : 'text-muted'}>المتبقي للمورد: <b className="tabular">{formatMoney(Math.max(0, computed.remaining))}</b></span>
+            <span className={computed.remaining > 0 ? 'text-danger' : 'text-muted'}>غير مدفوع من الفاتورة: <b className="tabular">{formatMoney(Math.max(0, computed.remaining))}</b></span>
           </div>
+          {balanceAfter != null && (
+            <p className="text-end text-sm">
+              رصيد المورد بعد الفاتورة:{' '}
+              {Math.abs(balanceAfter) < 0.005 ? <b>لا شيء</b>
+                : balanceAfter > 0 ? <b className="tabular text-danger">علينا له {formatMoney(balanceAfter)}</b>
+                : <b className="tabular text-success">لنا عنده {formatMoney(-balanceAfter)}</b>}
+            </p>
+          )}
           <div className="flex gap-2">
             {!posted && (
               <Button variant="outline" size="lg" className="flex-1" loading={save.isPending && save.variables === false} disabled={save.isPending} onClick={() => void submit(false)}>
