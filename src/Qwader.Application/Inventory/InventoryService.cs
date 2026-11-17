@@ -28,12 +28,15 @@ public sealed record StockAdjustmentResult(string Number, decimal BalanceAfter);
 /// </summary>
 /// <param name="ToRetailPrice">The second product's selling prices to set with it (null leaves them as they are); its last purchase
 /// price always follows from the first's (÷ the ratio).</param>
+/// <param name="NewProductUnitId">Instead of an existing product (ToProductId 0): make the second product now — the first's name
+/// with «مفكك» after it, its category, brand, size, colour and supplier, in this unit (the one already made so is reused).</param>
 public sealed record StockConversionRequest(Guid IdempotencyKey, int FromProductId, decimal FromQuantity, int ToProductId, decimal ToQuantity, string? Notes,
-    decimal? ToRetailPrice = null, decimal? ToWholesalePrice = null, decimal? ToMinSalePrice = null);
+    decimal? ToRetailPrice = null, decimal? ToWholesalePrice = null, decimal? ToMinSalePrice = null, int? NewProductUnitId = null);
 
 /// <param name="Value">The value at cost that moved from one product to the other.</param>
 /// <param name="ToUnitCost">The cost each unit of the second product took.</param>
-public sealed record StockConversionResult(string Number, decimal FromBalanceAfter, decimal ToBalanceAfter, decimal Value, decimal ToUnitCost);
+public sealed record StockConversionResult(string Number, decimal FromBalanceAfter, decimal ToBalanceAfter, decimal Value, decimal ToUnitCost,
+    int ToProductId = 0, string? ToProductName = null);
 
 public sealed class StockConversionRequestValidator : AbstractValidator<StockConversionRequest>
 {
@@ -41,7 +44,7 @@ public sealed class StockConversionRequestValidator : AbstractValidator<StockCon
     {
         RuleFor(x => x.IdempotencyKey).NotEmpty();
         RuleFor(x => x.FromProductId).GreaterThan(0).WithMessage("اختر المنتج الذي يُفكَّك");
-        RuleFor(x => x.ToProductId).GreaterThan(0).WithMessage("اختر المنتج الناتج")
+        RuleFor(x => x.ToProductId).GreaterThan(0).When(x => x.NewProductUnitId is null).WithMessage("اختر المنتج الناتج")
             .NotEqual(x => x.FromProductId).WithMessage("اختر منتجين مختلفين");
         RuleFor(x => x.FromQuantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر")
             .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
@@ -168,7 +171,8 @@ public sealed class InventoryService(
     ICurrentUser currentUser,
     IClock clock,
     IAuditService audit,
-    Notifications.IPushNotifier push) : IInventoryService
+    Notifications.IPushNotifier push,
+    IProductService productService) : IInventoryService
 {
     private const string AdjustOperation = "Inventory.Adjust";
 
@@ -493,11 +497,22 @@ public sealed class InventoryService(
                 .Select(m => new { m.Type, m.BalanceAfter, m.UnitCost, m.Quantity }).ToListAsync(ct);
             var o = moves.First(m => m.Type == StockMovementType.ConversionOut);
             var i = moves.First(m => m.Type == StockMovementType.ConversionIn);
-            return new StockConversionResult(done.ResultId!, o.BalanceAfter, i.BalanceAfter, CostMath.RoundMoney(-o.Quantity * o.UnitCost), i.UnitCost);
+            var toId = await db.StockMovements.AsNoTracking().Where(m => m.SourceType == "Conversion" && m.SourceNumber == done.ResultId && m.Type == StockMovementType.ConversionIn)
+                .Select(m => m.ProductId).FirstAsync(ct);
+            return new StockConversionResult(done.ResultId!, o.BalanceAfter, i.BalanceAfter, CostMath.RoundMoney(-o.Quantity * o.UnitCost), i.UnitCost, toId);
         }
-        await QuantityRules.EnsureAsync(db, [(request.FromProductId, null, request.FromQuantity), (request.ToProductId, null, request.ToQuantity)], ct);
 
-        var ids = new[] { request.FromProductId, request.ToProductId };
+        await using var tx = await TxScope.BeginAsync(db, ct);
+        var toProductId = request.ToProductId;
+        var created = false;
+        if (request.NewProductUnitId is { } newUnitId)
+        {
+            if (!currentUser.HasPermission(Permissions.ProductsManage)) throw new ForbiddenException("إضافة منتج جديد تحتاج صلاحية إدارة المنتجات");
+            (toProductId, created) = await SplitProductAsync(request, newUnitId, ct);
+        }
+        await QuantityRules.EnsureAsync(db, [(request.FromProductId, null, request.FromQuantity), (toProductId, null, request.ToQuantity)], ct);
+
+        var ids = new[] { request.FromProductId, toProductId };
         var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
             .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, Unit = p.Unit.Name, p.PurchasePrice, p.RetailPrice, p.WholesalePrice, p.MinSalePrice })
             .ToDictionaryAsync(p => p.Id, ct);
@@ -506,13 +521,12 @@ public sealed class InventoryService(
             throw new BusinessRuleException($"المنتج «{archived.Name}» مؤرشف؛ ألغِ أرشفته أولًا");
         string Name(int id) => Product.BuildDisplayName(products[id].Name, products[id].Size, products[id].Color, products[id].Model);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
         // Both products locked in ascending order (as every multi-product posting), before either moves.
         foreach (var id in ids.Order()) await db.LockRowAsync("Products", id, ct);
         var warehouseId = await DefaultWarehouseAsync(ct);
         var number = await numbers.NextAsync(DocumentType.StockAdjustment, ct);
         var extra = string.IsNullOrWhiteSpace(request.Notes) ? "" : $" — {request.Notes.Trim()}";
-        var what = $"{request.FromQuantity:0.###} {products[request.FromProductId].Unit} «{Name(request.FromProductId)}» ← {request.ToQuantity:0.###} {products[request.ToProductId].Unit} «{Name(request.ToProductId)}»";
+        var what = $"{request.FromQuantity:0.###} {products[request.FromProductId].Unit} «{Name(request.FromProductId)}» ← {request.ToQuantity:0.###} {products[toProductId].Unit} «{Name(toProductId)}»";
         var notes = $"تفكيك/تجميع: {what}{extra}";
         if (notes.Length > 500) notes = notes[..500];
 
@@ -520,13 +534,13 @@ public sealed class InventoryService(
             "Conversion", null, number, notes), ct: ct);
         var value = CostMath.RoundMoney(request.FromQuantity * issued.UnitCost);
         var unitCost = CostMath.RoundCost(request.FromQuantity * issued.UnitCost / request.ToQuantity);
-        var received = await ledger.ReceiveAsync(new StockEntry(request.ToProductId, warehouseId, request.ToQuantity, StockMovementType.ConversionIn,
+        var received = await ledger.ReceiveAsync(new StockEntry(toProductId, warehouseId, request.ToQuantity, StockMovementType.ConversionIn,
             "Conversion", null, number, notes), unitCost, ct);
 
         // The second product's prices follow: its last purchase price is the first's ÷ the ratio (a set bought at 60 → 10 a cup;
         // the cost it took when there is none), and the selling prices are set when given.
         var source = products[request.FromProductId];
-        var target = products[request.ToProductId];
+        var target = products[toProductId];
         var purchasePrice = source.PurchasePrice > 0
             ? CostMath.RoundCost(source.PurchasePrice * request.FromQuantity / request.ToQuantity)
             : unitCost;
@@ -536,19 +550,47 @@ public sealed class InventoryService(
         await db.Database.ExecuteSqlAsync($"""
             UPDATE Products SET PurchasePrice = {db.Database.Exact(purchasePrice)}, RetailPrice = {db.Database.Exact(retail)},
                 WholesalePrice = {db.Database.Exact(wholesale)}, MinSalePrice = {db.Database.Exact(minSale)}
-            WHERE Id = {request.ToProductId}
+            WHERE Id = {toProductId}
             """, ct);
-        audit.Log("Product.Prices", "Product", request.ToProductId.ToString(),
+        audit.Log("Product.Prices", "Product", toProductId.ToString(),
             new { target.PurchasePrice, target.RetailPrice, target.WholesalePrice, target.MinSalePrice },
             new { PurchasePrice = purchasePrice, RetailPrice = retail, WholesalePrice = wholesale, MinSalePrice = minSale }, $"تفكيك/تجميع {number}");
 
         idempotency.Record(request.IdempotencyKey, ConversionOperation, "StockAdjustment", number);
         audit.Log("Inventory.Conversion", "Product", request.FromProductId.ToString(), null,
-            new { number, request.FromProductId, request.FromQuantity, request.ToProductId, request.ToQuantity, value, unitCost, notes = request.Notes });
+            new { number, request.FromProductId, request.FromQuantity, toProductId, NewProduct = created, request.ToQuantity, value, unitCost, notes = request.Notes });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         await StockAlerts.NotifyCrossedAsync(db, push, new Dictionary<int, decimal> { [request.FromProductId] = request.FromQuantity }, CancellationToken.None);
-        return new StockConversionResult(number, issued.BalanceAfter, received.BalanceAfter, value, unitCost);
+        return new StockConversionResult(number, issued.BalanceAfter, received.BalanceAfter, value, unitCost, toProductId, Name(toProductId));
+    }
+
+    /// <summary>
+    /// The product a set is split into, made now: the set's name with «مفكك» after it (same size, colour, model), its category,
+    /// brand and supplier, in the chosen unit, with no stock (the conversion brings it). One made so before (same name and variant,
+    /// not archived) is reused, so splitting again adds to the same product.
+    /// </summary>
+    private async Task<(int Id, bool Created)> SplitProductAsync(StockConversionRequest request, int unitId, CancellationToken ct)
+    {
+        var source = await db.Products.AsNoTracking().Where(p => p.Id == request.FromProductId)
+            .Select(p => new { p.Name, p.Size, p.Color, p.Model, p.CategoryId, Brand = p.Brand != null ? p.Brand.Name : null, p.DefaultSupplierId,
+                p.PurchasePrice, p.RetailPrice, p.WholesalePrice, p.MinSalePrice, p.ReorderLevel })
+            .FirstOrDefaultAsync(ct) ?? throw new ValidationFailedException("fromProductId", "المنتج غير موجود");
+        var name = source.Name.EndsWith(" مفكك") ? source.Name : $"{source.Name} مفكك";
+        if (name.Length > 200) name = name[..200];
+        var existing = await db.Products.AsNoTracking()
+            .Where(p => p.Name == name && p.Size == source.Size && p.Color == source.Color && p.Model == source.Model && p.UnitId == unitId && !p.IsArchived)
+            .Select(p => (int?)p.Id).FirstOrDefaultAsync(ct);
+        if (existing is { } id) return (id, false);
+
+        var ratio = request.ToQuantity / request.FromQuantity;
+        var retail = request.ToRetailPrice ?? CostMath.RoundMoney(source.RetailPrice / ratio);
+        var wholesale = Math.Min(request.ToWholesalePrice ?? CostMath.RoundMoney(source.WholesalePrice / ratio), retail);
+        var minSale = Math.Min(request.ToMinSalePrice ?? CostMath.RoundMoney(source.MinSalePrice / ratio), retail);
+        var product = await productService.CreateAsync(new SaveProductRequest(
+            name, null, null, source.CategoryId, source.Brand, unitId, source.DefaultSupplierId, null, source.Size, source.Color, source.Model,
+            null, source.PurchasePrice > 0 ? CostMath.RoundCost(source.PurchasePrice / ratio) : 0, wholesale, retail, minSale, 0, null), ct);
+        return (product.Id, true);
     }
 
     private Task<int> DefaultWarehouseAsync(CancellationToken ct) => db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);

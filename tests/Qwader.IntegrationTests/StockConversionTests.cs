@@ -50,11 +50,27 @@ public sealed class StockConversionTests(ApiFactory factory)
         (await Get(sets.Id)).AverageCost.Should().Be(60);
         (await Get(cups.Id)).Quantity.Should().Be(24);
 
+        // No product made beforehand: «… مفكك» is made by itself (same category, the chosen unit, prices ÷ the ratio), and reused next time.
+        var unitId = sets.UnitId;
+        var split = await (await admin.PostAsJsonAsync("/api/inventory/conversions",
+            new StockConversionRequest(Guid.NewGuid(), sets.Id, 2, 0, 12, null, NewProductUnitId: unitId))).ReadAsync<StockConversionResult>();
+        var made = await Get(split.ToProductId);
+        made.Name.Should().Be($"{sets.Name} مفكك");
+        made.CategoryId.Should().Be(sets.CategoryId);
+        (made.Quantity, made.AverageCost, made.PurchasePrice).Should().Be((12m, 10m, 10m));
+        made.RetailPrice.Should().Be(Math.Round(sets.RetailPrice / 6, 2));
+        var again = await (await admin.PostAsJsonAsync("/api/inventory/conversions",
+            new StockConversionRequest(Guid.NewGuid(), sets.Id, 1, 0, 6, null, NewProductUnitId: unitId))).ReadAsync<StockConversionResult>();
+        again.ToProductId.Should().Be(split.ToProductId);
+        (await Get(split.ToProductId)).Quantity.Should().Be(18);
+        (await Get(sets.Id)).Quantity.Should().Be(13);
+        (await admin.PostAsJsonAsync("/api/inventory/conversions", new StockConversionRequest(Guid.NewGuid(), cups.Id, 6, sets.Id, 1, null))).EnsureSuccessStatusCode();
+
         // More than there is, or the same product, is refused and moves nothing.
         (await admin.PostAsJsonAsync("/api/inventory/conversions", new StockConversionRequest(Guid.NewGuid(), sets.Id, 100, cups.Id, 600, null)))
             .IsSuccessStatusCode.Should().BeFalse();
         (await admin.PostAsJsonAsync("/api/inventory/conversions", new StockConversionRequest(Guid.NewGuid(), sets.Id, 1, sets.Id, 6, null)))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await Get(sets.Id)).Quantity.Should().Be(16);
+        (await Get(sets.Id)).Quantity.Should().Be(14);
     }
 }

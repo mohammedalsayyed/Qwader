@@ -167,7 +167,7 @@ public sealed class ProductService(
             && await db.Units.AnyAsync(u => u.Id == request.UnitId && u.WholeNumbersOnly, ct))
             throw new ValidationFailedException("openingQuantity", $"الوحدة تُعدّ بدون كسور: الكمية {opening:0.###} غير مقبولة");
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await using var tx = await TxScope.BeginAsync(db, ct);
 
         var product = new Product();
         await ApplyAsync(product, request, isNew: true, ct);

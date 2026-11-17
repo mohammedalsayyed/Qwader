@@ -134,8 +134,10 @@ export const inventoryApi = {
     idempotencyKey: string; fromProductId: number; fromQuantity: number; toProductId: number; toQuantity: number; notes?: string | null;
     /** The second product's selling prices to set with it (left out: unchanged). Its last purchase price follows by itself. */
     toRetailPrice?: number | null; toWholesalePrice?: number | null; toMinSalePrice?: number | null;
+    /** Instead of an existing product (toProductId 0): make «… مفكك» now, in this unit (reused if it was made before). */
+    newProductUnitId?: number | null;
   }) =>
-    api<{ number: string; fromBalanceAfter: number; toBalanceAfter: number; value: number; toUnitCost: number }>('/inventory/conversions', { method: 'POST', body: input }),
+    api<{ number: string; fromBalanceAfter: number; toBalanceAfter: number; value: number; toUnitCost: number; toProductId: number; toProductName: string | null }>('/inventory/conversions', { method: 'POST', body: input }),
   counts: (params: { page?: number }) => api<PagedResult<StockCountListItem>>('/inventory/counts', { query: params }),
   count: (id: number) => api<StockCount>(`/inventory/counts/${id}`),
   createCount: (input: { categoryId?: number | null; productIds?: number[] | null; notes?: string | null }) =>
