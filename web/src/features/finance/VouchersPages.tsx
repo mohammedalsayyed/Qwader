@@ -113,7 +113,10 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const [amount, setAmount] = useState('');
   // The day the money came in (every receipt) or the owner took it («مسحوبات شخصية»); today by default.
   const [date, setDate] = useState(localToday());
-  const datable = kind === 'receipt' || purpose === 'owner';
+  // A supplier payment ahead of the goods (they have not arrived): may be more than is owed, and takes the day it was paid.
+  const [advance, setAdvance] = useState(false);
+  const supplierAdvance = kind === 'payment' && purpose === 'party' && advance;
+  const datable = kind === 'receipt' || purpose === 'owner' || supplierAdvance;
   const [accountId, setAccountId] = useState<number | null>(null);
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -157,7 +160,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
           customerId: purpose === 'party' || purpose === 'deposit' ? customer?.id : null,
           payerName: purpose === 'other' ? name.trim() : purpose === 'owner' ? name.trim() || 'صاحب المال' : null, payerPhone: phone.trim() || null })
         : paymentsApi.create({ ...base, purpose: (purpose === 'party' ? 'SupplierPayment' : purpose === 'owner' ? 'OwnerWithdrawal' : 'Other') as PaymentPurpose,
-          supplierId: purpose === 'party' ? supplier?.id : null,
+          supplierId: purpose === 'party' ? supplier?.id : null, advance: supplierAdvance,
           beneficiaryName: purpose === 'other' ? name.trim() : purpose === 'owner' ? name.trim() || 'صاحب المال' : null });
     },
     onSuccess: (v) => {
@@ -181,7 +184,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
     if (purpose === 'other' && !name.trim()) e.name = `اسم ${meta.party} مطلوب`;
     const n = parseNumber(amount);
     if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
-    else if (purpose === 'party' && party && n > partyBalance + 0.009)
+    else if (purpose === 'party' && party && !supplierAdvance && n > partyBalance + 0.009)
       e.amount = partyBalance > 0 ? `المبلغ أكبر من ${kind === 'receipt' ? 'دين العميل' : 'المستحق للمورد'} (${formatMoney(partyBalance)})` : 'لا يوجد رصيد مستحق';
     if (!accountId) e.account = 'اختر الحساب';
     setErrors(e);
@@ -259,9 +262,15 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
         )}
         {purpose === 'party' && party && (
           <p className="rounded-xl bg-canvas p-3 text-sm">
-            {kind === 'receipt' ? 'الدين الحالي على العميل' : 'المستحق للمورد'}: <b className="tabular">{formatMoney(partyBalance)}</b>
-            {partyBalance > 0 && <button type="button" className="ms-2 font-semibold text-brand-700 underline" onClick={() => setAmount(String(partyBalance))}>المبلغ كاملًا</button>}
+            {kind === 'receipt' ? 'الدين الحالي على العميل' : partyBalance >= 0 ? 'المستحق للمورد (علينا)' : 'لنا عنده (دفعنا مقدمًا)'}: <b className="tabular">{formatMoney(Math.abs(partyBalance))}</b>
+            {partyBalance > 0 && !supplierAdvance && <button type="button" className="ms-2 font-semibold text-brand-700 underline" onClick={() => setAmount(String(partyBalance))}>المبلغ كاملًا</button>}
           </p>
+        )}
+        {kind === 'payment' && purpose === 'party' && supplier && (
+          <label className="flex items-start gap-2 rounded-xl border border-line p-3 text-sm">
+            <input type="checkbox" className="mt-1 size-4" checked={advance} onChange={(e) => setAdvance(e.target.checked)} />
+            <span><b>دفعة مقدمة</b> — البضاعة لم تصل بعد: يُقبل مبلغ أكبر من المستحق، ويبقى الزائد «لنا عنده» حتى تصل البضاعة وتُسجَّل فاتورتها.</span>
+          </label>
         )}
 
         <div className={cn('grid gap-3', datable && 'grid-cols-[1fr_auto]')}>

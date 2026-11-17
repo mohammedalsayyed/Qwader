@@ -6,6 +6,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ArrowRight, History, Pencil, Phone, Plus, ReceiptText, ShoppingBag, Truck } from 'lucide-react';
 import { purchasesApi, suppliersApi, type Supplier } from '@/api/stock';
+import { paymentsApi } from '@/api/finance';
+import { AccountChips } from '@/components/finance/FinanceBits';
+import { useLookups } from '@/lib/queries';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button } from '@/components/ui/Button';
@@ -18,7 +21,7 @@ import { StatementView } from '@/components/finance/StatementView';
 import { useConfirm } from '@/components/ui/Confirm';
 import { cn } from '@/lib/cn';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, localToday } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { parseNumber, zOptionalAmount } from '@/lib/numbers';
 import { PurchaseStatusBadge } from './PurchasesPage';
@@ -64,8 +67,8 @@ export function SuppliersPage() {
                     <p className="ltr text-sm text-muted">{s.phone ?? s.code}</p>
                   </div>
                   <div className="shrink-0 text-end">
-                    <p className="text-xs text-muted">{s.balance > 0 ? 'مستحق له' : s.balance < 0 ? 'له علينا' : 'الرصيد'}</p>
-                    <p className={`tabular font-bold ${s.balance > 0 ? 'text-danger' : ''}`}>{formatMoney(Math.abs(s.balance))}</p>
+                    <p className="text-xs text-muted">{s.balance > 0 ? 'مستحق له (علينا)' : s.balance < 0 ? 'لنا عنده' : 'الرصيد'}</p>
+                    <p className={`tabular font-bold ${s.balance > 0 ? 'text-danger' : s.balance < 0 ? 'text-success' : ''}`}>{formatMoney(Math.abs(s.balance))}</p>
                   </div>
                 </Link>
               </li>
@@ -104,18 +107,32 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
     defaultValues: { name: supplier?.name ?? '', phone: supplier?.phone ?? '', address: supplier?.address ?? '', notes: supplier?.notes ?? '', isActive: supplier?.isActive ?? true, openingBalance: '' },
   });
 
-  // The opening balance: owed to the supplier, or paid to them ahead for goods not arrived yet.
+  // The balance: owed to the supplier, or paid to them ahead for goods not arrived yet — before the system (no account moves)
+  // or after it (a payment voucher from an account, on its day).
   const [advance, setAdvance] = useState(false);
+  const timing = useAdvanceTiming();
   const save = useMutation({
-    mutationFn: (v: FormValues) => {
+    mutationFn: async (v: FormValues) => {
+      const fromAccount = !supplier && advance && timing.when === 'after' && (v.openingBalance ?? 0) > 0;
       const input = { name: v.name, phone: blankToNull(v.phone), address: blankToNull(v.address), notes: blankToNull(v.notes), isActive: v.isActive,
-        openingBalance: v.openingBalance ?? 0, openingIsAdvance: advance };
-      return supplier ? suppliersApi.update(supplier.id, input) : suppliersApi.create(input);
+        openingBalance: fromAccount ? 0 : v.openingBalance ?? 0, openingIsAdvance: advance };
+      if (supplier) return { saved: await suppliersApi.update(supplier.id, input), paymentError: null };
+      const saved = await suppliersApi.create(input);
+      if (!fromAccount) return { saved, paymentError: null };
+      // The supplier is in; the advance is its own payment voucher (it can fail on its own: not enough in the account).
+      try {
+        await paymentsApi.create({ idempotencyKey: crypto.randomUUID(), purpose: 'SupplierPayment', supplierId: saved.id, amount: v.openingBalance!,
+          financialAccountId: timing.accountId!, date: timing.date, advance: true });
+        return { saved: await suppliersApi.get(saved.id), paymentError: null };
+      } catch (e) {
+        return { saved, paymentError: errorMessage(e) };
+      }
     },
-    onSuccess: (saved) => {
-      void queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+    onSuccess: ({ saved, paymentError }) => {
+      for (const k of ['suppliers', 'accounts', 'payment-vouchers', 'balance-sheet']) void queryClient.invalidateQueries({ queryKey: [k] });
       queryClient.setQueryData(['supplier', saved.id], saved);
-      toast.success(supplier ? 'تم حفظ بيانات المورد' : 'تمت إضافة المورد');
+      if (paymentError) toast.error(`أُضيف المورد، لكن لم تُسجَّل الدفعة المقدمة: ${paymentError}. سجّلها من صفحته («رصيد سابق / دفعة مقدمة»).`);
+      else toast.success(supplier ? 'تم حفظ بيانات المورد' : 'تمت إضافة المورد');
       onClose();
       if (!supplier) navigate(`/suppliers/${saved.id}`);
     },
@@ -124,7 +141,10 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
       if (msg) toast.error(msg);
     },
   });
-  const onSubmit = handleSubmit((v) => save.mutate(v));
+  const onSubmit = handleSubmit((v) => {
+    if (!supplier && advance && timing.when === 'after' && (v.openingBalance ?? 0) > 0 && !timing.validate()) return;
+    save.mutate(v);
+  });
 
   return (
     <Sheet open onClose={onClose} dirty={isDirty} title={supplier ? 'تعديل المورد' : 'مورد جديد'}
@@ -139,7 +159,7 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
         <Field label="العنوان" error={errors.address?.message}>{(id) => <Input id={id} {...register('address')} />}</Field>
         {!supplier && (
           <div className="space-y-2">
-            <p className="text-sm font-medium">رصيد سابق (قبل استخدام النظام)</p>
+            <p className="text-sm font-medium">رصيد المورد</p>
             <div className="grid grid-cols-2 gap-2">
               {([[false, 'علينا له (مستحق للمورد)'], [true, 'لنا عنده (دفعنا مقدمًا)']] as const).map(([v, label]) => (
                 <button key={label} type="button" onClick={() => setAdvance(v)}
@@ -152,6 +172,7 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
               hint={advance ? 'مبلغ دفعه المعرض للمورد ولم تصل بضاعته بعد — يبقى على المورد حتى تصل البضاعة' : 'المبلغ الذي يدين به المعرض للمورد قبل بدء استخدام النظام'}>
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.openingBalance} {...register('openingBalance')} />}
             </Field>
+            {advance && <AdvanceTimingFields timing={timing} />}
           </div>
         )}
         <Field label="ملاحظات" error={errors.notes?.message}>{(id) => <TextArea id={id} rows={2} {...register('notes')} />}</Field>
@@ -195,7 +216,7 @@ export function SupplierDetailPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-        <Stat label={s.balance >= 0 ? 'المستحق للمورد' : 'رصيد لصالحنا'} value={formatMoney(Math.abs(s.balance))} tone={s.balance > 0 ? 'danger' : 'default'} />
+        <Stat label={s.balance >= 0 ? 'المستحق للمورد (علينا)' : 'لنا عنده (دفعنا مقدمًا)'} value={formatMoney(Math.abs(s.balance))} tone={s.balance > 0 ? 'danger' : s.balance < 0 ? 'success' : 'default'} />
         <Stat label="صافي المشتريات" value={formatMoney(s.totalPurchases)} />
         <Stat label="إجمالي المدفوع" value={formatMoney(s.totalPayments)} />
       </div>
@@ -221,7 +242,7 @@ export function SupplierDetailPage() {
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'statement', label: 'كشف الحساب' }, { value: 'purchases', label: 'فواتير الشراء' }]} />
       {tab === 'statement' ? (
         <StatementView queryKey={['supplier-statement', id]} load={(from, to) => suppliersApi.statement(id, from, to)}
-          debitLabel="مدين (سداد/مردود)" creditLabel="دائن (مشتريات)" balanceHint="الموجب = مستحق للمورد" />
+          debitLabel="مدين (سداد/مردود)" creditLabel="دائن (مشتريات)" balanceHint="الموجب = علينا للمورد، السالب = لنا عنده" />
       ) : (
         <SupplierPurchases supplierId={id} />
       )}
@@ -273,7 +294,10 @@ function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; on
   const toast = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [owed, setOwed] = useState<boolean | null>(null);
+  const timing = useAdvanceTiming();
+  const fromAccount = owed === false && timing.when === 'after';
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -282,10 +306,16 @@ function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; on
   const describe = (b: number) => (b >= 0 ? `المستحق للمورد ${formatMoney(b)}` : `لنا عنده ${formatMoney(-b)}`);
 
   const save = useMutation({
-    mutationFn: () => suppliersApi.oldBalance(supplier.id, { amount: n!, owedToSupplier: owed!, notes: notes.trim() || null }),
+    mutationFn: async () => {
+      if (!fromAccount) return suppliersApi.oldBalance(supplier.id, { amount: n!, owedToSupplier: owed!, notes: notes.trim() || null });
+      // Paid after the system started: a payment voucher from the account, on its day.
+      await paymentsApi.create({ idempotencyKey, purpose: 'SupplierPayment', supplierId: supplier.id, amount: n!, financialAccountId: timing.accountId!,
+        date: timing.date, advance: true, notes: notes.trim() || null });
+      return suppliersApi.get(supplier.id);
+    },
     onSuccess: (saved) => {
       queryClient.setQueryData(['supplier', saved.id], saved);
-      for (const k of ['suppliers', 'supplier-statement', 'balance-sheet']) void queryClient.invalidateQueries({ queryKey: [k] });
+      for (const k of ['suppliers', 'supplier-statement', 'balance-sheet', 'accounts', 'payment-vouchers']) void queryClient.invalidateQueries({ queryKey: [k] });
       toast.success(owed ? `سُجّل ${formatMoney(n)} مستحقًا لـ ${supplier.name}` : `سُجّل ${formatMoney(n)} دفعة مقدمة عند ${supplier.name}`);
       onClose();
     },
@@ -297,15 +327,16 @@ function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; on
     if (owed == null) e.owed = 'اختر: علينا له أو لنا عنده';
     if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
     setErrors(e);
+    if (fromAccount && !timing.validate()) return;
     if (Object.keys(e).length) return;
-    if (await confirm({ title: 'تسجيل رصيد سابق للمورد', message: `يصبح ${describe(after!)}. لا تتحرك أموال في أي حساب.`, confirmLabel: 'تسجيل' })) save.mutate();
+    if (await confirm({ title: 'تسجيل رصيد سابق للمورد', message: `يصبح ${describe(after!)}. ${fromAccount ? `يُخصم ${formatMoney(n)} من الحساب بسند صرف.` : 'لا تتحرك أموال في أي حساب.'}`, confirmLabel: 'تسجيل' })) save.mutate();
   };
 
   return (
-    <Sheet open onClose={onClose} dirty={amount !== '' || owed != null} title="رصيد سابق للمورد"
+    <Sheet open onClose={onClose} dirty={amount !== '' || owed != null} title="رصيد سابق / دفعة مقدمة"
       footer={<Button block size="lg" loading={save.isPending} onClick={() => void submit()}>تسجيل</Button>}>
       <div className="space-y-4">
-        <p className="text-sm text-muted">حساب قديم بين المعرض و{supplier.name} من قبل استخدام النظام. يظهر في كشفه باسم «رصيد سابق»، ولا يتحرك مال في أي حساب.</p>
+        <p className="text-sm text-muted">ما بين المعرض و{supplier.name}: مستحق له من قبل النظام، أو دفعة مقدمة له لم تصل بضاعتها بعد.</p>
         <div>
           <div className="grid grid-cols-2 gap-2">
             {([[true, 'علينا له (مستحق للمورد)'], [false, 'لنا عنده (دفعنا مقدمًا)']] as const).map(([v, label]) => (
@@ -320,6 +351,7 @@ function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; on
         <Field label="المبلغ" required error={errors.amount}>
           {(id) => <Input id={id} inputMode="decimal" className="ltr" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}
         </Field>
+        {owed === false && <AdvanceTimingFields timing={timing} />}
         <Field label="ملاحظة" hint="مثلًا: دفعة على طلبية لم تصل">
           {(id) => <Input id={id} value={notes} maxLength={300} onChange={(e) => setNotes(e.target.value)} />}
         </Field>
@@ -330,5 +362,52 @@ function SupplierOldBalanceSheet({ supplier, onClose }: { supplier: Supplier; on
         {errors.form && <p className="text-sm text-danger">{errors.form}</p>}
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * When a supplier advance was paid: before the system (the accounts' balances started after it, so no account moves) or after
+ * it (taken out of an account on its day, as a payment voucher).
+ */
+function useAdvanceTiming() {
+  const lookups = useLookups();
+  const [when, setWhen] = useState<'before' | 'after'>('after');
+  const [picked, setPicked] = useState<number | null>(null);
+  const [date, setDate] = useState(localToday());
+  const [error, setError] = useState('');
+  const accounts = lookups.data?.accounts ?? [];
+  const accountId = picked ?? accounts.find((a) => a.type === 'Cash')?.id ?? null;
+  return {
+    when, setWhen, accountId, setAccountId: (id: number | null) => { setPicked(id); setError(''); }, date, setDate, error, accounts,
+    validate: () => {
+      if (when === 'after' && !accountId) { setError('اختر الحساب الذي دُفعت منه'); return false; }
+      return true;
+    },
+  };
+}
+
+function AdvanceTimingFields({ timing }: { timing: ReturnType<typeof useAdvanceTiming> }) {
+  return (
+    <div className="space-y-3 rounded-control bg-canvas p-3">
+      <p className="text-sm font-medium">متى دُفعت؟</p>
+      <div className="grid grid-cols-2 gap-2">
+        {([['after', 'بعد استخدام النظام (من حساب)'], ['before', 'قبل استخدام النظام']] as const).map(([v, label]) => (
+          <button key={v} type="button" onClick={() => timing.setWhen(v)}
+            className={cn('min-h-11 rounded-control border px-2 text-sm font-semibold', timing.when === v ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-line bg-surface')}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {timing.when === 'before' ? (
+        <p className="text-xs text-muted">لا يُخصم من أي حساب: أرصدة الحسابات الافتتاحية سُجّلت بعد هذه الدفعة.</p>
+      ) : (
+        <>
+          <AccountChips label="دُفعت من حساب" accounts={timing.accounts} value={timing.accountId} onChange={timing.setAccountId} error={timing.error} />
+          <Field label="تاريخ الدفع" hint="يُخصم من الحساب بسند صرف في هذا اليوم">
+            {(id, d) => <Input id={id} aria-describedby={d} type="date" max={localToday()} value={timing.date} onChange={(e) => timing.setDate(e.target.value || localToday())} />}
+          </Field>
+        </>
+      )}
+    </div>
   );
 }

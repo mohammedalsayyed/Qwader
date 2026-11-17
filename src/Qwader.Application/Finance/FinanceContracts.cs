@@ -77,8 +77,13 @@ public sealed record CreateReceiptRequest(
 public sealed record CreatePaymentRequest(
     Guid IdempotencyKey, PaymentPurpose Purpose, int? SupplierId, string? BeneficiaryName,
     decimal Amount, int FinancialAccountId, string? Reference, string? Notes, Guid? AttachmentFileId, bool ConfirmDuplicate = false, int? CustomerId = null,
-    /// <summary>The owner's expenses only: the day it was paid (today when left out; not in the future, not before the system started).</summary>
-    DateOnly? Date = null);
+    /// <summary>The owner's expenses and supplier advances only: the day it was paid (today when left out; not in the future, not before the system started).</summary>
+    DateOnly? Date = null,
+    /// <summary>
+    /// A supplier payment made ahead, for goods not arrived yet: may be more than the store owes them (the rest stays «لنا عنده»
+    /// until the goods come).
+    /// </summary>
+    bool Advance = false);
 
 public sealed record CreateExpenseRequest(
     Guid IdempotencyKey, int ExpenseCategoryId, string Description, decimal Amount, int FinancialAccountId,

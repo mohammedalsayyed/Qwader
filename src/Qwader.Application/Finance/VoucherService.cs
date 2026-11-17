@@ -338,7 +338,7 @@ public sealed class VoucherService(
         {
             await db.LockRowAsync("Suppliers", supplierId, ct);
             supplier = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.Id == supplierId, ct) ?? throw new ValidationFailedException("supplierId", "المورد غير موجود");
-            if (request.Purpose == PaymentPurpose.SupplierPayment && request.Amount > supplier.Balance + 0.009m)
+            if (request.Purpose == PaymentPurpose.SupplierPayment && !request.Advance && request.Amount > supplier.Balance + 0.009m)
                 throw new BusinessRuleException(supplier.Balance <= 0
                     ? $"لا يوجد مبلغ مستحق للمورد «{supplier.Name}»"
                     : $"المبلغ أكبر من المستحق للمورد «{supplier.Name}» ({supplier.Balance:0.00} ₪)");
@@ -365,10 +365,13 @@ public sealed class VoucherService(
                 throw new ConflictException("سُجّل قبل دقائق سند صرف بنفس المبلغ لنفس المستفيد ونفس الحساب. إذا كانت دفعة جديدة فعلًا، أكّد التسجيل.");
         }
 
-        // Only an owner's expense may be dated back (paid yesterday, recorded today); every other payment is dated now.
-        if (request.Date is { } day && day != clock.LocalToday && request.Purpose != PaymentPurpose.OwnerWithdrawal)
-            throw new ValidationFailedException("date", "التاريخ متاح لمصاريف صاحب العمل فقط");
-        var date = request.Purpose == PaymentPurpose.OwnerWithdrawal ? await DocumentDates.ToUtcAsync(request.Date, clock, db, ct) : clock.UtcNow;
+        if (request.Advance && (request.Purpose != PaymentPurpose.SupplierPayment || supplier is null))
+            throw new ValidationFailedException("advance", "الدفعة المقدمة تكون لمورد فقط");
+        // Only an owner's expense or a supplier advance may be dated back (paid yesterday, recorded today); every other payment is dated now.
+        var dated = request.Purpose == PaymentPurpose.OwnerWithdrawal || request.Advance;
+        if (request.Date is { } day && day != clock.LocalToday && !dated)
+            throw new ValidationFailedException("date", "التاريخ متاح لمصاريف صاحب العمل والدفعات المقدمة للموردين فقط");
+        var date = dated ? await DocumentDates.ToUtcAsync(request.Date, clock, db, ct) : clock.UtcNow;
 
         var voucher = await PostPaymentAsync(new PaymentVoucher
         {
@@ -380,7 +383,7 @@ public sealed class VoucherService(
             Amount = request.Amount,
             FinancialAccountId = request.FinancialAccountId,
             Reference = Clean(request.Reference),
-            Notes = Clean(request.Notes),
+            Notes = Clean(request.Notes) ?? (request.Advance ? "دفعة مقدمة للمورد لحين وصول البضاعة" : null),
             AttachmentFileId = request.AttachmentFileId,
         }, ct);
 
