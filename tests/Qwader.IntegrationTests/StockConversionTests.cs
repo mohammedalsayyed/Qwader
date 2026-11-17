@@ -25,13 +25,19 @@ public sealed class StockConversionTests(ApiFactory factory)
 
         // 5 sets → 30 cups: 300 of value moves, each cup at 10.
         var result = await (await admin.PostAsJsonAsync("/api/inventory/conversions",
-            new StockConversionRequest(Guid.NewGuid(), sets.Id, 5, cups.Id, 30, "بيع بالمفرد"))).ReadAsync<StockConversionResult>();
+            new StockConversionRequest(Guid.NewGuid(), sets.Id, 5, cups.Id, 30, "بيع بالمفرد", ToRetailPrice: 18, ToWholesalePrice: 16, ToMinSalePrice: 12)))
+            .ReadAsync<StockConversionResult>();
         result.Value.Should().Be(300);
         result.ToUnitCost.Should().Be(10);
         (await Get(sets.Id)).Quantity.Should().Be(15);
         var c = await Get(cups.Id);
         c.Quantity.Should().Be(30);
         c.AverageCost.Should().Be(10);
+        // Its prices follow: the last purchase price is the set's ÷ 6, the selling prices as given.
+        (c.PurchasePrice, c.RetailPrice, c.WholesalePrice, c.MinSalePrice).Should().Be((10m, 18m, 16m, 12m));
+        // A minimum above the retail price is refused.
+        (await admin.PostAsJsonAsync("/api/inventory/conversions",
+            new StockConversionRequest(Guid.NewGuid(), sets.Id, 1, cups.Id, 6, null, ToRetailPrice: 10, ToMinSalePrice: 12))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var after = await Sheet();
         after.TotalAssets.Should().Be(before.TotalAssets, "the stock's value does not change");

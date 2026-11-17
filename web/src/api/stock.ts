@@ -130,7 +130,11 @@ export const inventoryApi = {
   correctCost: (input: { idempotencyKey: string; productId: number; newCost: number; reason: string }) =>
     api<{ number: string; oldCost: number; newCost: number; quantity: number; valueChange: number }>('/inventory/cost-corrections', { method: 'POST', body: input }),
   /** «تفكيك / تجميع»: one product's stock becomes another's at the same value. */
-  convert: (input: { idempotencyKey: string; fromProductId: number; fromQuantity: number; toProductId: number; toQuantity: number; notes?: string | null }) =>
+  convert: (input: {
+    idempotencyKey: string; fromProductId: number; fromQuantity: number; toProductId: number; toQuantity: number; notes?: string | null;
+    /** The second product's selling prices to set with it (left out: unchanged). Its last purchase price follows by itself. */
+    toRetailPrice?: number | null; toWholesalePrice?: number | null; toMinSalePrice?: number | null;
+  }) =>
     api<{ number: string; fromBalanceAfter: number; toBalanceAfter: number; value: number; toUnitCost: number }>('/inventory/conversions', { method: 'POST', body: input }),
   counts: (params: { page?: number }) => api<PagedResult<StockCountListItem>>('/inventory/counts', { query: params }),
   count: (id: number) => api<StockCount>(`/inventory/counts/${id}`),

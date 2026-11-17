@@ -207,7 +207,8 @@ export function ProductDetailPage() {
         <AdjustmentSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName }} onClose={() => setAdjusting(false)} />
       )}
       {converting && (
-        <ConversionSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName, averageCost: p.averageCost ?? null }}
+        <ConversionSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName, averageCost: p.averageCost ?? null,
+          purchasePrice: p.purchasePrice ?? null, retailPrice: p.retailPrice, wholesalePrice: p.wholesalePrice, minSalePrice: p.minSalePrice }}
           onClose={() => setConverting(false)} />
       )}
       {correcting && (

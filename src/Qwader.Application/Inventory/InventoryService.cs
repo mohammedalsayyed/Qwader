@@ -26,7 +26,10 @@ public sealed record StockAdjustmentResult(string Number, decimal BalanceAfter);
 /// «تفكيك / تجميع»: <paramref name="FromQuantity"/> of one product become <paramref name="ToQuantity"/> of another, each in its
 /// base unit (20 sets → 120 cups; or 12 cups → 2 sets). The value leaving the first enters the second.
 /// </summary>
-public sealed record StockConversionRequest(Guid IdempotencyKey, int FromProductId, decimal FromQuantity, int ToProductId, decimal ToQuantity, string? Notes);
+/// <param name="ToRetailPrice">The second product's selling prices to set with it (null leaves them as they are); its last purchase
+/// price always follows from the first's (÷ the ratio).</param>
+public sealed record StockConversionRequest(Guid IdempotencyKey, int FromProductId, decimal FromQuantity, int ToProductId, decimal ToQuantity, string? Notes,
+    decimal? ToRetailPrice = null, decimal? ToWholesalePrice = null, decimal? ToMinSalePrice = null);
 
 /// <param name="Value">The value at cost that moved from one product to the other.</param>
 /// <param name="ToUnitCost">The cost each unit of the second product took.</param>
@@ -45,6 +48,14 @@ public sealed class StockConversionRequestValidator : AbstractValidator<StockCon
         RuleFor(x => x.ToQuantity).GreaterThan(0).WithMessage("الكمية الناتجة يجب أن تكون أكبر من صفر")
             .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
         RuleFor(x => x.Notes).MaximumLength(300);
+        RuleFor(x => x.ToRetailPrice).GreaterThan(0).WithMessage("سعر البيع بالمفرق مطلوب")
+            .Must(p => p is null || Common.Decimals.Money(p.Value)).WithMessage(Common.Decimals.MoneyMessage).When(x => x.ToRetailPrice is not null);
+        RuleFor(x => x.ToWholesalePrice).GreaterThanOrEqualTo(0).WithMessage("سعر الجملة لا يمكن أن يكون سالبًا")
+            .Must(p => p is null || Common.Decimals.Money(p.Value)).WithMessage(Common.Decimals.MoneyMessage).When(x => x.ToWholesalePrice is not null);
+        RuleFor(x => x.ToMinSalePrice).GreaterThanOrEqualTo(0).WithMessage("أقل سعر بيع لا يمكن أن يكون سالبًا")
+            .Must(p => p is null || Common.Decimals.Money(p.Value)).WithMessage(Common.Decimals.MoneyMessage)
+            .LessThanOrEqualTo(x => x.ToRetailPrice).When(x => x.ToRetailPrice is not null).WithMessage("أقل سعر بيع يجب ألا يتجاوز سعر المفرق")
+            .When(x => x.ToMinSalePrice is not null);
     }
 }
 
@@ -488,7 +499,8 @@ public sealed class InventoryService(
 
         var ids = new[] { request.FromProductId, request.ToProductId };
         var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
-            .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, Unit = p.Unit.Name }).ToDictionaryAsync(p => p.Id, ct);
+            .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, Unit = p.Unit.Name, p.PurchasePrice, p.RetailPrice, p.WholesalePrice, p.MinSalePrice })
+            .ToDictionaryAsync(p => p.Id, ct);
         if (products.Count != 2) throw new ValidationFailedException("productId", "المنتج غير موجود");
         if (products.Values.FirstOrDefault(p => p.IsArchived) is { } archived)
             throw new BusinessRuleException($"المنتج «{archived.Name}» مؤرشف؛ ألغِ أرشفته أولًا");
@@ -510,6 +522,25 @@ public sealed class InventoryService(
         var unitCost = CostMath.RoundCost(request.FromQuantity * issued.UnitCost / request.ToQuantity);
         var received = await ledger.ReceiveAsync(new StockEntry(request.ToProductId, warehouseId, request.ToQuantity, StockMovementType.ConversionIn,
             "Conversion", null, number, notes), unitCost, ct);
+
+        // The second product's prices follow: its last purchase price is the first's ÷ the ratio (a set bought at 60 → 10 a cup;
+        // the cost it took when there is none), and the selling prices are set when given.
+        var source = products[request.FromProductId];
+        var target = products[request.ToProductId];
+        var purchasePrice = source.PurchasePrice > 0
+            ? CostMath.RoundCost(source.PurchasePrice * request.FromQuantity / request.ToQuantity)
+            : unitCost;
+        var retail = request.ToRetailPrice ?? target.RetailPrice;
+        var wholesale = request.ToWholesalePrice ?? target.WholesalePrice;
+        var minSale = request.ToMinSalePrice ?? Math.Min(target.MinSalePrice, retail);
+        await db.Database.ExecuteSqlAsync($"""
+            UPDATE Products SET PurchasePrice = {db.Database.Exact(purchasePrice)}, RetailPrice = {db.Database.Exact(retail)},
+                WholesalePrice = {db.Database.Exact(wholesale)}, MinSalePrice = {db.Database.Exact(minSale)}
+            WHERE Id = {request.ToProductId}
+            """, ct);
+        audit.Log("Product.Prices", "Product", request.ToProductId.ToString(),
+            new { target.PurchasePrice, target.RetailPrice, target.WholesalePrice, target.MinSalePrice },
+            new { PurchasePrice = purchasePrice, RetailPrice = retail, WholesalePrice = wholesale, MinSalePrice = minSale }, $"تفكيك/تجميع {number}");
 
         idempotency.Record(request.IdempotencyKey, ConversionOperation, "StockAdjustment", number);
         audit.Log("Inventory.Conversion", "Product", request.FromProductId.ToString(), null,
