@@ -221,9 +221,10 @@ export function SupplierDetailPage() {
         <Stat label="إجمالي المدفوع" value={formatMoney(s.totalPayments)} />
       </div>
 
-      {can(P.VouchersCreate) && s.balance > 0 && (
-        <Link to={`/payments/new?supplierId=${s.id}`} className="block">
-          <Button block variant="secondary"><ReceiptText className="size-4" /> دفعة للمورد (سند صرف)</Button>
+      {/* Always: nothing owed (or theirs to deliver) opens it as an advance for goods not arrived yet. */}
+      {can(P.VouchersCreate) && (
+        <Link to={`/payments/new?supplierId=${s.id}${s.balance > 0.004 ? '' : '&advance=1'}`} className="block">
+          <Button block variant="secondary"><ReceiptText className="size-4" /> {s.balance > 0.004 ? 'دفعة للمورد (سند صرف)' : 'دفعة مقدمة للمورد (سند صرف)'}</Button>
         </Link>
       )}
       {can(P.PurchasesManage) && (

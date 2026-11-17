@@ -205,6 +205,9 @@ public sealed class AccountLogoTests(ApiFactory factory)
         var today = await (await admin.GetAsync("/api/financial-accounts/day")).ReadAsync<AccountsDayDto>();
         var row = today.Accounts.Single(a => a.AccountId == drawer);
         (row.Opening, row.In, row.Out, row.Closing).Should().Be((0m, 100m, 30m, 70m));
+        // All of it was opening-balance corrections: the actual movement is nothing.
+        row.OpeningAdjustments.Should().Be(70);
+        today.Breakdown!.OpeningBalances.Should().Be(today.Accounts.Sum(a => a.OpeningAdjustments));
         row.Closing.Should().Be((await admin.GetFromJsonAsync<AccountDto>($"/api/financial-accounts/{drawer}", TestJson.Options))!.CurrentBalance);
         today.In.Should().Be(today.Accounts.Sum(a => a.In));
         today.Closing.Should().Be(today.Opening + today.In - today.Out);

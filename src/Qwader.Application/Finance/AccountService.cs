@@ -55,6 +55,8 @@ public sealed class AccountService(
                 Id = g.Key,
                 In = g.Where(t => t.Direction == MoneyDirection.In).Sum(t => (decimal?)t.Amount) ?? 0,
                 Out = g.Where(t => t.Direction == MoneyDirection.Out).Sum(t => (decimal?)t.Amount) ?? 0,
+                Adjustments = g.Where(t => t.Category == AccountTransactionCategory.OpeningBalance)
+                    .Sum(t => (decimal?)(t.Direction == MoneyDirection.In ? t.Amount : -t.Amount)) ?? 0,
             }).ToDictionaryAsync(x => x.Id, ct);
         var accounts = await db.FinancialAccounts.AsNoTracking().OrderBy(a => a.Type).ThenBy(a => a.Id)
             .Select(a => new { a.Id, a.Name, a.Type, a.LogoFileId, a.IsActive }).ToListAsync(ct);
@@ -65,7 +67,7 @@ public sealed class AccountService(
                 var moved = during.GetValueOrDefault(a.Id);
                 var @in = moved?.In ?? 0;
                 var @out = moved?.Out ?? 0;
-                return new AccountDayDto(a.Id, a.Name, a.Type, a.LogoFileId, a.IsActive, opening, @in, @out, opening + @in - @out);
+                return new AccountDayDto(a.Id, a.Name, a.Type, a.LogoFileId, a.IsActive, opening, @in, @out, opening + @in - @out, moved?.Adjustments ?? 0);
             })
             // A disabled account is listed only if it held or moved money that day.
             .Where(r => r.IsActive || r.Opening != 0 || r.In != 0 || r.Out != 0)

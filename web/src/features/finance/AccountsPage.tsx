@@ -184,6 +184,7 @@ function AccountsOnDay() {
   const oneDay = from === to;
   const query = useQuery({ queryKey: ['accounts-day', from, to], queryFn: () => accountsApi.day(from, to), placeholderData: keepPreviousData });
   const d = query.data;
+  const adjustments = d?.accounts.reduce((t, a) => t + (a.openingAdjustments ?? 0), 0) ?? 0;
   const net = (n: number) => (Math.abs(n) < 0.005 ? '—' : `${n > 0 ? '+' : '−'}${formatMoney(Math.abs(n))}`);
   const tone = (n: number) => (Math.abs(n) < 0.005 ? 'text-muted' : n > 0 ? 'text-success' : 'text-danger');
   return (
@@ -191,7 +192,7 @@ function AccountsOnDay() {
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-bold">حركة الحسابات</h2>
-          <p className="text-sm text-muted">قديش زاد أو نقص كل حساب {oneDay ? 'في هذا اليوم (نهاية اليوم − بداية اليوم)' : 'في هذه الفترة (نهايتها − بدايتها)'}</p>
+          <p className="text-sm text-muted">قديش زاد أو نقص كل حساب من حركته الفعلية {oneDay ? 'في هذا اليوم' : 'في هذه الفترة'} — تعديل الأرصدة الافتتاحية يظهر وحده تحته</p>
         </div>
         <div className="flex gap-2">
           <Field label="من" className="w-40">
@@ -212,22 +213,35 @@ function AccountsOnDay() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {d.accounts.map((a) => (
+              {d.accounts.map((a) => {
+                const adj = a.openingAdjustments ?? 0;
+                const moved = a.closing - a.opening - adj;
+                return (
                 <tr key={a.accountId} className={cn(!a.isActive && 'opacity-60')}>
                   <td className="px-3 py-2">
                     <Link to={`/accounts/${a.accountId}`} className="flex items-center gap-2 font-medium hover:text-brand-700">
                       <AccountLogo fileId={a.logoFileId} type={a.type} size="sm" /> {a.name}
                     </Link>
                   </td>
-                  <td className={cn('tabular px-3 py-2 text-end font-bold', tone(a.closing - a.opening))}>{net(a.closing - a.opening)}</td>
+                  <td className="px-3 py-2 text-end">
+                    <span className={cn('tabular font-bold', tone(moved))}>{net(moved)}</span>
+                    {Math.abs(adj) >= 0.005 && <span className="block text-xs text-muted">تعديل رصيد افتتاحي <span className="tabular">{net(adj)}</span></span>}
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot className="border-t-2 border-line bg-canvas font-bold">
               <tr>
-                <td className="px-3 py-2">المجموع</td>
-                <td className={cn('tabular px-3 py-2 text-end', tone(d.closing - d.opening))}>{net(d.closing - d.opening)}</td>
+                <td className="px-3 py-2">صافي الحركة الفعلية</td>
+                <td className={cn('tabular px-3 py-2 text-end', tone(d.closing - d.opening - adjustments))}>{net(d.closing - d.opening - adjustments)}</td>
               </tr>
+              {Math.abs(adjustments) >= 0.005 && (
+                <tr className="text-xs font-normal text-muted">
+                  <td className="px-3 py-1">+ تعديل أرصدة افتتاحية (ليس مالًا دخل أو خرج)</td>
+                  <td className="tabular px-3 py-1 text-end">{net(adjustments)}</td>
+                </tr>
+              )}
             </tfoot>
           </table>
           {d.breakdown && <DayBreakdown b={d.breakdown} net={net} tone={tone} />}
@@ -241,7 +255,6 @@ function AccountsOnDay() {
 function DayBreakdown({ b, net, tone }: { b: NonNullable<AccountsDay['breakdown']>; net: (n: number) => string; tone: (n: number) => string }) {
   const rows: [string, number][] = [
     ['صافي التدفق النقدي (مبيعات، تحصيل، مصاريف، مرتجعات…) — نفس رقم التقارير', b.cashFlow],
-    ['تعديل أرصدة افتتاحية', b.openingBalances],
     ['إلغاءات (مستند ملغي وعكسه؛ إلغاء مستند من يوم سابق يرجّع ماله اليوم)', b.voided],
     ['تحويلات بين حساباتك', b.transfers],
   ];

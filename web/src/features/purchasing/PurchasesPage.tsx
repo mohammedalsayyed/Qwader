@@ -67,7 +67,7 @@ export function PurchasesPage() {
                   </div>
                   <div className="mt-2 flex items-end justify-between">
                     <span className="text-xs text-muted">
-                      {p.total - p.paidAmount - p.returnedTotal > 0 && p.status === 'Posted' ? `متبقي ${formatMoney(p.total - p.paidAmount)}` : p.paidAmount >= p.total ? 'مدفوعة' : ''}
+                      {p.total - p.paidAmount - p.returnedTotal > 0 && p.status === 'Posted' ? `غير مدفوع عند الشراء ${formatMoney(p.total - p.paidAmount)}` : p.paidAmount >= p.total ? 'مدفوعة' : ''}
                     </span>
                     <span className="tabular text-lg font-bold">{formatMoney(p.total)}</span>
                   </div>

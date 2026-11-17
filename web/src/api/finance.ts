@@ -26,6 +26,8 @@ export interface AccountDay {
   in: number;
   out: number;
   closing: number;
+  /** Of the movement, what was an opening-balance correction — not money in or out. */
+  openingAdjustments?: number;
 }
 
 export interface AccountsDay {

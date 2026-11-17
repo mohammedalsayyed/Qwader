@@ -114,7 +114,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   // The day the money came in (every receipt) or the owner took it («مسحوبات شخصية»); today by default.
   const [date, setDate] = useState(localToday());
   // A supplier payment ahead of the goods (they have not arrived): may be more than is owed, and takes the day it was paid.
-  const [advance, setAdvance] = useState(false);
+  const [advance, setAdvance] = useState(params.get('advance') === '1');
   const supplierAdvance = kind === 'payment' && purpose === 'party' && advance;
   const datable = kind === 'receipt' || purpose === 'owner' || supplierAdvance;
   const [accountId, setAccountId] = useState<number | null>(null);

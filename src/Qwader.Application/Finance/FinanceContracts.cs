@@ -27,8 +27,9 @@ public sealed record AccountStatementDto(int AccountId, string AccountName, Date
 public sealed record CreateAccountTransferRequest(Guid IdempotencyKey, int FromAccountId, int ToAccountId, decimal Amount, string? Notes);
 
 /// <summary>One account over one day: Opening + In − Out = Closing.</summary>
+/// <param name="OpeningAdjustments">Of the movement, what was an opening-balance correction (not money that came in or went out).</param>
 public sealed record AccountDayDto(int AccountId, string Name, FinancialAccountType Type, Guid? LogoFileId, bool IsActive,
-    decimal Opening, decimal In, decimal Out, decimal Closing);
+    decimal Opening, decimal In, decimal Out, decimal Closing, decimal OpeningAdjustments = 0);
 
 /// <summary>Every account on a day, with the store's totals.</summary>
 public sealed record AccountsDayDto(DateOnly From, DateOnly To, IReadOnlyList<AccountDayDto> Accounts, decimal Opening, decimal In, decimal Out, decimal Closing,
