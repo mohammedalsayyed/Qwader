@@ -35,6 +35,12 @@ public enum StockMovementType
     ArchiveWriteOff = 25,
     /// <summary>The average cost corrected by a manager (a wrong opening cost): no quantity moves; the value of the stock changes.</summary>
     CostCorrection = 26,
+    /// <summary>
+    /// «تفكيك / تجميع»: goods turned into another product (a set of 6 cups into 6 cups, or back). The value that leaves one
+    /// product enters the other; nothing is gained or lost.
+    /// </summary>
+    ConversionOut = 27,
+    ConversionIn = 28,
 }
 
 public static class StockMovementTypes

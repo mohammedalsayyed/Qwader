@@ -22,6 +22,32 @@ public sealed record StockAdjustmentRequest(Guid IdempotencyKey, int ProductId, 
 
 public sealed record StockAdjustmentResult(string Number, decimal BalanceAfter);
 
+/// <summary>
+/// «تفكيك / تجميع»: <paramref name="FromQuantity"/> of one product become <paramref name="ToQuantity"/> of another, each in its
+/// base unit (20 sets → 120 cups; or 12 cups → 2 sets). The value leaving the first enters the second.
+/// </summary>
+public sealed record StockConversionRequest(Guid IdempotencyKey, int FromProductId, decimal FromQuantity, int ToProductId, decimal ToQuantity, string? Notes);
+
+/// <param name="Value">The value at cost that moved from one product to the other.</param>
+/// <param name="ToUnitCost">The cost each unit of the second product took.</param>
+public sealed record StockConversionResult(string Number, decimal FromBalanceAfter, decimal ToBalanceAfter, decimal Value, decimal ToUnitCost);
+
+public sealed class StockConversionRequestValidator : AbstractValidator<StockConversionRequest>
+{
+    public StockConversionRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).NotEmpty();
+        RuleFor(x => x.FromProductId).GreaterThan(0).WithMessage("اختر المنتج الذي يُفكَّك");
+        RuleFor(x => x.ToProductId).GreaterThan(0).WithMessage("اختر المنتج الناتج")
+            .NotEqual(x => x.FromProductId).WithMessage("اختر منتجين مختلفين");
+        RuleFor(x => x.FromQuantity).GreaterThan(0).WithMessage("الكمية يجب أن تكون أكبر من صفر")
+            .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
+        RuleFor(x => x.ToQuantity).GreaterThan(0).WithMessage("الكمية الناتجة يجب أن تكون أكبر من صفر")
+            .Must(Common.Decimals.Quantity).WithMessage(Common.Decimals.QuantityMessage);
+        RuleFor(x => x.Notes).MaximumLength(300);
+    }
+}
+
 /// <summary>A manager corrects a product's average cost (e.g. an opening balance entered at the wrong cost).</summary>
 public sealed record CostCorrectionRequest(Guid IdempotencyKey, int ProductId, decimal NewCost, string Reason);
 
@@ -98,6 +124,7 @@ public interface IInventoryService
     Task<InventorySummaryDto> SummaryAsync(CancellationToken ct = default);
     Task<StockAdjustmentResult> AdjustAsync(StockAdjustmentRequest request, CancellationToken ct = default);
     Task<CostCorrectionResult> CorrectCostAsync(CostCorrectionRequest request, CancellationToken ct = default);
+    Task<StockConversionResult> ConvertAsync(StockConversionRequest request, CancellationToken ct = default);
     Task<PagedResult<StockMovementDto>> MovementsAsync(MovementListRequest request, CancellationToken ct = default);
     /// <summary>How many movements match the filter, their quantity and their value at cost (null without cost permission).</summary>
     Task<MovementTotalDto> MovementTotalAsync(MovementListRequest request, CancellationToken ct = default);
@@ -438,6 +465,59 @@ public sealed class InventoryService(
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new CostCorrectionResult(number, posting.UnitCost, posting.AverageCostAfter, onHand, change);
+    }
+
+    private const string ConversionOperation = "Inventory.Conversion";
+
+    /// <summary>
+    /// «تفكيك / تجميع»: one product's stock becomes another's (20 sets → 120 cups). The first leaves at its average cost, and the
+    /// second takes exactly that value (its cost per unit = the value ÷ its quantity), so nothing is gained or lost: not a stock
+    /// adjustment, not in the profit. Both movements carry one number and say what became what.
+    /// </summary>
+    public async Task<StockConversionResult> ConvertAsync(StockConversionRequest request, CancellationToken ct = default)
+    {
+        if (await idempotency.FindAsync(request.IdempotencyKey, ConversionOperation, ct) is { } done)
+        {
+            var moves = await db.StockMovements.AsNoTracking().Where(m => m.SourceType == "Conversion" && m.SourceNumber == done.ResultId)
+                .Select(m => new { m.Type, m.BalanceAfter, m.UnitCost, m.Quantity }).ToListAsync(ct);
+            var o = moves.First(m => m.Type == StockMovementType.ConversionOut);
+            var i = moves.First(m => m.Type == StockMovementType.ConversionIn);
+            return new StockConversionResult(done.ResultId!, o.BalanceAfter, i.BalanceAfter, CostMath.RoundMoney(-o.Quantity * o.UnitCost), i.UnitCost);
+        }
+        await QuantityRules.EnsureAsync(db, [(request.FromProductId, null, request.FromQuantity), (request.ToProductId, null, request.ToQuantity)], ct);
+
+        var ids = new[] { request.FromProductId, request.ToProductId };
+        var products = await db.Products.AsNoTracking().Where(p => ids.Contains(p.Id))
+            .Select(p => new { p.Id, p.Name, p.Size, p.Color, p.Model, p.IsArchived, Unit = p.Unit.Name }).ToDictionaryAsync(p => p.Id, ct);
+        if (products.Count != 2) throw new ValidationFailedException("productId", "المنتج غير موجود");
+        if (products.Values.FirstOrDefault(p => p.IsArchived) is { } archived)
+            throw new BusinessRuleException($"المنتج «{archived.Name}» مؤرشف؛ ألغِ أرشفته أولًا");
+        string Name(int id) => Product.BuildDisplayName(products[id].Name, products[id].Size, products[id].Color, products[id].Model);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Both products locked in ascending order (as every multi-product posting), before either moves.
+        foreach (var id in ids.Order()) await db.LockRowAsync("Products", id, ct);
+        var warehouseId = await DefaultWarehouseAsync(ct);
+        var number = await numbers.NextAsync(DocumentType.StockAdjustment, ct);
+        var extra = string.IsNullOrWhiteSpace(request.Notes) ? "" : $" — {request.Notes.Trim()}";
+        var what = $"{request.FromQuantity:0.###} {products[request.FromProductId].Unit} «{Name(request.FromProductId)}» ← {request.ToQuantity:0.###} {products[request.ToProductId].Unit} «{Name(request.ToProductId)}»";
+        var notes = $"تفكيك/تجميع: {what}{extra}";
+        if (notes.Length > 500) notes = notes[..500];
+
+        var issued = await ledger.IssueAsync(new StockEntry(request.FromProductId, warehouseId, request.FromQuantity, StockMovementType.ConversionOut,
+            "Conversion", null, number, notes), ct: ct);
+        var value = CostMath.RoundMoney(request.FromQuantity * issued.UnitCost);
+        var unitCost = CostMath.RoundCost(request.FromQuantity * issued.UnitCost / request.ToQuantity);
+        var received = await ledger.ReceiveAsync(new StockEntry(request.ToProductId, warehouseId, request.ToQuantity, StockMovementType.ConversionIn,
+            "Conversion", null, number, notes), unitCost, ct);
+
+        idempotency.Record(request.IdempotencyKey, ConversionOperation, "StockAdjustment", number);
+        audit.Log("Inventory.Conversion", "Product", request.FromProductId.ToString(), null,
+            new { number, request.FromProductId, request.FromQuantity, request.ToProductId, request.ToQuantity, value, unitCost, notes = request.Notes });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        await StockAlerts.NotifyCrossedAsync(db, push, new Dictionary<int, decimal> { [request.FromProductId] = request.FromQuantity }, CancellationToken.None);
+        return new StockConversionResult(number, issued.BalanceAfter, received.BalanceAfter, value, unitCost);
     }
 
     private Task<int> DefaultWarehouseAsync(CancellationToken ct) => db.Warehouses.Where(w => w.IsDefault).Select(w => w.Id).FirstAsync(ct);

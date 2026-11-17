@@ -46,6 +46,7 @@ public sealed class AuditLogService(IAppDbContext db, IClock clock) : IAuditLogS
         ["Product.Import"] = "استيراد منتجات",
         ["Product.CostCorrection"] = "تصحيح تكلفة منتج",
         ["Inventory.Adjust"] = "حركة مخزون يدوية",
+        ["Inventory.Conversion"] = "تفكيك / تجميع منتج",
         ["StockCount.Post"] = "اعتماد جرد",
         ["StockCount.Cancel"] = "إلغاء جرد",
         ["Purchase.CreateAndPost"] = "فاتورة شراء معتمدة",

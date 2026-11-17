@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, ArrowRight, Boxes, Calculator, Copy, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, Boxes, Calculator, Copy, Pencil, Split } from 'lucide-react';
+import { ConversionSheet } from './ConversionSheet';
 import { CostCorrectionSheet } from './CostCorrectionSheet';
 import { productsApi } from '@/api/catalog';
 import { useAuth } from '@/auth/AuthProvider';
@@ -28,6 +29,7 @@ export function ProductDetailPage() {
   const [tab, setTab] = useState<Tab>('info');
   const [adjusting, setAdjusting] = useState(false);
   const [correcting, setCorrecting] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const query = useQuery({ queryKey: ['product', id], queryFn: () => productsApi.get(id) });
 
@@ -93,6 +95,9 @@ export function ProductDetailPage() {
         )}
         {can(P.InventoryAdjust) && (
           <Button variant="secondary" onClick={() => setAdjusting(true)}><Boxes className="size-4" /> حركة مخزون</Button>
+        )}
+        {can(P.InventoryAdjust) && !p.isArchived && p.quantity > 0 && (
+          <Button variant="outline" onClick={() => setConverting(true)}><Split className="size-4" /> تفكيك / تجميع</Button>
         )}
         {can(P.InventoryAdjust) && costVisible && (
           <Button variant="outline" onClick={() => setCorrecting(true)}><Calculator className="size-4" /> تصحيح التكلفة</Button>
@@ -200,6 +205,10 @@ export function ProductDetailPage() {
 
       {adjusting && (
         <AdjustmentSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName }} onClose={() => setAdjusting(false)} />
+      )}
+      {converting && (
+        <ConversionSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName, averageCost: p.averageCost ?? null }}
+          onClose={() => setConverting(false)} />
       )}
       {correcting && (
         <CostCorrectionSheet product={{ id: p.id, displayName: p.displayName, quantity: p.quantity, unitName: p.unitName, averageCost: p.averageCost ?? 0 }}

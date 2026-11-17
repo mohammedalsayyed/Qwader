@@ -134,6 +134,8 @@ const TYPE_FILTERS: { value: MovementFilter; label: string }[] = [
   { value: 'CountDecrease', label: 'نقص جرد' },
   { value: 'ArchiveWriteOff', label: 'تصفير عند الأرشفة' },
   { value: 'CostCorrection', label: 'تصحيح تكلفة' },
+  { value: 'ConversionOut', label: 'تفكيك / تجميع (خرج)' },
+  { value: 'ConversionIn', label: 'تفكيك / تجميع (دخل)' },
   { value: 'SaleReturn', label: 'مرتجع بيع' },
   { value: 'PurchaseReturn', label: 'مردود' },
 ];

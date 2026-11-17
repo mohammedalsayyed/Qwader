@@ -26,6 +26,11 @@ public sealed class InventoryController(IInventoryService inventory) : Controlle
     [HasPermission(Permissions.InventoryAdjust)]
     public Task<StockAdjustmentResult> Adjust(StockAdjustmentRequest request, CancellationToken ct) => inventory.AdjustAsync(request, ct);
 
+    /// <summary>«تفكيك / تجميع»: one product's stock becomes another's at the same value.</summary>
+    [HttpPost("conversions")]
+    [HasPermission(Permissions.InventoryAdjust)]
+    public Task<StockConversionResult> Convert(StockConversionRequest request, CancellationToken ct) => inventory.ConvertAsync(request, ct);
+
     /// <summary>Corrects a product's average cost (stock adjustment + cost visibility; checked in the service).</summary>
     [HttpPost("cost-corrections")]
     [HasPermission(Permissions.InventoryAdjust)]
