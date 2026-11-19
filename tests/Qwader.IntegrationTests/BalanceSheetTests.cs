@@ -203,4 +203,36 @@ public sealed class BalanceSheetTests(ApiFactory factory, ITestOutputHelper outp
         (Line(after, "دفعات مقدمة للموردين") - Line(before, "دفعات مقدمة للموردين")).Should().Be(50);
         after.Difference.Should().Be(before.Difference, "the sheet stays balanced");
     }
+
+    [Fact]
+    public async Task An_invoice_edited_days_later_keeps_the_sheet_balanced_on_the_days_between()
+    {
+        // As on production: INV sold 3 days ago (45), edited today to 56. The new invoice keeps the old day, but its money moved today.
+        var admin = await factory.LoginAsync();
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        var product = await admin.CreateProductAsync(retail: 45, openingQuantity: 5, openingCost: 10);
+        var twoDaysAgo = DateOnly.FromDateTime(DateTime.Now).AddDays(-2);
+        async Task<decimal> Difference(DateOnly day) =>
+            (await (await admin.GetAsync($"/api/reports/balance-sheet?date={day:yyyy-MM-dd}")).ReadAsync<BalanceSheetDto>()).Difference;
+
+        var original = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 1, 45)], [new(cash, 45)], null))).ReadAsync<SaleDetailDto>();
+        // It was sold three days ago: the invoice and what it moved then.
+        var soldAt = DateTime.UtcNow.AddDays(-3);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            await db.SaleInvoices.Where(s => s.Id == original.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.Date, soldAt).SetProperty(x => x.CreatedAt, soldAt));
+            await db.AccountTransactions.Where(t => t.SourceType == "SaleInvoice" && t.SourceId == original.Id).ExecuteUpdateAsync(t => t.SetProperty(x => x.Date, soldAt));
+            await db.CustomerLedgerEntries.Where(e => e.SourceType == "SaleInvoice" && e.SourceId == original.Id).ExecuteUpdateAsync(e => e.SetProperty(x => x.Date, soldAt));
+            await db.StockMovements.Where(m => m.SourceType == "SaleInvoice" && m.SourceId == original.Id).ExecuteUpdateAsync(m => m.SetProperty(x => x.OccurredAt, soldAt));
+        }
+        var before = await Difference(twoDaysAgo);
+
+        // Edited today: 56 instead of 45, paid in full.
+        var edited = await (await admin.PostAsJsonAsync($"/api/sales/{original.Id}/replace", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+            [new(product.Id, 1, 56)], [new(cash, 56)], null))).ReadAsync<SaleDetailDto>();
+        DateOnly.FromDateTime(edited.Date.ToLocalTime()).Should().BeBefore(twoDaysAgo, "the edited invoice keeps its old day");
+        (await Difference(twoDaysAgo)).Should().Be(before, "on the days between, the sale is the original one with its money");
+    }
 }

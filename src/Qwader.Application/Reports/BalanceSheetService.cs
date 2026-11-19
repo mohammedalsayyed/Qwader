@@ -155,9 +155,13 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
         var revaluationDifferences = inventory - stockOpening - stockAdjustments - costCorrections + Cogs(false) + Cogs(true) - purchaseDocuments;
 
         // ---------------------------------------------------------------- profit (cumulative and this year)
+        // A sale counts from when its money and goods moved: an edited invoice keeps its old day for the reports by day, but its
+        // payments, debt and stock were recorded on the day of the edit (CreatedAt) — counted on its old day, the sheet would show it
+        // sold without its money on the days between. A sale made without internet moved on the moment it was sold (its Date).
         var invoices = await db.SaleInvoices.AsNoTracking()
-            .Where(s => s.Date < end && (s.Status != SaleStatus.Voided || s.VoidedAt >= end))
-            .GroupBy(s => s.Date >= yearStartUtc).Select(g => new { ThisYear = g.Key, Total = g.Sum(s => s.Total) }).ToListAsync(ct);
+            .Select(s => new { s.Total, s.Status, s.VoidedAt, Posted = s.SoldOffline ? s.Date : s.CreatedAt })
+            .Where(s => s.Posted < end && (s.Status != SaleStatus.Voided || s.VoidedAt >= end))
+            .GroupBy(s => s.Posted >= yearStartUtc).Select(g => new { ThisYear = g.Key, Total = g.Sum(s => s.Total) }).ToListAsync(ct);
         var returns = await db.SaleReturns.IgnoreQueryFilters().AsNoTracking()
             .Where(r => r.Date < end && (r.VoidedAt == null || r.VoidedAt >= end))
             .GroupBy(r => r.Date >= yearStartUtc).Select(g => new { ThisYear = g.Key, Total = g.Sum(r => r.Total) }).ToListAsync(ct);
