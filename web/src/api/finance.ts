@@ -170,6 +170,11 @@ export interface ExpenseItem {
   paymentVoucherNumber: string;
   status: VoucherStatus;
   createdByName: string | null;
+  /** A cost of this purchase / sale invoice (transport, delivery, packaging…). */
+  purchaseInvoiceId?: number | null;
+  purchaseInvoiceNumber?: string | null;
+  saleInvoiceId?: number | null;
+  saleInvoiceNumber?: string | null;
 }
 
 export interface ExpenseCategory {
@@ -194,6 +199,9 @@ export interface VoucherListParams {
   purpose?: PaymentPurpose;
   /** Payment vouchers to this name only (one owner's expenses). */
   beneficiary?: string;
+  /** Expenses of this purchase / sale invoice only. */
+  purchaseInvoiceId?: number;
+  saleInvoiceId?: number;
 }
 
 export const accountsApi = {
@@ -257,7 +265,11 @@ export const paymentsApi = {
 
 export const expensesApi = {
   list: (params: VoucherListParams) => api<PagedResult<ExpenseItem>>('/expenses', { query: { ...params } }),
-  create: (input: { idempotencyKey: string; expenseCategoryId: number; description: string; amount: number; financialAccountId: number; date?: string | null; attachmentFileId?: string | null }) =>
+  create: (input: {
+    idempotencyKey: string; expenseCategoryId: number; description: string; amount: number; financialAccountId: number; date?: string | null; attachmentFileId?: string | null;
+    /** A cost of this purchase invoice (transport…) or this sale invoice (delivery, packaging…). */
+    purchaseInvoiceId?: number | null; saleInvoiceId?: number | null;
+  }) =>
     api<ExpenseItem>('/expenses', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<ExpenseItem>(`/expenses/${id}/void`, { method: 'POST', body: { reason } }),
   categories: () => api<ExpenseCategory[]>('/expenses/categories'),

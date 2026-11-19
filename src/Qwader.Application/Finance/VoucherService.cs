@@ -488,6 +488,8 @@ public sealed class VoucherService(
         var query = db.Expenses.AsNoTracking();
         if (request.IncludeVoided != true) query = query.Where(e => e.Status == VoucherStatus.Posted);
         if (request.CategoryId is { } categoryId) query = query.Where(e => e.ExpenseCategoryId == categoryId);
+        if (request.PurchaseInvoiceId is { } purchaseId) query = query.Where(e => e.PurchaseInvoiceId == purchaseId);
+        if (request.SaleInvoiceId is { } saleId) query = query.Where(e => e.SaleInvoiceId == saleId);
         if (request.AccountId is { } accountId) query = query.Where(e => e.FinancialAccountId == accountId);
         if (request.From is not null || request.To is not null)
         {
@@ -515,8 +517,27 @@ public sealed class VoucherService(
         // A missing account is a clear message, not a database error.
         if (!await db.FinancialAccounts.AnyAsync(a => a.Id == request.FinancialAccountId && a.IsActive, ct))
             throw new ValidationFailedException("financialAccountId", "الحساب المالي غير موجود أو معطّل");
-        var expense = await PostExpenseAsync(category.Id, request.Description.Trim(), request.Amount, request.FinancialAccountId,
+        // A cost of one invoice: it must exist and not be voided; the voucher says which invoice it was for.
+        if (request.PurchaseInvoiceId is not null && request.SaleInvoiceId is not null)
+            throw new ValidationFailedException("saleInvoiceId", "المصروف لفاتورة واحدة: شراء أو بيع");
+        string? invoiceNumber = null;
+        if (request.PurchaseInvoiceId is { } purchaseId)
+            invoiceNumber = await db.PurchaseInvoices.Where(p => p.Id == purchaseId && p.Status != Domain.Purchasing.PurchaseStatus.Voided).Select(p => p.Number).FirstOrDefaultAsync(ct)
+                ?? throw new ValidationFailedException("purchaseInvoiceId", "فاتورة الشراء غير موجودة أو ملغاة");
+        if (request.SaleInvoiceId is { } saleId)
+            invoiceNumber = await db.SaleInvoices.Where(s => s.Id == saleId && s.Status != SaleStatus.Voided).Select(s => s.Number).FirstOrDefaultAsync(ct)
+                ?? throw new ValidationFailedException("saleInvoiceId", "فاتورة البيع غير موجودة أو ملغاة");
+        var description = request.Description.Trim();
+        var expense = await PostExpenseAsync(category.Id, description, request.Amount, request.FinancialAccountId,
             await DocumentDates.ToUtcAsync(request.Date, clock, db, ct), ct, request.AttachmentFileId);
+        if (invoiceNumber is not null)
+        {
+            expense.PurchaseInvoiceId = request.PurchaseInvoiceId;
+            expense.SaleInvoiceId = request.SaleInvoiceId;
+            var voucher = await db.PaymentVouchers.FirstAsync(v => v.Id == expense.PaymentVoucherId, ct);
+            voucher.Notes = $"{description} — {(request.PurchaseInvoiceId is not null ? "فاتورة الشراء" : "فاتورة البيع")} {invoiceNumber}";
+            if (voucher.Notes.Length > 500) voucher.Notes = voucher.Notes[..500];
+        }
 
         idempotency.Record(request.IdempotencyKey, operation, "Expense", expense.Id.ToString());
         await db.SaveChangesAsync(ct);
@@ -600,7 +621,9 @@ public sealed class VoucherService(
         var users = db.Users;
         return query.Select(e => new ExpenseDto(e.Id, e.Number, e.Date, e.ExpenseCategoryId, e.Category.Name, e.Description, e.Amount,
             e.FinancialAccountId, e.FinancialAccount.Name, e.AttachmentFileId, e.PaymentVoucherId, e.PaymentVoucher.Number, e.Status,
-            users.Where(u => u.Id == e.CreatedById).Select(u => u.FullName).FirstOrDefault()));
+            users.Where(u => u.Id == e.CreatedById).Select(u => u.FullName).FirstOrDefault(),
+            e.PurchaseInvoiceId, db.PurchaseInvoices.Where(p => p.Id == e.PurchaseInvoiceId).Select(p => p.Number).FirstOrDefault(),
+            e.SaleInvoiceId, db.SaleInvoices.Where(s => s.Id == e.SaleInvoiceId).Select(s => s.Number).FirstOrDefault()));
     }
 
     public async Task<IReadOnlyList<ExpenseCategoryDto>> CategoriesAsync(CancellationToken ct = default) =>

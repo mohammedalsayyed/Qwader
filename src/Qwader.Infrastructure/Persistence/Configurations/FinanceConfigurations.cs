@@ -107,6 +107,8 @@ public sealed class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
         b.HasOne(e => e.Category).WithMany().HasForeignKey(e => e.ExpenseCategoryId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(e => e.FinancialAccount).WithMany().HasForeignKey(e => e.FinancialAccountId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(e => e.PaymentVoucher).WithMany().HasForeignKey(e => e.PaymentVoucherId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Domain.Purchasing.PurchaseInvoice>().WithMany().HasForeignKey(e => e.PurchaseInvoiceId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Domain.Sales.SaleInvoice>().WithMany().HasForeignKey(e => e.SaleInvoiceId).OnDelete(DeleteBehavior.Restrict);
         b.ToTable(t => t.HasCheckConstraint("CK_Expenses_Amount", "[Amount] > 0"));
     }
 }

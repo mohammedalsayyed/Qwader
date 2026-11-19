@@ -228,6 +228,8 @@ public sealed class PurchaseService(
 
         var old = await db.PurchaseInvoices.FirstAsync(p => p.Id == id, ct);
         old.VoidReason = $"تعديل الفاتورة — بدلها {created.Number}";
+        // Its costs (transport…) belong to the purchase, which is now the new invoice.
+        await db.Expenses.Where(e => e.PurchaseInvoiceId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.PurchaseInvoiceId, created.Id), ct);
         var made = await db.PurchaseInvoices.FirstAsync(p => p.Id == created.Id, ct);
         made.Notes = $"بدل الفاتورة {original.Number} (تعديل)" + (string.IsNullOrWhiteSpace(made.Notes) ? "" : $" — {made.Notes}");
         audit.Log("Purchase.Edit", "PurchaseInvoice", created.Id.ToString(), new { original.Number, original.Total }, new { created.Number, created.Total });

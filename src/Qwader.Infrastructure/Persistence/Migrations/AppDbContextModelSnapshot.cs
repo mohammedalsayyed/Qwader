@@ -762,6 +762,12 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Property<int>("PaymentVoucherId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("PurchaseInvoiceId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SaleInvoiceId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -782,6 +788,10 @@ namespace Qwader.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PaymentVoucherId")
                         .IsUnique();
+
+                    b.HasIndex("PurchaseInvoiceId");
+
+                    b.HasIndex("SaleInvoiceId");
 
                     b.HasIndex("Date", "ExpenseCategoryId");
 
@@ -3015,6 +3025,16 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         .HasForeignKey("PaymentVoucherId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Purchasing.PurchaseInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("PurchaseInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Qwader.Domain.Sales.SaleInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("SaleInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 

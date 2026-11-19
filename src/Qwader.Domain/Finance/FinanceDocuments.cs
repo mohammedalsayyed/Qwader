@@ -152,6 +152,9 @@ public class Expense : AuditableEntity
     public Guid? AttachmentFileId { get; set; }
     /// <summary>Every expense is paid through exactly one payment voucher (no double counting).</summary>
     public int PaymentVoucherId { get; set; }
+    /// <summary>A cost of one purchase invoice (transport of its goods…) or one sale invoice (delivery, packaging…); at most one.</summary>
+    public int? PurchaseInvoiceId { get; set; }
+    public int? SaleInvoiceId { get; set; }
     public VoucherStatus Status { get; set; } = VoucherStatus.Posted;
 
     public ExpenseCategory Category { get; set; } = null!;

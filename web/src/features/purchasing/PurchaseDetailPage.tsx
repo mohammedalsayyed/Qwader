@@ -18,6 +18,7 @@ import { formatDate, formatDateTime, formatMoney, formatQuantity } from '@/lib/f
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
+import { InvoiceExpenses } from '@/components/finance/InvoiceExpenses';
 import { PurchaseStatusBadge } from './PurchasesPage';
 
 export function PurchaseDetailPage() {
@@ -146,6 +147,8 @@ export function PurchaseDetailPage() {
           </ul>
         </Card>
       )}
+
+      <InvoiceExpenses invoice={{ kind: 'purchase', id: p.id, number: p.number }} canAdd={p.status !== 'Voided'} />
 
       <Card className="px-4 print:hidden">
         <InfoList items={[

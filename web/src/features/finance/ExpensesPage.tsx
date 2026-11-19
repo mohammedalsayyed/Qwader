@@ -54,6 +54,11 @@ export function ExpensesPage() {
                   <div className="min-w-0">
                     <p className="font-semibold">{e.categoryName}{e.attachmentFileId && <Paperclip className="ms-1 inline size-4 text-muted" />}</p>
                     <p className="text-sm">{e.description}</p>
+                    {(e.purchaseInvoiceId || e.saleInvoiceId) && (
+                      <Link to={e.purchaseInvoiceId ? `/purchases/${e.purchaseInvoiceId}` : `/sales/${e.saleInvoiceId}`} className="text-xs text-brand-700 underline">
+                        على {e.purchaseInvoiceId ? 'فاتورة الشراء' : 'فاتورة البيع'} <span className="ltr inline-block">{e.purchaseInvoiceNumber ?? e.saleInvoiceNumber}</span>
+                      </Link>
+                    )}
                     <p className="text-xs text-muted">
                       {formatDate(e.date)} · {e.accountName} · <Link to={`/payments/${e.paymentVoucherId}`} className="ltr inline-block text-brand-700 underline">{e.paymentVoucherNumber}</Link>
                     </p>
@@ -79,7 +84,14 @@ export function ExpensesPage() {
   );
 }
 
-function NewExpenseSheet({ onClose }: { onClose: () => void }) {
+/** The invoice an expense is a cost of (from the invoice's page). */
+export interface ExpenseInvoice {
+  kind: 'purchase' | 'sale';
+  id: number;
+  number: string;
+}
+
+export function NewExpenseSheet({ onClose, invoice }: { onClose: () => void; invoice?: ExpenseInvoice }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const lookups = useLookups();
@@ -95,9 +107,12 @@ function NewExpenseSheet({ onClose }: { onClose: () => void }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const save = useMutation({
-    mutationFn: () => expensesApi.create({ idempotencyKey: key, expenseCategoryId: Number(categoryId), description: description.trim(), amount: parseNumber(amount)!, financialAccountId: accountId!, date, attachmentFileId: attachment }),
+    mutationFn: () => expensesApi.create({
+      idempotencyKey: key, expenseCategoryId: Number(categoryId), description: description.trim(), amount: parseNumber(amount)!, financialAccountId: accountId!, date, attachmentFileId: attachment,
+      purchaseInvoiceId: invoice?.kind === 'purchase' ? invoice.id : null, saleInvoiceId: invoice?.kind === 'sale' ? invoice.id : null,
+    }),
     onSuccess: (e) => {
-      for (const k of ['expenses', 'accounts', 'payment']) void queryClient.invalidateQueries({ queryKey: [k] });
+      for (const k of ['expenses', 'accounts', 'payment', 'balance-sheet']) void queryClient.invalidateQueries({ queryKey: [k] });
       toast.success(`تم تسجيل المصروف ${e.number}`);
       onClose();
     },
@@ -116,9 +131,16 @@ function NewExpenseSheet({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <Sheet open onClose={onClose} title="مصروف جديد" size="lg" footer={<Button block size="lg" loading={save.isPending} onClick={submit}>حفظ المصروف</Button>}>
+    <Sheet open onClose={onClose} title={invoice ? `سند صرف لفاتورة ${invoice.kind === 'purchase' ? 'الشراء' : 'البيع'} ${invoice.number}` : 'مصروف جديد'} size="lg"
+      footer={<Button block size="lg" loading={save.isPending} onClick={submit}>حفظ المصروف</Button>}>
       <div className="space-y-4">
         {errors.form && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-danger">{errors.form}</p>}
+        {invoice && (
+          <p className="rounded-xl bg-brand-50 p-3 text-sm leading-6">
+            مصروف على الفاتورة <b className="ltr inline-block">{invoice.number}</b> ({invoice.kind === 'purchase' ? 'مواصلات البضاعة، تحميل…' : 'توصيل، تغليف…'}):
+            يخرج من الحساب، ويُحسب مصروفًا يقلّل الربح، ويظهر على صفحة الفاتورة.
+          </p>
+        )}
         <Field label="نوع المصروف" required error={errors.category}>
           {(id) => (
             <Select id={id} value={categoryId} invalid={!!errors.category} onChange={(e) => setCategoryId(e.target.value)}>
@@ -127,7 +149,7 @@ function NewExpenseSheet({ onClose }: { onClose: () => void }) {
             </Select>
           )}
         </Field>
-        <Field label="الوصف" required error={errors.description}>{(id) => <Input id={id} value={description} invalid={!!errors.description} placeholder="مثال: فاتورة كهرباء شهر 10" onChange={(e) => setDescription(e.target.value)} />}</Field>
+        <Field label="الوصف" required error={errors.description}>{(id) => <Input id={id} value={description} invalid={!!errors.description} placeholder={invoice ? (invoice.kind === 'purchase' ? 'مثال: مواصلات البضاعة من المورد' : 'مثال: توصيل الغسالة للزبون') : 'مثال: فاتورة كهرباء شهر 10'} onChange={(e) => setDescription(e.target.value)} />}</Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="المبلغ (₪)" required error={errors.amount}>{(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" value={amount} invalid={!!errors.amount} onChange={(e) => setAmount(e.target.value)} />}</Field>
           <Field label="التاريخ">{(id) => <Input id={id} type="date" max={localToday()} value={date} onChange={(e) => setDate(e.target.value)} />}</Field>

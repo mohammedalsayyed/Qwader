@@ -20,6 +20,7 @@ import { formatDateTime, formatMoney, formatQuantity, localToday, TIME_ZONE } fr
 import { useIdempotencyKey } from '@/lib/hooks';
 import { cleanNumberInput, parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
+import { InvoiceExpenses } from '@/components/finance/InvoiceExpenses';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 
 /** An invoice made without internet that broke a rule a connected till would have refused: shown until a manager reviews it. */
@@ -212,6 +213,7 @@ export function SaleDetailPage() {
           </Card>
         )}
         {s.notes && <Card className="p-4 text-sm">{s.notes}</Card>}
+        <InvoiceExpenses invoice={{ kind: 'sale', id: s.id, number: s.number }} canAdd={s.status !== 'Voided'} />
       </div>
 
       {/* ---------- A4 print ---------- */}

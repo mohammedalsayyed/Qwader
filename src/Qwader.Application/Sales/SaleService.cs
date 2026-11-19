@@ -968,6 +968,8 @@ public sealed class SaleService(
 
         var old = await db.SaleInvoices.FirstAsync(s => s.Id == id, ct);
         old.VoidReason = $"تعديل الفاتورة — بدلها {created.Number}";
+        // Its costs (delivery, packaging…) belong to the sale, which is now the new invoice.
+        await db.Expenses.Where(e => e.SaleInvoiceId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.SaleInvoiceId, created.Id), ct);
         audit.Log("Sale.Edit", "SaleInvoice", created.Id.ToString(), new { original.Number, original.Total }, new { created.Number, created.Total });
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

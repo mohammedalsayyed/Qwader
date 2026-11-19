@@ -86,9 +86,10 @@ public sealed record CreatePaymentRequest(
     /// </summary>
     bool Advance = false);
 
+/// <param name="PurchaseInvoiceId">A cost of this purchase invoice (transport…); or <paramref name="SaleInvoiceId"/> of this sale (delivery, packaging…).</param>
 public sealed record CreateExpenseRequest(
     Guid IdempotencyKey, int ExpenseCategoryId, string Description, decimal Amount, int FinancialAccountId,
-    DateOnly? Date, Guid? AttachmentFileId);
+    DateOnly? Date, Guid? AttachmentFileId, int? PurchaseInvoiceId = null, int? SaleInvoiceId = null);
 
 public sealed record VoidDocumentRequest(string Reason = "");
 
@@ -101,7 +102,8 @@ public sealed record VoucherDto(
 public sealed record ExpenseDto(
     int Id, string Number, DateTime Date, int ExpenseCategoryId, string CategoryName, string Description, decimal Amount,
     int FinancialAccountId, string AccountName, Guid? AttachmentFileId, int PaymentVoucherId, string PaymentVoucherNumber,
-    VoucherStatus Status, string? CreatedByName);
+    VoucherStatus Status, string? CreatedByName,
+    int? PurchaseInvoiceId = null, string? PurchaseInvoiceNumber = null, int? SaleInvoiceId = null, string? SaleInvoiceNumber = null);
 
 public sealed class VoucherListRequest : PagedRequest
 {
@@ -118,6 +120,9 @@ public sealed class VoucherListRequest : PagedRequest
     public PaymentPurpose? Purpose { get; set; }
     /// <summary>Payment vouchers to this name only (an owner's expenses).</summary>
     public string? Beneficiary { get; set; }
+    /// <summary>Expenses of this purchase invoice / this sale invoice only.</summary>
+    public int? PurchaseInvoiceId { get; set; }
+    public int? SaleInvoiceId { get; set; }
 }
 
 public sealed record OwnerTotalRow(string Name, int Count, decimal Total);
