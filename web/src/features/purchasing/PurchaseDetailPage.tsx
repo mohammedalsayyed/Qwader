@@ -61,7 +61,7 @@ export function PurchaseDetailPage() {
 
       {/* Printed header (A4) */}
       <div className="hidden items-center gap-4 border-b border-line pb-3 print:flex">
-        <img src="/brand/logo.png" alt="" className="h-20 w-auto [print-color-adjust:exact]" width={640} height={616} />
+        <img src="/brand/mark.png" alt="" className="h-14 w-auto [print-color-adjust:exact]" width={400} height={200} />
         <div>
           <p className="text-xl font-bold">{settings.data?.storeName}</p>
           <p className="text-sm">{[settings.data?.storeAddress, settings.data?.storePhone].filter(Boolean).join(' · ')}</p>

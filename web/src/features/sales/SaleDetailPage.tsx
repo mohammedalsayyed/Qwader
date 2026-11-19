@@ -241,7 +241,7 @@ function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: Settings }) 
       <header className="flex items-start justify-between border-b-2 border-black pb-3">
         <div className="flex items-center gap-4">
           {/* The store's logo, printed in colour. */}
-          <img src="/brand/logo.png" alt="" className="h-24 w-auto [print-color-adjust:exact]" width={640} height={616} />
+          <img src="/brand/mark.png" alt="" className="h-16 w-auto [print-color-adjust:exact]" width={400} height={200} />
           <div>
           <p className="text-xl font-bold">{store?.storeName}</p>
           {store?.storeAddress && <p>{store.storeAddress}</p>}
