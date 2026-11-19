@@ -14,7 +14,7 @@ using Qwader.Infrastructure.Persistence;
 
 namespace Qwader.IntegrationTests;
 
-/// <summary>A customer's advance («دفعة مقدمة») and its use; an invoice's agorot become a discount.</summary>
+/// <summary>A customer's advance («دفعة مقدمة») and its use; an invoice's agorot come off when the seller keeps them in the discount.</summary>
 [Collection(ApiCollection.Name)]
 public sealed class DepositAndDecimalsTests(ApiFactory factory)
 {
@@ -89,7 +89,7 @@ public sealed class DepositAndDecimalsTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task The_agorot_of_a_total_become_a_discount_without_a_discount_permission()
+    public async Task The_agorot_come_off_without_a_discount_permission_or_stay_when_the_discount_is_cleared()
     {
         var admin = await factory.LoginAsync();
         var drawer = await DrawerAsync(admin);
@@ -108,12 +108,12 @@ public sealed class DepositAndDecimalsTests(ApiFactory factory)
         sale.Total.Should().Be(7);
         sale.InvoiceDiscount.Should().Be(0.5m);
 
-        // An older app (or a sale saved offline) still pays the agorot: they are change, the sale goes through.
-        var old = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
+        // The discount cleared: nothing comes off by itself, the customer pays the agorot.
+        var kept = await (await admin.PostAsJsonAsync("/api/sales", new CreateSaleRequest(Guid.NewGuid(), PriceTier.Retail, null, null, null, 0,
             [new(product.Id, 1, 2.5m)], [new(drawer, 2.5m)], null))).ReadAsync<SaleDetailDto>();
-        old.Total.Should().Be(2);
-        old.InvoiceDiscount.Should().Be(0.5m);
-        (await BalanceAsync(drawer)).Should().Be(2);
+        kept.Total.Should().Be(2.5m);
+        kept.InvoiceDiscount.Should().Be(0);
+        (await BalanceAsync(drawer)).Should().Be(2.5m);
         await IntegrityOkAsync(admin);
     }
 }

@@ -71,8 +71,8 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     onCustomer?.({ mode, customer: customer && { id: customer.id, name: customer.name, phone: customer.phone, code: customer.code, balance: customer.balance }, name: newName, phone: newPhone });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, customer, newName, newPhone]);
-  // The discount starts with the total's agorot in it (the store's rule: no agorot left on an invoice), so the seller sees it
-  // and can change it; when editing, on top of the invoice's own discount.
+  // The discount starts with the total's agorot in it, so the seller sees them: kept, they come off the invoice; cleared, the
+  // customer pays them. When editing, on top of the invoice's own discount.
   const [discount, setDiscount] = useState(() => {
     const typed = editing?.invoiceDiscount ?? 0;
     const agorot = round2(subtotal - typed - Math.floor(subtotal - typed + 0.0001));
@@ -124,13 +124,14 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
   const [error, setError] = useState<string>();
 
   const discountN = parseNumber(discount) ?? 0;
-  // No agorot on an invoice (the store's rule): what is left after the whole shekels is added to the discount.
-  const rawTotal = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
-  const decimalsOff = round2(rawTotal - Math.floor(rawTotal + 0.0001));
-  const total = round2(rawTotal - decimalsOff);
+  // The invoice is what the discount box leaves: nothing more comes off by itself.
+  const total = round2(subtotal - (Number.isNaN(discountN) ? 0 : discountN));
+  // The agorot of the total: taking them off needs no discount permission and is not counted toward the limit.
+  const agorot = round2(subtotal - Math.floor(subtotal + 0.0001));
+  const agorotOff = Math.min(Number.isNaN(discountN) ? 0 : discountN, agorot);
   // As the server counts it: line and invoice discounts against the lines at their (possibly changed) prices.
   const gross = subtotal + lineDiscounts;
-  const discountPercent = gross > 0 ? round2(((gross - total) / gross) * 100) : 0;
+  const discountPercent = gross > 0 ? round2(((gross - total - agorotOff) / gross) * 100) : 0;
   const maxDiscount = settings.data?.maxDiscountPercent ?? 0;
   // Over the store's limit: refused for sellers; allowed (but said out loud) for those who may sell under the limits.
   const overLimit = maxDiscount > 0 && discountPercent > maxDiscount + 0.001;
@@ -158,7 +159,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     customerId: mode === 'customer' ? customer?.id ?? null : null,
     customerName: mode === 'customer' && !customer ? newName.trim() : null,
     customerPhone: mode === 'customer' && !customer ? newPhone.trim() : null,
-    invoiceDiscount: round2((Number.isNaN(discountN) ? 0 : discountN) + decimalsOff),
+    invoiceDiscount: round2(Number.isNaN(discountN) ? 0 : discountN),
     lines: cart.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice, lineDiscount: l.lineDiscount, productUnitId: l.productUnitId })),
     payments,
   });
@@ -171,7 +172,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     });
     // Just what the «تم البيع» sheet shows; id 0 marks a sale the server has not seen yet.
     return {
-      id: 0, number: q.number, total, invoiceDiscount: round2(discountN + decimalsOff), remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
+      id: 0, number: q.number, total, invoiceDiscount: round2(discountN), remaining: Math.max(0, round2(total - paid)), customerName: q.customerName,
       lines: cart.lines.map((l) => ({ productName: l.name, quantity: l.quantity, unitName: l.unitName, unitFactor: l.factor, lineTotal: lineTotal(l) })),
     } as unknown as Sale;
   };
@@ -203,6 +204,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
     setError(undefined);
     if (offline && !canSellOffline) return setError('لا يمكن البيع بدون إنترنت: بيانات المنتجات على هذا الجهاز قديمة أو غير موجودة');
     if (Number.isNaN(discountN) || discountN < 0 || discountN > subtotal) return setError('الخصم غير صحيح');
+    if (!canDiscount && discountN > agorot + 0.001) return setError(`ليست لديك صلاحية خصم؛ يمكنك خصم الأعشار فقط (${formatMoney(agorot)})`);
     if (overLimit && !mayExceed) return setError(`الخصم (${discountPercent}%) يتجاوز الحد المسموح (${maxDiscount}%)`);
     if (payments.some((p) => Number.isNaN(p.amount))) return setError('أحد المبالغ غير صحيح');
     if (payments.some((p) => !p.accountId)) return setError('اختر الحساب لكل دفعة');
@@ -220,9 +222,7 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
         <div className="space-y-2">
           {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm font-medium text-danger">{error}</p>}
           <div className="flex items-center justify-between text-sm">
-            <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b>
-              {decimalsOff > 0 && <span className="ms-2 whitespace-nowrap text-xs text-muted">خصم الأعشار −{formatMoney(decimalsOff)}</span>}
-            </span>
+            <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b></span>
             {pendingPaid > 0 ? <span className="font-semibold text-amber-700">بانتظار التحقق: {formatMoney(pendingPaid)}</span>
               : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
@@ -310,9 +310,11 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
         </section>
 
         {/* Discount */}
-        {canDiscount && (
+        {(canDiscount || agorot > 0) && (
           <section>
-            <Field label="خصم على الفاتورة (₪)" hint={maxDiscount ? `الحد المسموح ${maxDiscount}% — الخصم الحالي ${discountPercent}%` : undefined}>
+            <Field label="خصم على الفاتورة (₪)"
+              hint={[agorot > 0 && `فيه أعشار الفاتورة (${formatMoney(agorot)}): اتركها لتُخصم، أو امسح الخصم لتبقى على الفاتورة`,
+                canDiscount && maxDiscount && `الحد المسموح ${maxDiscount}% — الخصم الحالي ${discountPercent}%`].filter(Boolean).join(' · ') || undefined}>
               {(id, h) => <Input id={id} aria-describedby={h} inputMode="decimal" className="ltr" value={discount} invalid={overLimit && !mayExceed}
                 onChange={(e) => { setDiscount(e.target.value); setError(undefined); }} />}
             </Field>

@@ -161,20 +161,20 @@ public sealed class SaleService(
         var lineDiscounts = lines.Sum(l => l.LineDiscount);
         var subtotal = lines.Sum(l => l.LineTotal);
         if (request.InvoiceDiscount > subtotal) throw new ValidationFailedException("invoiceDiscount", "الخصم أكبر من إجمالي الفاتورة");
-        // The store's rule: no agorot on an invoice. What is left after the whole shekels is added to the invoice discount
-        // (the till already sends it so; a request that does not is completed here). That part needs no discount permission
-        // and does not count toward the discount limit.
+        // The invoice discount is what the till sends: the till starts it with the total's agorot, and the seller keeps them (off
+        // the invoice) or clears them (the customer pays them). Nothing more comes off by itself. Taking off up to the agorot
+        // needs no discount permission and does not count toward the discount limit.
         // The till paid a whole total (280) that is a few agorot above this count (279.99): its lines came out a cent apart
-        // from these. Without this, the agorot rule would take 279.99 down to 279 and refuse the 280 paid. The till's total
-        // is kept by giving back those agorot from the invoice discount — what the seller saw is what the invoice says.
+        // from these. The till's total is kept by giving back those agorot from the invoice discount — what the seller saw is
+        // what the invoice says.
         var typedInvoiceDiscount = request.InvoiceDiscount;
         var paidAll = request.Payments.Sum(p => p.Amount);
         var above = paidAll - (subtotal - typedInvoiceDiscount);
         if (paidAll > 0 && paidAll == decimal.Floor(paidAll) && above > 0.004m && above <= 0.05m && typedInvoiceDiscount >= above)
             typedInvoiceDiscount -= above;
-        var decimals = subtotal - typedInvoiceDiscount - decimal.Floor(subtotal - typedInvoiceDiscount);
-        var invoiceDiscount = typedInvoiceDiscount + decimals;
-        var decimalsDiscount = Math.Min(invoiceDiscount, subtotal - decimal.Floor(subtotal));
+        var invoiceDiscount = typedInvoiceDiscount;
+        var decimals = subtotal - decimal.Floor(subtotal);
+        var decimalsDiscount = Math.Min(invoiceDiscount, decimals);
         var total = subtotal - invoiceDiscount;
 
         var shares = CostMath.AllocateDiscount(lines.Select(l => l.LineTotal).ToList(), invoiceDiscount);
