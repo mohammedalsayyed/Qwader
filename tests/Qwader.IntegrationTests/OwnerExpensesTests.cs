@@ -42,10 +42,14 @@ public sealed class OwnerExpensesTests(ApiFactory factory)
                 .ReadAsync<Application.Common.PagedResult<VoucherDto>>();
             list.Items.Should().ContainSingle().Which.Amount.Should().Be(30);
 
-            // Saving the other settings keeps the owners.
+            // Saving the other settings keeps the owners; the payment details printed on invoices are saved with them.
             var settings = await (await admin.GetAsync("/api/settings")).ReadAsync<SettingsDto>();
-            (await admin.PutAsJsonAsync("/api/settings", settings with { Owners = null })).EnsureSuccessStatusCode();
-            (await (await admin.GetAsync("/api/settings")).ReadAsync<SettingsDto>()).Owners.Should().Equal(a, b);
+            (await admin.PutAsJsonAsync("/api/settings", settings with { Owners = null, PaymentHolder = " معتصم قويدر ", PaymentAccount = "123456", PaymentPhone = "0599000000" }))
+                .EnsureSuccessStatusCode();
+            var saved = await (await admin.GetAsync("/api/settings")).ReadAsync<SettingsDto>();
+            saved.Owners.Should().Equal(a, b);
+            (saved.PaymentHolder, saved.PaymentAccount, saved.PaymentPhone, saved.PaymentBank).Should().Be(("معتصم قويدر", "123456", "0599000000", (string?)null));
+            (await admin.PutAsJsonAsync("/api/settings", saved with { PaymentHolder = null, PaymentAccount = null, PaymentPhone = null })).EnsureSuccessStatusCode();
         }
         finally
         {

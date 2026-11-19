@@ -97,6 +97,11 @@ export interface Settings {
   defaultPayPeriod: import('./payroll').PayPeriod;
   /** The business owners («مصاريف صاحب العمل» per owner). Read-only here; set with settingsApi.setOwners. */
   owners?: string[];
+  /** Where a customer pays by transfer, printed on sale invoices. */
+  paymentBank?: string | null;
+  paymentHolder?: string | null;
+  paymentAccount?: string | null;
+  paymentPhone?: string | null;
 }
 
 export interface LookupItem {

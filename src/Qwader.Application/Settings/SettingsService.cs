@@ -20,7 +20,12 @@ public sealed record SettingsDto(
     PayPeriod DefaultPayPeriod = PayPeriod.Monthly,
     /// <summary>The business owners. Read-only here: set with <see cref="ISettingsService.SetOwnersAsync"/> (a save of the other
     /// settings never changes them).</summary>
-    IReadOnlyList<string>? Owners = null);
+    IReadOnlyList<string>? Owners = null,
+    /// <summary>Where a customer pays by transfer, printed on sale invoices (all optional).</summary>
+    string? PaymentBank = null,
+    string? PaymentHolder = null,
+    string? PaymentAccount = null,
+    string? PaymentPhone = null);
 
 public sealed record SetOwnersRequest(IReadOnlyList<string> Names);
 
@@ -61,6 +66,10 @@ public sealed class SettingsDtoValidator : AbstractValidator<SettingsDto>
         RuleFor(x => x.MaxDiscountPercent).InclusiveBetween(0, 100).WithMessage("نسبة الخصم يجب أن تكون بين 0 و100");
         RuleFor(x => x.DefaultReorderLevel).GreaterThanOrEqualTo(0).WithMessage("حد التنبيه لا يمكن أن يكون سالبًا");
         RuleFor(x => x.DefaultPayPeriod).IsInEnum().WithMessage("اختر نوع الراتب");
+        RuleFor(x => x.PaymentBank).MaximumLength(60);
+        RuleFor(x => x.PaymentHolder).MaximumLength(100);
+        RuleFor(x => x.PaymentAccount).MaximumLength(60);
+        RuleFor(x => x.PaymentPhone).MaximumLength(30);
         RuleFor(x => x.OfflineSaleMaxHours).InclusiveBetween(1, 168).WithMessage("مدة البيع بدون إنترنت يجب أن تكون بين 1 و168 ساعة");
     }
 }
@@ -80,6 +89,10 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         [SettingKeys.OfflineSaleMaxHours] = "24",
         [SettingKeys.DefaultPayPeriod] = nameof(PayPeriod.Monthly),
         [SettingKeys.Owners] = "",
+        [SettingKeys.PaymentBank] = "",
+        [SettingKeys.PaymentHolder] = "",
+        [SettingKeys.PaymentAccount] = "",
+        [SettingKeys.PaymentPhone] = "",
     };
 
     /// <summary>The owners stored one per line.</summary>
@@ -131,6 +144,10 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
             [SettingKeys.SaleTransfersPending] = request.SaleTransfersPending ? "true" : "false",
             [SettingKeys.OfflineSaleMaxHours] = request.OfflineSaleMaxHours.ToString(CultureInfo.InvariantCulture),
             [SettingKeys.DefaultPayPeriod] = request.DefaultPayPeriod.ToString(),
+            [SettingKeys.PaymentBank] = request.PaymentBank?.Trim() ?? "",
+            [SettingKeys.PaymentHolder] = request.PaymentHolder?.Trim() ?? "",
+            [SettingKeys.PaymentAccount] = request.PaymentAccount?.Trim() ?? "",
+            [SettingKeys.PaymentPhone] = request.PaymentPhone?.Trim() ?? "",
         };
 
         var existing = await db.Settings.ToDictionaryAsync(s => s.Key, ct);
@@ -170,7 +187,11 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         v[SettingKeys.SaleTransfersPending] != "false",
         int.TryParse(v[SettingKeys.OfflineSaleMaxHours], CultureInfo.InvariantCulture, out var hours) ? hours : 24,
         Enum.TryParse<PayPeriod>(v[SettingKeys.DefaultPayPeriod], out var period) ? period : PayPeriod.Monthly,
-        SplitOwners(v.GetValueOrDefault(SettingKeys.Owners)));
+        SplitOwners(v.GetValueOrDefault(SettingKeys.Owners)),
+        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentBank) ?? ""),
+        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentHolder) ?? ""),
+        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentAccount) ?? ""),
+        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentPhone) ?? ""));
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

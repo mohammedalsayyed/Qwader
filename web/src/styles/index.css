@@ -81,6 +81,15 @@
   @page {
     size: A4;
     margin: 12mm;
+    /* Defining the margin content turns off the browser's own header and footer (the site's link, title and date). */
+    @top-center {
+      content: '';
+    }
+    @bottom-center {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9pt;
+      color: #555;
+    }
   }
   body {
     background: #fff;

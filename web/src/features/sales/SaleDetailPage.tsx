@@ -22,6 +22,7 @@ import { cleanNumberInput, parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
 import { InvoiceExpenses } from '@/components/finance/InvoiceExpenses';
 import { useLookups, useStoreSettings } from '@/lib/queries';
+import type { Settings } from '@/api/endpoints';
 
 /** An invoice made without internet that broke a rule a connected till would have refused: shown until a manager reviews it. */
 function ReviewNote({ sale: s }: { sale: Sale }) {
@@ -228,7 +229,13 @@ export function SaleDetailPage() {
   );
 }
 
-function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: { storeName: string; storeAddress: string | null; storePhone: string | null; invoiceFooter: string | null } }) {
+function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: Settings }) {
+  const pay = store && [
+    store.paymentBank && ['البنك / المحفظة', store.paymentBank],
+    store.paymentHolder && ['اسم صاحب الحساب', store.paymentHolder],
+    store.paymentAccount && ['رقم الحساب', store.paymentAccount],
+    store.paymentPhone && ['رقم الجوال', store.paymentPhone],
+  ].filter(Boolean) as [string, string][];
   return (
     <article className="hidden text-[13px] text-black print:block">
       <header className="flex items-start justify-between border-b-2 border-black pb-3">
@@ -276,6 +283,20 @@ function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: { storeName:
         {s.remaining > 0 && <p className="flex justify-between font-bold"><span>المتبقي</span><span className="tabular">{formatMoney(s.remaining)}</span></p>}
       </div>
       <p className="mt-3 rounded border border-black p-2">{amountInWords(s.total)}</p>
+      {pay && pay.length > 0 && (
+        // Where to pay by transfer: big and boxed, so the customer copies it right.
+        <section className="mt-4 break-inside-avoid rounded-lg border-2 border-black p-3">
+          <p className="mb-2 text-base font-bold">للدفع والتحويل</p>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[15px]">
+            {pay.map(([label, value]) => (
+              <div key={label} className="flex items-baseline gap-2">
+                <dt className="shrink-0">{label}:</dt>
+                <dd className={label === 'اسم صاحب الحساب' || label === 'البنك / المحفظة' ? 'font-bold' : 'ltr font-bold tracking-wide'}>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
       {store?.invoiceFooter && <p className="mt-8 text-center">{store.invoiceFooter}</p>}
       <p className="mt-2 text-center text-[11px] text-gray-500">الموظف: {s.salespersonName}</p>
     </article>

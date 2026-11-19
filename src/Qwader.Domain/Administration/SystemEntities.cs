@@ -25,6 +25,11 @@ public static class SettingKeys
     public const string DefaultPayPeriod = "Payroll.DefaultPayPeriod";
     /// <summary>The business owners («أصحاب العمل»), one per line: «مصاريف صاحب العمل» are recorded and totalled per owner.</summary>
     public const string Owners = "Finance.Owners";
+    /// <summary>Where a customer pays by transfer, printed on sale invoices: the bank or wallet, the holder, the account and phone.</summary>
+    public const string PaymentBank = "Invoice.PaymentBank";
+    public const string PaymentHolder = "Invoice.PaymentHolder";
+    public const string PaymentAccount = "Invoice.PaymentAccount";
+    public const string PaymentPhone = "Invoice.PaymentPhone";
 }
 
 public enum DocumentType

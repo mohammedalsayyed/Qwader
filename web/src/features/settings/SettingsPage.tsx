@@ -28,6 +28,10 @@ const schema = z.object({
   storeAddress: z.string().trim().max(200).nullable(),
   storePhone: z.string().trim().max(30).nullable(),
   invoiceFooter: z.string().trim().max(300).nullable(),
+  paymentBank: z.string().trim().max(60).nullish(),
+  paymentHolder: z.string().trim().max(100).nullish(),
+  paymentAccount: z.string().trim().max(60).nullish(),
+  paymentPhone: z.string().trim().max(30).nullish(),
   defaultMarginPercent: num(0, 1000, 'نسبة الربح يجب أن تكون بين 0 و1000'),
   maxDiscountPercent: num(0, 100, 'نسبة الخصم يجب أن تكون بين 0 و100'),
   defaultReorderLevel: num(0, 1_000_000, 'حد التنبيه لا يمكن أن يكون سالبًا'),
@@ -38,7 +42,7 @@ const schema = z.object({
 type FormInput = z.input<typeof schema>;
 type FormValues = z.output<typeof schema>;
 
-const FIELDS = ['storeName', 'storeAddress', 'storePhone', 'invoiceFooter', 'defaultMarginPercent', 'maxDiscountPercent', 'defaultReorderLevel', 'offlineSaleMaxHours'] as const;
+const FIELDS = ['storeName', 'storeAddress', 'storePhone', 'invoiceFooter', 'paymentBank', 'paymentHolder', 'paymentAccount', 'paymentPhone', 'defaultMarginPercent', 'maxDiscountPercent', 'defaultReorderLevel', 'offlineSaleMaxHours'] as const;
 
 export function SettingsPage() {
   const toast = useToast();
@@ -86,7 +90,11 @@ export function SettingsPage() {
   if (settings.isError) return <ErrorState message={errorMessage(settings.error)} onRetry={() => void settings.refetch()} />;
 
   const onSubmit = handleSubmit((v) =>
-    save.mutate({ ...v, storeAddress: blankToNull(v.storeAddress), storePhone: blankToNull(v.storePhone), invoiceFooter: blankToNull(v.invoiceFooter) }),
+    save.mutate({
+      ...v, storeAddress: blankToNull(v.storeAddress), storePhone: blankToNull(v.storePhone), invoiceFooter: blankToNull(v.invoiceFooter),
+      paymentBank: blankToNull(v.paymentBank ?? null), paymentHolder: blankToNull(v.paymentHolder ?? null),
+      paymentAccount: blankToNull(v.paymentAccount ?? null), paymentPhone: blankToNull(v.paymentPhone ?? null),
+    }),
   );
 
   return (
@@ -108,6 +116,25 @@ export function SettingsPage() {
           </Field>
           <Field label="نص أسفل الفاتورة" error={errors.invoiceFooter?.message}>
             {(id, d) => <TextArea id={id} aria-describedby={d} rows={2} {...register('invoiceFooter')} />}
+          </Field>
+        </Card>
+
+        <Card className="space-y-4 p-5">
+          <h2 className="font-bold">بيانات الدفع على الفاتورة</h2>
+          <p className="-mt-3 text-sm text-muted">تُطبع بخط واضح أسفل فاتورة البيع ليحوّل الزبون عليها. اتركها فارغة إن لم تردها.</p>
+          <Field label="اسم صاحب الحساب" error={errors.paymentHolder?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} {...register('paymentHolder')} />}
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="رقم الحساب" error={errors.paymentAccount?.message}>
+              {(id, d) => <Input id={id} aria-describedby={d} className="ltr" {...register('paymentAccount')} />}
+            </Field>
+            <Field label="رقم الجوال" hint="للتحويل عبر المحفظة (جوال بي، بال بي…)" error={errors.paymentPhone?.message}>
+              {(id, d) => <Input id={id} aria-describedby={d} type="tel" inputMode="tel" className="ltr" {...register('paymentPhone')} />}
+            </Field>
+          </div>
+          <Field label="البنك أو المحفظة (اختياري)" hint="مثلًا: بنك فلسطين" error={errors.paymentBank?.message}>
+            {(id, d) => <Input id={id} aria-describedby={d} {...register('paymentBank')} />}
           </Field>
         </Card>
 
