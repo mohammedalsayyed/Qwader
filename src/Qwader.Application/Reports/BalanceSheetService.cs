@@ -152,7 +152,12 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
                 && (e.Type == SupplierEntryType.Purchase || e.Type == SupplierEntryType.Return
                     || (e.Type == SupplierEntryType.Reversal && e.SourceType == "PurchaseInvoice")))
             .SumAsync(e => (decimal?)(e.Type == SupplierEntryType.Purchase ? e.Credit : -e.Debit), ct) ?? 0;
-        var revaluationDifferences = inventory - stockOpening - stockAdjustments - costCorrections + Cogs(false) + Cogs(true) - purchaseDocuments;
+        // Discounts the suppliers gave on whole invoices (from the invoices that keep them apart from the goods' cost): profit.
+        var earned = await db.PurchaseInvoices.AsNoTracking()
+            .Where(p => p.DiscountIsIncome && p.Discount > 0 && p.Date < end && (p.Status == PurchaseStatus.Posted || (p.Status == PurchaseStatus.Voided && p.VoidedAt >= end)))
+            .GroupBy(p => p.Date >= yearStartUtc).Select(g => new { ThisYear = g.Key, Total = g.Sum(p => p.Discount) }).ToListAsync(ct);
+        decimal Earned(bool? thisYear) => earned.Where(e => thisYear is null || e.ThisYear == thisYear).Sum(e => e.Total);
+        var revaluationDifferences = inventory - stockOpening - stockAdjustments - costCorrections + Cogs(false) + Cogs(true) - purchaseDocuments - Earned(null);
 
         // ---------------------------------------------------------------- profit (cumulative and this year)
         // A sale counts from when its money and goods moved: an edited invoice keeps its old day for the reports by day, but its
@@ -183,7 +188,7 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
                 - returns.Where(r => thisYear is null || r.ThisYear == thisYear).Sum(r => r.Total);
             var cogs = Cogs(thisYear);
             return sales - cogs - Expenses(false, thisYear) - Expenses(true, thisYear) - AdvanceSalaries(thisYear)
-                + Money(AccountTransactionCategory.OtherIncome, thisYear) + Money(AccountTransactionCategory.OtherPayment, thisYear);
+                + Money(AccountTransactionCategory.OtherIncome, thisYear) + Money(AccountTransactionCategory.OtherPayment, thisYear) + Earned(thisYear);
         }
 
         var yearSales = invoices.Where(i => i.ThisYear).Sum(i => i.Total) - returns.Where(r => r.ThisYear).Sum(r => r.Total);
@@ -236,6 +241,7 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
             new("الرواتب", -Expenses(true, true) - AdvanceSalaries(true)),
             new("إيرادات أخرى", Money(AccountTransactionCategory.OtherIncome, true)),
             new("مصروفات أخرى (سندات صرف)", Money(AccountTransactionCategory.OtherPayment, true)),
+            new("خصم مكتسب من الموردين", Earned(true)),
             new("صافي الربح", yearProfit),
         };
 

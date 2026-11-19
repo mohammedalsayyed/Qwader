@@ -69,7 +69,7 @@ export function ReportsPage() {
               hint={p.netSales ? `المبيعات − سعر الشراء · ${Math.round((p.grossProfit / p.netSales) * 1000) / 10}%` : 'المبيعات − سعر الشراء'} />}
             {(p.totalExpenses ?? p.expenses) != null && <Stat label="المصروفات" value={formatMoney((p.totalExpenses ?? p.expenses)!)} hint="رواتب، أعطال، مصاريف تشغيلية" />}
             {p.netOperatingProfit != null && <Stat label="صافي الربح" value={formatMoney(p.netOperatingProfit)} tone={p.netOperatingProfit < 0 ? 'danger' : 'success'}
-              hint="إجمالي الربح − المصروفات" />}
+              hint={p.purchaseDiscounts ? 'إجمالي الربح − المصروفات + خصم مكتسب من الموردين' : 'إجمالي الربح − المصروفات'} />}
             {p.newDebt != null && <Stat label="ديون جديدة" value={formatMoney(p.newDebt)} tone={p.newDebt > 0 ? 'warning' : 'default'} />}
             {p.pendingTransferAmount != null && p.pendingTransferCount > 0 && (
               <Link to="/transfers" className="contents"><Stat label="حوالات بانتظار التحقق" value={formatMoney(p.pendingTransferAmount)} tone="warning" hint={`${p.pendingTransferCount} حوالة`} /></Link>
@@ -102,6 +102,7 @@ export function ReportsPage() {
                 ['= إجمالي الربح', p.grossProfit!, 'strong'] as Row,
               ] : []),
               ...((p.totalExpenses ?? p.expenses) != null ? [['− المصروفات (رواتب، أعطال، مصاريف تشغيلية)', (p.totalExpenses ?? p.expenses)!] as Row] : []),
+              ...(p.purchaseDiscounts ? [['+ خصم مكتسب من الموردين (خصم على فواتير الشراء)', p.purchaseDiscounts] as Row] : []),
               ...(p.netOperatingProfit != null ? [['= صافي الربح', p.netOperatingProfit, 'total'] as Row] : []),
             ]} />
             {p.damagedReturnsCost != null && p.damagedReturnsCost > 0 && (

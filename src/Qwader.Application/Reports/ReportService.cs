@@ -37,7 +37,9 @@ public sealed record PeriodReportDto(
     // NetOperatingProfit («صافي الربح») = GrossProfit («إجمالي الربح» = NetSales − cost of goods sold) − TotalExpenses.
     // Stock damaged/lost (InventoryLosses) and found/counted over (InventoryGains) change the capital held in stock, not the profit:
     // the store's choice. They are reported next to InventoryValue.
-    decimal? InventoryGains = null, decimal? TotalExpenses = null);
+    decimal? InventoryGains = null, decimal? TotalExpenses = null,
+    /// <summary>Discounts suppliers gave on whole purchase invoices in the period («خصم مكتسب من الموردين»): added to the net profit.</summary>
+    decimal? PurchaseDiscounts = null);
 
 public sealed record DailyRowDto(DateOnly Day, int Invoices, decimal NetSales, decimal? GrossProfit, decimal? Expenses, decimal? Received);
 
@@ -137,7 +139,8 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         var netSales = gross - discounts - returns;
         var count = s?.Count ?? 0;
 
-        decimal? cogs = null, damaged = null, grossProfit = null, losses = null, expenses = null, netProfit = null, gains = null, totalExpenses = null;
+        decimal? cogs = null, damaged = null, grossProfit = null, losses = null, expenses = null, netProfit = null, gains = null, totalExpenses = null,
+            purchaseDiscounts = null;
         IReadOnlyList<NamedAmount>? expensesByCategory = null;
         if (Profit)
         {
@@ -168,7 +171,10 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             expenses = expenseRows.Sum(e => e.Amount);
             if (Profit)
             {
-                netProfit = grossProfit - expenses;
+                purchaseDiscounts = await db.PurchaseInvoices.AsNoTracking()
+                    .Where(p => p.DiscountIsIncome && p.Status == Domain.Purchasing.PurchaseStatus.Posted && p.Date >= start && p.Date < end)
+                    .SumAsync(p => (decimal?)p.Discount, ct) ?? 0;
+                netProfit = grossProfit - expenses + purchaseDiscounts;
                 totalExpenses = expenses;
             }
         }
@@ -249,7 +255,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         return new PeriodReportDto(from, to, count, gross, discounts, returns, netSales, count == 0 ? 0 : CostMath.RoundMoney(netSales / count), // after returns, like the sales figure beside it
             cogs, damaged, grossProfit, losses, expenses, netProfit, expensesByCategory,
             cashIn, cashOut, cashIn - cashOut, inByCategory, outByCategory, accounts,
-            newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue, gains, totalExpenses);
+            newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue, gains, totalExpenses, PurchaseDiscounts: purchaseDiscounts);
     }
 
     // ------------------------------------------------------------------ daily series

@@ -85,7 +85,7 @@ public sealed class ReportTests(ApiFactory factory)
         (after!.NetOperatingProfit - before!.NetOperatingProfit).Should().Be(0);
         (after.InventoryGains - before.InventoryGains).Should().Be(1000);
         after.GrossProfit.Should().Be(after.NetSales - after.CostOfSales);
-        after.NetOperatingProfit.Should().Be(after.GrossProfit - after.TotalExpenses);
+        after.NetOperatingProfit.Should().Be(after.GrossProfit - after.TotalExpenses + after.PurchaseDiscounts);
     }
 
     [Fact]

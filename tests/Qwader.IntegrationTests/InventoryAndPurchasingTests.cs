@@ -50,7 +50,7 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task Posting_a_purchase_allocates_the_discount_and_updates_supplier_and_account()
+    public async Task Posting_a_purchase_keeps_the_invoice_discount_apart_and_updates_supplier_and_account()
     {
         var admin = await factory.LoginAsync();
         var a = await admin.CreateProductAsync();
@@ -61,15 +61,15 @@ public sealed class InventoryAndPurchasingTests(ApiFactory factory)
         var db = await DbAsync();
         var cashBefore = await db.FinancialAccounts.Where(x => x.Id == cash.Id).Select(x => x.CurrentBalance).FirstAsync();
 
-        // Lines 300 + 100 = 400, discount 40 → total 360; each line carries 10% of the discount.
+        // Lines 300 + 100 = 400, discount 40 → total 360. The discount is the store's gain («خصم مكتسب»): the goods enter at their own price.
         var purchase = await admin.PurchaseAsync(supplier.Id,
             [new PurchaseLineInput(a.Id, 10, 30), new PurchaseLineInput(b.Id, 5, 20)], discount: 40, paid: 100, accountId: cash.Id);
 
         purchase.Total.Should().Be(360);
         purchase.Remaining.Should().Be(260);
-        purchase.Lines.Single(l => l.ProductId == a.Id).NetUnitCost.Should().Be(27);
-        purchase.Lines.Single(l => l.ProductId == b.Id).NetUnitCost.Should().Be(18);
-        (await admin.GetProductAsync(a.Id)).AverageCost.Should().Be(27);
+        purchase.Lines.Single(l => l.ProductId == a.Id).NetUnitCost.Should().Be(30);
+        purchase.Lines.Single(l => l.ProductId == b.Id).NetUnitCost.Should().Be(20);
+        (await admin.GetProductAsync(a.Id)).AverageCost.Should().Be(30);
 
         var supplierAfter = await admin.GetFromJsonAsync<SupplierDto>($"/api/suppliers/{supplier.Id}", TestJson.Options);
         supplierAfter!.Balance.Should().Be(260);

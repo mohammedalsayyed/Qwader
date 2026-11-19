@@ -77,7 +77,7 @@ public sealed class PurchaseService(
             payments.Add(new PurchasePaymentDto(legacy, p.AccountName ?? "", i.PaidAmount));
         return new PurchaseDetailDto(i.Id, i.Number, i.Date, i.Status, i.SupplierId, p.SupplierName, i.SupplierInvoiceNo, i.WarehouseId, p.WarehouseName,
             i.Subtotal, i.Discount, i.Total, i.PaidAmount, i.Total - i.PaidAmount, i.PaymentAccountId, p.AccountName, i.Notes,
-            p.CreatedBy, i.CreatedAt, i.PostedAt, i.VoidedAt, i.VoidReason, p.Lines, returns, payments);
+            p.CreatedBy, i.CreatedAt, i.PostedAt, i.VoidedAt, i.VoidReason, p.Lines, returns, payments, i.DiscountIsIncome);
     }
 
     public async Task<PurchaseDetailDto> CreateAsync(SavePurchaseRequest request, CancellationToken ct = default)
@@ -382,11 +382,13 @@ public sealed class PurchaseService(
         invoice.PaymentAccountId = parts.Count == 1 ? parts[0].AccountId : null;
         foreach (var part in parts) invoice.Payments.Add(new PurchaseInvoicePayment { FinancialAccountId = part.AccountId, Amount = part.Amount });
 
-        var shares = CostMath.AllocateDiscount(lines.Select(l => l.LineTotal).ToList(), invoice.Discount);
-        for (var i = 0; i < lines.Count; i++)
+        // The invoice discount is what the supplier gave the store («خصم مكتسب»): it is not spread over the goods, which enter
+        // stock at their own price (after their own line discount). The supplier is owed the total after it.
+        invoice.DiscountIsIncome = true;
+        foreach (var line in lines)
         {
-            lines[i].NetUnitCost = CostMath.RoundCost((lines[i].LineTotal - shares[i]) / lines[i].Quantity);
-            invoice.Lines.Add(lines[i]);
+            line.NetUnitCost = CostMath.RoundCost(line.LineTotal / line.Quantity);
+            invoice.Lines.Add(line);
         }
     }
 

@@ -262,6 +262,8 @@ export interface Purchase {
   returns: { id: number; number: string; date: string; total: number; settlement: ReturnSettlement; reason: string | null }[];
   /** Paid at purchase, account by account (an old invoice's single account is one row). */
   payments: { accountId: number; accountName: string; amount: number }[];
+  /** Its discount is the store's gain («خصم مكتسب»), apart from the goods' cost; false: an older invoice, spread over the lines. */
+  discountIsIncome?: boolean;
 }
 
 export interface SavePurchaseInput {

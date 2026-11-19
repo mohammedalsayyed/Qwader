@@ -43,6 +43,7 @@ public sealed class PurchaseInvoiceConfiguration : IEntityTypeConfiguration<Purc
         b.Property(p => p.SupplierInvoiceNo).HasMaxLength(50);
         b.Property(p => p.Notes).HasMaxLength(500);
         b.Property(p => p.VoidReason).HasMaxLength(300);
+        b.Property(p => p.DiscountIsIncome).HasDefaultValue(false);
         b.HasIndex(p => p.Number).IsUnique();
         b.HasIndex(p => new { p.SupplierId, p.Date });
         b.HasIndex(p => new { p.Status, p.Date });

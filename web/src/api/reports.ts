@@ -24,6 +24,8 @@ export interface PeriodReport {
   inventoryGains: number | null;
   /** Cost of goods sold + inventory losses + operating expenses (profit = netSales − totalExpenses). */
   totalExpenses: number | null;
+  /** Discounts suppliers gave on whole purchase invoices («خصم مكتسب من الموردين»): added to the net profit. */
+  purchaseDiscounts?: number | null;
   expensesByCategory: NamedAmount[] | null;
   cashIn: number | null;
   cashOut: number | null;

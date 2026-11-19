@@ -66,7 +66,9 @@ public sealed record PurchaseDetailDto(
     string? CreatedByName, DateTime CreatedAt, DateTime? PostedAt, DateTime? VoidedAt, string? VoidReason,
     IReadOnlyList<PurchaseLineDto> Lines, IReadOnlyList<PurchaseReturnSummaryDto> Returns,
     /// <summary>Paid at purchase, account by account (an old invoice's single account shows as one row).</summary>
-    IReadOnlyList<PurchasePaymentDto> Payments);
+    IReadOnlyList<PurchasePaymentDto> Payments,
+    /// <summary>Its discount is the store's gain, apart from the goods' cost (false: an older invoice, spread over the lines).</summary>
+    bool DiscountIsIncome = false);
 
 public sealed class PurchaseListRequest : PagedRequest
 {

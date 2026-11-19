@@ -38,6 +38,11 @@ public class PurchaseInvoice : AuditableEntity
     /// <summary>Σ line totals (after line discounts), before the invoice discount.</summary>
     public decimal Subtotal { get; set; }
     public decimal Discount { get; set; }
+    /// <summary>
+    /// The invoice discount is the store's gain («خصم مكتسب من الموردين»), not off the goods' cost: the products enter stock at
+    /// their own price. Invoices before this (false) had it spread over their lines' cost, and stay so.
+    /// </summary>
+    public bool DiscountIsIncome { get; set; }
     public decimal Total { get; set; }
 
     /// <summary>Paid when the invoice was posted. Later payments are payment vouchers.</summary>

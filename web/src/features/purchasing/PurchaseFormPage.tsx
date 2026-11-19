@@ -314,7 +314,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       <Card className="space-y-4 p-5">
         <h2 className="font-bold">الدفع</h2>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="خصم على الفاتورة" error={errors.discount}>
+          <Field label="خصم على الفاتورة" error={errors.discount} hint="خصم المورد للمعرض: لا يغيّر تكلفة المنتجات، ويُحسب ربحًا (خصم مكتسب)">
             {(id) => <Input id={id} inputMode="decimal" className="ltr" invalid={!!errors.discount} value={discount} onChange={(e) => { setDiscount(e.target.value); setTouched(true); }} />}
           </Field>
         </div>
