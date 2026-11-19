@@ -239,10 +239,14 @@ function PrintableInvoice({ sale: s, store }: { sale: Sale; store?: Settings }) 
   return (
     <article className="hidden text-[13px] text-black print:block">
       <header className="flex items-start justify-between border-b-2 border-black pb-3">
-        <div>
+        <div className="flex items-center gap-4">
+          {/* The store's logo, printed in colour. */}
+          <img src="/brand/logo.png" alt="" className="h-24 w-auto [print-color-adjust:exact]" width={640} height={616} />
+          <div>
           <p className="text-xl font-bold">{store?.storeName}</p>
           {store?.storeAddress && <p>{store.storeAddress}</p>}
           {store?.storePhone && <p className="ltr text-end">{store.storePhone}</p>}
+          </div>
         </div>
         <div className="text-end">
           <p className="text-lg font-bold">فاتورة مبيعات</p>

@@ -60,10 +60,13 @@ export function PurchaseDetailPage() {
       </button>
 
       {/* Printed header (A4) */}
-      <div className="hidden border-b border-line pb-3 print:block">
-        <p className="text-xl font-bold">{settings.data?.storeName}</p>
-        <p className="text-sm">{[settings.data?.storeAddress, settings.data?.storePhone].filter(Boolean).join(' · ')}</p>
-        <p className="mt-2 text-lg font-bold">فاتورة شراء</p>
+      <div className="hidden items-center gap-4 border-b border-line pb-3 print:flex">
+        <img src="/brand/logo.png" alt="" className="h-20 w-auto [print-color-adjust:exact]" width={640} height={616} />
+        <div>
+          <p className="text-xl font-bold">{settings.data?.storeName}</p>
+          <p className="text-sm">{[settings.data?.storeAddress, settings.data?.storePhone].filter(Boolean).join(' · ')}</p>
+          <p className="mt-2 text-lg font-bold">فاتورة شراء</p>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-start justify-between gap-2">
