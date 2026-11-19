@@ -111,8 +111,8 @@ public sealed class PaymentVouchersController(IVoucherService vouchers) : Contro
     public Task<PagedResult<VoucherDto>> List([FromQuery] VoucherListRequest request, CancellationToken ct) => vouchers.PaymentsAsync(request, ct);
 
     [HttpGet("owner-total")]
-    public Task<OwnerExpensesTotalDto> OwnerTotal([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) =>
-        vouchers.OwnerExpensesTotalAsync(from, to, ct);
+    public Task<OwnerExpensesTotalDto> OwnerTotal([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, [FromQuery] string? owner, CancellationToken ct) =>
+        vouchers.OwnerExpensesTotalAsync(from, to, ct, owner);
 
     [HttpGet("{id:int}")]
     public Task<VoucherDto> Get(int id, CancellationToken ct) => vouchers.GetPaymentAsync(id, ct);

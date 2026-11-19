@@ -25,6 +25,7 @@ import { useDebouncedValue, useIdempotencyKey, useUnsavedChangesWarning } from '
 import { parseNumber } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import { amountInWords } from '@/lib/tafqeet';
+import { OwnerChips } from './OwnerExpensesPage';
 
 type Kind = 'receipt' | 'payment';
 const KIND = {
@@ -99,6 +100,8 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const lookups = useLookups();
+  // The business owners (settings): «إضافة رأس مال» / «مسحوبات شخصية» are one of theirs.
+  const owners = useStoreSettings().data?.owners ?? [];
   const [key] = useIdempotencyKey();
   const presetCustomer = params.get('customerId') ? Number(params.get('customerId')) : undefined;
   const presetSupplier = params.get('supplierId') ? Number(params.get('supplierId')) : undefined;
@@ -182,6 +185,7 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
     const e: Record<string, string> = {};
     if ((purpose === 'party' || purpose === 'deposit') && !party) e.party = kind === 'receipt' ? 'اختر العميل' : 'اختر المورد';
     if (purpose === 'other' && !name.trim()) e.name = `اسم ${meta.party} مطلوب`;
+    if (purpose === 'owner' && owners.length > 0 && !owners.includes(name)) e.owner = 'اختر صاحب العمل';
     const n = parseNumber(amount);
     if (!n || Number.isNaN(n) || n <= 0) e.amount = 'أدخل مبلغًا صحيحًا';
     else if (purpose === 'party' && party && !supplierAdvance && n > partyBalance + 0.009)
@@ -223,9 +227,13 @@ export function NewVoucherPage({ kind }: { kind: Kind }) {
                 ? <>مال يضعه <b>صاحب المعرض</b> في المعرض: يزيد <b>رأس المال</b> في الميزانية العمومية — ليس إيرادًا ولا ربحًا.</>
                 : <>مال يأخذه <b>صاحب المعرض</b> لنفسه: يُخصم من <b>حقوق الملكية</b> في الميزانية العمومية — ليس مصروفًا ولا يُنقص الربح.</>}
             </p>
-            <Field label="الاسم" hint="اتركه فارغًا ليُكتب «صاحب المال»">
-              {(id, d) => <Input id={id} aria-describedby={d} value={name} placeholder="صاحب المال" onChange={(e) => setName(e.target.value)} />}
-            </Field>
+            {owners.length > 0 ? (
+              <OwnerChips owners={owners} value={name || null} onChange={setName} error={errors.owner} />
+            ) : (
+              <Field label="الاسم" hint="اتركه فارغًا ليُكتب «صاحب المال»">
+                {(id, d) => <Input id={id} aria-describedby={d} value={name} placeholder="صاحب المال" onChange={(e) => setName(e.target.value)} />}
+              </Field>
+            )}
           </>
         )}
         {purpose === 'owner' ? null : purpose !== 'other' ? (

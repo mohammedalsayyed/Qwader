@@ -95,6 +95,8 @@ export interface Settings {
   offlineSaleMaxHours: number;
   /** Pay period suggested for a new employee. */
   defaultPayPeriod: import('./payroll').PayPeriod;
+  /** The business owners («مصاريف صاحب العمل» per owner). Read-only here; set with settingsApi.setOwners. */
+  owners?: string[];
 }
 
 export interface LookupItem {
@@ -125,6 +127,7 @@ export const settingsApi = {
   get: () => api<Settings>('/settings'),
   update: (input: Settings) => api<Settings>('/settings', { method: 'PUT', body: input }),
   backup: () => apiDownload('/settings/backup', undefined, 'qwader-backup.zip'),
+  setOwners: (names: string[]) => api<string[]>('/settings/owners', { method: 'PUT', body: { names } }),
   applyReorderLevel: () => api<{ changed: number }>('/settings/apply-reorder-level', { method: 'POST' }),
   system: () => api<{ resetAllowed: boolean; integrityCheckAllowed: boolean }>('/settings/system'),
   deleteAuditLog: (input: { from: string; to: string; password: string }) =>

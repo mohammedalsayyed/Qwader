@@ -28,6 +28,11 @@ public sealed class SettingsController(ISettingsService settings) : ControllerBa
     [HasPermission(Permissions.SettingsManage)]
     public Task<SettingsDto> Update(SettingsDto request, CancellationToken ct) => settings.UpdateAsync(request, ct);
 
+    /// <summary>The business owners («مصاريف صاحب العمل» per owner).</summary>
+    [HttpPut("owners")]
+    [HasPermission(Permissions.SettingsManage)]
+    public Task<IReadOnlyList<string>> SetOwners(SetOwnersRequest request, CancellationToken ct) => settings.SetOwnersAsync(request, ct);
+
     /// <summary>Sets the default «حد التنبيه» on every existing product.</summary>
     [HttpPost("apply-reorder-level")]
     [HasPermission(Permissions.SettingsManage)]

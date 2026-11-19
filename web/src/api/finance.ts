@@ -192,6 +192,8 @@ export interface VoucherListParams {
   categoryId?: number;
   /** Payment vouchers of one kind only. */
   purpose?: PaymentPurpose;
+  /** Payment vouchers to this name only (one owner's expenses). */
+  beneficiary?: string;
 }
 
 export const accountsApi = {
@@ -249,7 +251,8 @@ export const paymentsApi = {
   }) => api<Voucher>('/payment-vouchers', { method: 'POST', body: input }),
   void: (id: number, reason: string) => api<Voucher>(`/payment-vouchers/${id}/void`, { method: 'POST', body: { reason } }),
   /** «مصاريف صاحب العمل» over a period: how many and how much. */
-  ownerTotal: (from?: string, to?: string) => api<{ count: number; total: number }>('/payment-vouchers/owner-total', { query: { from, to } }),
+  ownerTotal: (from?: string, to?: string, owner?: string) =>
+    api<{ count: number; total: number; byOwner?: { name: string; count: number; total: number }[] }>('/payment-vouchers/owner-total', { query: { from, to, owner } }),
 };
 
 export const expensesApi = {

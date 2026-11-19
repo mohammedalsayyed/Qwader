@@ -23,6 +23,8 @@ public static class SettingKeys
     public const string OfflineSaleMaxHours = "Sales.OfflineMaxHours";
     /// <summary>Pay period suggested for a new employee: Daily, Weekly or Monthly.</summary>
     public const string DefaultPayPeriod = "Payroll.DefaultPayPeriod";
+    /// <summary>The business owners («أصحاب العمل»), one per line: «مصاريف صاحب العمل» are recorded and totalled per owner.</summary>
+    public const string Owners = "Finance.Owners";
 }
 
 public enum DocumentType

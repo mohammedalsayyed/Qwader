@@ -22,7 +22,7 @@ public interface IVoucherService
     Task<PagedResult<VoucherDto>> PaymentsAsync(VoucherListRequest request, CancellationToken ct = default);
     Task<VoucherDto> GetPaymentAsync(int id, CancellationToken ct = default);
     /// <summary>«مصاريف صاحب العمل»: the owner's withdrawals over a period (not voided).</summary>
-    Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default);
+    Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default, string? owner = null);
     Task<VoucherDto> CreatePaymentAsync(CreatePaymentRequest request, CancellationToken ct = default);
     Task<VoucherDto> VoidPaymentAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
 
@@ -296,6 +296,7 @@ public sealed class VoucherService(
         if (request.AccountId is { } accountId) query = query.Where(v => v.FinancialAccountId == accountId);
         if (request.SupplierId is { } supplierId) query = query.Where(v => v.SupplierId == supplierId);
         if (request.Purpose is { } purpose) query = query.Where(v => v.Purpose == purpose);
+        if (!string.IsNullOrWhiteSpace(request.Beneficiary)) { var name = request.Beneficiary.Trim(); query = query.Where(v => v.BeneficiaryName == name); }
         if (request.MinAmount is { } min) query = query.Where(v => v.Amount >= min);
         if (request.MaxAmount is { } max) query = query.Where(v => v.Amount <= max);
         if (request.From is not null || request.To is not null)
@@ -311,12 +312,19 @@ public sealed class VoucherService(
         return await ProjectPayments(query.OrderByDescending(v => v.Id)).ToPagedAsync(request, ct);
     }
 
-    public async Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default)
+    public async Task<OwnerExpensesTotalDto> OwnerExpensesTotalAsync(DateOnly? from, DateOnly? to, CancellationToken ct = default, string? owner = null)
     {
         var (start, end) = clock.LocalDaysToUtcRange(from ?? new DateOnly(2000, 1, 1), to ?? clock.LocalToday);
-        var rows = db.PaymentVouchers.AsNoTracking()
-            .Where(v => v.Purpose == PaymentPurpose.OwnerWithdrawal && v.Status == VoucherStatus.Posted && v.Date >= start && v.Date < end);
-        return new OwnerExpensesTotalDto(await rows.CountAsync(ct), await rows.SumAsync(v => (decimal?)v.Amount, ct) ?? 0);
+        var byOwner = await db.PaymentVouchers.AsNoTracking()
+            .Where(v => v.Purpose == PaymentPurpose.OwnerWithdrawal && v.Status == VoucherStatus.Posted && v.Date >= start && v.Date < end)
+            .GroupBy(v => v.BeneficiaryName).Select(g => new OwnerTotalRow(g.Key, g.Count(), g.Sum(v => v.Amount)))
+            .ToListAsync(ct);
+        // Each owner in the settings' order (even with nothing this period), then any other name used before the list existed.
+        var owners = Settings.SettingsService.SplitOwners(await db.Settings.Where(s => s.Key == SettingKeys.Owners).Select(s => s.Value).FirstOrDefaultAsync(ct));
+        var rows = owners.Select(o => byOwner.FirstOrDefault(r => r.Name == o) ?? new OwnerTotalRow(o, 0, 0))
+            .Concat(byOwner.Where(r => !owners.Contains(r.Name)).OrderByDescending(r => r.Total)).ToList();
+        var shown = string.IsNullOrWhiteSpace(owner) ? byOwner : byOwner.Where(r => r.Name == owner.Trim()).ToList();
+        return new OwnerExpensesTotalDto(shown.Sum(r => r.Count), shown.Sum(r => r.Total), rows);
     }
 
     public async Task<VoucherDto> GetPaymentAsync(int id, CancellationToken ct = default) =>
@@ -367,6 +375,13 @@ public sealed class VoucherService(
 
         if (request.Advance && (request.Purpose != PaymentPurpose.SupplierPayment || supplier is null))
             throw new ValidationFailedException("advance", "الدفعة المقدمة تكون لمورد فقط");
+        // An owner's expense is one owner's: when the owners are listed in the settings, the name is one of them.
+        if (request.Purpose == PaymentPurpose.OwnerWithdrawal)
+        {
+            var owners = Settings.SettingsService.SplitOwners(await db.Settings.Where(s => s.Key == SettingKeys.Owners).Select(s => s.Value).FirstOrDefaultAsync(ct));
+            if (owners.Count > 0 && !owners.Contains(beneficiary))
+                throw new ValidationFailedException("beneficiaryName", $"اختر صاحب العمل: {string.Join("، ", owners)}");
+        }
         // Only an owner's expense or a supplier advance may be dated back (paid yesterday, recorded today); every other payment is dated now.
         var dated = request.Purpose == PaymentPurpose.OwnerWithdrawal || request.Advance;
         if (request.Date is { } day && day != clock.LocalToday && !dated)

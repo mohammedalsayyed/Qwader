@@ -17,7 +17,22 @@ public sealed record SettingsDto(
     decimal DefaultReorderLevel,
     bool SaleTransfersPending = true,
     int OfflineSaleMaxHours = 24,
-    PayPeriod DefaultPayPeriod = PayPeriod.Monthly);
+    PayPeriod DefaultPayPeriod = PayPeriod.Monthly,
+    /// <summary>The business owners. Read-only here: set with <see cref="ISettingsService.SetOwnersAsync"/> (a save of the other
+    /// settings never changes them).</summary>
+    IReadOnlyList<string>? Owners = null);
+
+public sealed record SetOwnersRequest(IReadOnlyList<string> Names);
+
+public sealed class SetOwnersRequestValidator : AbstractValidator<SetOwnersRequest>
+{
+    public SetOwnersRequestValidator()
+    {
+        RuleFor(x => x.Names).NotNull().Must(n => n.Count <= 20).WithMessage("20 اسمًا على الأكثر");
+        RuleForEach(x => x.Names).MaximumLength(60).WithMessage("الاسم طويل (60 حرفًا على الأكثر)")
+            .Must(n => !n.Contains('\n')).WithMessage("اكتب كل اسم وحده");
+    }
+}
 
 public interface ISettingsService
 {
@@ -29,6 +44,9 @@ public interface ISettingsService
     /// Returns how many products changed.
     /// </summary>
     Task<int> ApplyDefaultReorderLevelAsync(CancellationToken ct = default);
+
+    /// <summary>The business owners' names («معتصم»، «هيثم»…), in order; repeated or empty names are dropped.</summary>
+    Task<IReadOnlyList<string>> SetOwnersAsync(SetOwnersRequest request, CancellationToken ct = default);
 }
 
 public sealed class SettingsDtoValidator : AbstractValidator<SettingsDto>
@@ -61,7 +79,26 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         [SettingKeys.SaleTransfersPending] = "true",
         [SettingKeys.OfflineSaleMaxHours] = "24",
         [SettingKeys.DefaultPayPeriod] = nameof(PayPeriod.Monthly),
+        [SettingKeys.Owners] = "",
     };
+
+    /// <summary>The owners stored one per line.</summary>
+    public static IReadOnlyList<string> SplitOwners(string? value) =>
+        (value ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    public async Task<IReadOnlyList<string>> SetOwnersAsync(SetOwnersRequest request, CancellationToken ct = default)
+    {
+        var names = request.Names.Select(n => n.Trim()).Where(n => n.Length > 0).Distinct().ToList();
+        var setting = await db.Settings.FirstOrDefaultAsync(s => s.Key == SettingKeys.Owners, ct);
+        var before = SplitOwners(setting?.Value);
+        if (setting is null) db.Settings.Add(setting = new Setting { Key = SettingKeys.Owners });
+        setting.Value = string.Join('\n', names);
+        setting.UpdatedAt = clock.UtcNow;
+        setting.UpdatedById = currentUser.UserId;
+        audit.Log("Settings.Owners", "Settings", null, before, names);
+        await db.SaveChangesAsync(ct);
+        return names;
+    }
 
     public async Task<SettingsDto> GetAsync(CancellationToken ct = default)
     {
@@ -109,7 +146,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
             setting.UpdatedById = currentUser.UserId;
         }
 
-        var after = ToDto(incoming);
+        var after = ToDto(new Dictionary<string, string>(incoming) { [SettingKeys.Owners] = string.Join('\n', before.Owners ?? []) });
         audit.Log("Settings.Update", "Settings", null, before, after);
         await db.SaveChangesAsync(ct);
         return after;
@@ -132,7 +169,8 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         decimal.Parse(v[SettingKeys.LowStockDefault], CultureInfo.InvariantCulture),
         v[SettingKeys.SaleTransfersPending] != "false",
         int.TryParse(v[SettingKeys.OfflineSaleMaxHours], CultureInfo.InvariantCulture, out var hours) ? hours : 24,
-        Enum.TryParse<PayPeriod>(v[SettingKeys.DefaultPayPeriod], out var period) ? period : PayPeriod.Monthly);
+        Enum.TryParse<PayPeriod>(v[SettingKeys.DefaultPayPeriod], out var period) ? period : PayPeriod.Monthly,
+        SplitOwners(v.GetValueOrDefault(SettingKeys.Owners)));
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

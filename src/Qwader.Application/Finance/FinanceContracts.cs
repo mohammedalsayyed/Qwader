@@ -116,10 +116,14 @@ public sealed class VoucherListRequest : PagedRequest
     public int? CategoryId { get; set; }
     /// <summary>Payment vouchers of one kind only (e.g. «مسحوبات شخصية»: the owner's expenses).</summary>
     public PaymentPurpose? Purpose { get; set; }
+    /// <summary>Payment vouchers to this name only (an owner's expenses).</summary>
+    public string? Beneficiary { get; set; }
 }
 
-/// <summary>The owner's expenses over a period: how many and how much (vouchers not voided).</summary>
-public sealed record OwnerExpensesTotalDto(int Count, decimal Total);
+public sealed record OwnerTotalRow(string Name, int Count, decimal Total);
+
+/// <summary>The owner's expenses over a period: how many and how much (vouchers not voided), and the same for each owner.</summary>
+public sealed record OwnerExpensesTotalDto(int Count, decimal Total, IReadOnlyList<OwnerTotalRow>? ByOwner = null);
 
 public sealed record SaveExpenseCategoryRequest(string Name, bool IsActive = true);
 
