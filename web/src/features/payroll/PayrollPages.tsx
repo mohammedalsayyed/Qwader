@@ -34,12 +34,21 @@ function nextPeriod(e: Employee) {
   return { from, to };
 }
 
-/** Days, weeks or months between two dates; whole calendar months count as 1 each. */
+/** The days between two dates (both counted) without the Fridays: the store's week is six working days, Friday off. */
+export function workingDays(from: string, to: string): number {
+  if (to < from) return 0;
+  const days = daysBetween(from, to);
+  const toFirstFriday = (5 - toUtc(from).getUTCDay() + 7) % 7;
+  const fridays = days > toFirstFriday ? Math.floor((days - toFirstFriday - 1) / 7) + 1 : 0;
+  return days - fridays;
+}
+
+/** Days, weeks or months between two dates; a week is six working days (Friday off); whole calendar months count as 1 each. */
 export function payUnits(period: PayPeriod, from: string, to: string): number {
   if (to < from) return 0;
   const days = daysBetween(from, to);
-  if (period === 'Daily') return days;
-  if (period === 'Weekly') return round2(days / 7);
+  if (period === 'Daily') return workingDays(from, to);
+  if (period === 'Weekly') return round2(workingDays(from, to) / 6);
   const f = toUtc(from);
   const t = toUtc(to);
   if (f.getUTCDate() === 1 && to === monthEnd(to)) return (t.getUTCFullYear() - f.getUTCFullYear()) * 12 + t.getUTCMonth() - f.getUTCMonth() + 1;
@@ -50,7 +59,8 @@ export function payUnits(period: PayPeriod, from: string, to: string): number {
 export function maxUnits(period: PayPeriod, from: string, to: string): number {
   if (to < from) return 0;
   const days = daysBetween(from, to);
-  return period === 'Daily' ? days : Math.ceil((days / (period === 'Weekly' ? 7 : 28)) * 100) / 100;
+  if (period === 'Weekly') return Math.ceil((workingDays(from, to) / 6) * 100) / 100;
+  return period === 'Daily' ? days : Math.ceil((days / 28) * 100) / 100;
 }
 
 const rateLabel = (period: PayPeriod, rate: number) => `${formatMoney(rate)} / ${PAY_PERIOD[period].unit}`;

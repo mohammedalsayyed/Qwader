@@ -103,6 +103,16 @@ public sealed class PayrollService(
 {
     private const string SalaryCategory = "الرواتب";
 
+    /// <summary>The days from <paramref name="from"/> to <paramref name="to"/> (both counted) without the Fridays: the store's week is six days.</summary>
+    public static int WorkingDays(DateOnly from, DateOnly to)
+    {
+        if (to < from) return 0;
+        var days = to.DayNumber - from.DayNumber + 1;
+        var toFirstFriday = ((int)DayOfWeek.Friday - (int)from.DayOfWeek + 7) % 7;
+        var fridays = days > toFirstFriday ? (days - toFirstFriday - 1) / 7 + 1 : 0;
+        return days - fridays;
+    }
+
     public static string PeriodName(PayPeriod p) => p switch { PayPeriod.Daily => "يومي", PayPeriod.Weekly => "أسبوعي", _ => "شهري" };
 
     // ------------------------------------------------------------------ read
@@ -301,12 +311,13 @@ public sealed class PayrollService(
                 && s.PeriodFrom <= request.PeriodTo && s.PeriodTo >= request.PeriodFrom, ct))
             throw new BusinessRuleException("يوجد مخالصة لهذا العامل تشمل جزءًا من هذه الفترة");
 
-        // Never more days, weeks or months than the period holds (a month counts as at least 28 days).
+        // Never more days, weeks or months than the period holds (a month counts as at least 28 days). The store's week is six
+        // working days, Friday off: a week's pay is for the days in the period without its Fridays, ÷ 6.
         var days = request.PeriodTo.DayNumber - request.PeriodFrom.DayNumber + 1;
         var (most, unit) = employee.PayPeriod switch
         {
             PayPeriod.Daily => ((decimal)days, "الأيام"),
-            PayPeriod.Weekly => (Math.Ceiling(days / 7m * 100) / 100, "الأسابيع"),
+            PayPeriod.Weekly => (Math.Ceiling(WorkingDays(request.PeriodFrom, request.PeriodTo) / 6m * 100) / 100, "الأسابيع"),
             _ => (Math.Ceiling(days / 28m * 100) / 100, "الأشهر"),
         };
         if (request.Units > most + 0.001m)
