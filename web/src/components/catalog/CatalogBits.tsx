@@ -15,7 +15,7 @@ import { Picker } from '@/components/ui/Picker';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 
 export function StockBadge({ status, quantity, unit }: { status: StockStatus; quantity: number; unit?: string }) {
   const tone = status === 'Out' ? 'danger' : status === 'Low' ? 'warning' : 'success';
@@ -125,7 +125,7 @@ export function ProductRow({ p, showCost }: { p: ProductListItem; showCost?: boo
         </p>
       </div>
       <div className="shrink-0 text-end">
-        <p className="tabular text-sm font-bold">{formatMoney(showCost && p.averageCost != null ? p.averageCost : p.retailPrice)}</p>
+        <p className="tabular text-sm font-bold">{showCost && p.averageCost != null ? formatCost(p.averageCost) : formatMoney(p.retailPrice)}</p>
         <p className={cn('tabular text-xs', p.stockStatus === 'Out' ? 'text-danger' : p.stockStatus === 'Low' ? 'text-warning' : 'text-muted')}>
           {formatQuantity(p.quantity)} {p.unitName}
         </p>

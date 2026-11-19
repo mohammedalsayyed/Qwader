@@ -15,7 +15,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ProductThumb, StockBadge } from '@/components/catalog/CatalogBits';
 import { AdjustmentSheet, MovementList } from '@/components/catalog/StockWidgets';
 import { errorMessage } from '@/lib/forms';
-import { formatDate, formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatDate, formatMoney, formatQuantity } from '@/lib/format';
 
 type Tab = 'info' | 'movements';
 
@@ -77,7 +77,7 @@ export function ProductDetailPage() {
         <Stat label="سعر الجملة" value={formatMoney(p.wholesalePrice)} />
         {costVisible ? (
           <>
-            <Stat label="متوسط التكلفة" value={formatMoney(p.averageCost)} />
+            <Stat label="متوسط التكلفة" value={formatCost(p.averageCost)} />
             <Stat label="الربح المتوقع (مفرق)" value={p.expectedProfit != null ? formatMoney(p.expectedProfit) : '—'}
               hint={p.marginPercent != null ? `نسبة الربح ${p.marginPercent}%` : undefined}
               tone={p.expectedProfit != null && p.expectedProfit < 0 ? 'danger' : 'success'} />
@@ -148,7 +148,7 @@ export function ProductDetailPage() {
                       {formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}
                       {unitCost > 0 && (
                         <span className={`block text-sm ${profit < 0 ? 'text-danger' : 'text-muted'}`}>
-                          التكلفة {formatMoney(unitCost)} · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}
+                          التكلفة {formatCost(unitCost)} · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}
                         </span>
                       )}
                     </span>

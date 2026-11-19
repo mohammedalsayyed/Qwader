@@ -16,7 +16,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatDateTime, formatMoney, formatQuantity, localToday, TIME_ZONE } from '@/lib/format';
+import { formatCost, formatDateTime, formatMoney, formatQuantity, localToday, TIME_ZONE } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { cleanNumberInput, parseNumber, round2 } from '@/lib/numbers';
 import { amountInWords } from '@/lib/tafqeet';
@@ -623,7 +623,7 @@ function SaleLineRow({ line: l }: { line: Sale['lines'][number] }) {
           <p className="text-xs text-muted">
             <span className="tabular">{formatQuantity(l.quantity)}</span> {l.unitName} × {formatMoney(l.unitPrice)}
             {l.lineDiscount > 0 && <> − خصم {formatMoney(l.lineDiscount)}</>}
-            {l.unitCost != null && <> · التكلفة {formatMoney(l.unitCost)}</>}
+            {l.unitCost != null && <> · التكلفة {formatCost(l.unitCost)}</>}
           </p>
           {l.returnedQuantity > 0 && <p className="text-xs text-warning">مرتجع: <span className="tabular">{formatQuantity(l.returnedQuantity)}</span></p>}
           {l.priceOverridden && <p className="text-xs text-danger">بيع بأقل من الحد الأدنى بصلاحية خاصة</p>}
@@ -642,7 +642,7 @@ function SaleLineRow({ line: l }: { line: Sale['lines'][number] }) {
                 {p.averageCost != null && (
                   <div>
                     <dt className="text-xs text-muted">تكلفة {withAl(per ?? p.unitName)}</dt>
-                    <dd className="tabular font-bold">{formatMoney(p.averageCost * factor)}</dd>
+                    <dd className="tabular font-bold">{formatCost(p.averageCost * factor)}</dd>
                   </div>
                 )}
                 <div>

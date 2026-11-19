@@ -3,7 +3,7 @@ import type { ProductUnit, SaveProductUnit } from '@/api/catalog';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Field, Input } from '@/components/ui/Field';
 import { UnitSelect } from '@/components/catalog/CatalogBits';
-import { formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 
@@ -121,11 +121,11 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
               if (!(baseCost > 0) || !factor || Number.isNaN(factor) || factor <= 1) return null;
               const unitCost = round2(factor * baseCost);
               if (price == null || Number.isNaN(price) || price <= 0)
-                return <p className="text-sm text-muted">تكلفة {unitName}: <b className="tabular">{formatMoney(unitCost)}</b></p>;
+                return <p className="text-sm text-muted">تكلفة {unitName}: <b className="tabular">{formatCost(unitCost)}</b></p>;
               const profit = round2(price - unitCost);
               return (
                 <p className={profit < 0 ? 'rounded-lg bg-red-50 p-2 text-sm text-danger' : 'text-sm'}>
-                  تكلفة {unitName}: <b className="tabular">{formatMoney(unitCost)}</b>
+                  تكلفة {unitName}: <b className="tabular">{formatCost(unitCost)}</b>
                   {' · '}
                   {profit < 0
                     ? <>سعر {unitName} أقل من تكلفتها بـ <b className="tabular">{formatMoney(-profit)}</b></>

@@ -14,7 +14,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { applyServerErrors } from '@/lib/forms';
-import { formatDateTime, formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatDateTime, formatMoney, formatQuantity } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { zPositive } from '@/lib/numbers';
 import { ProductPicker } from './CatalogBits';
@@ -241,7 +241,7 @@ export function MovementList({ productId, showProduct, initialFilter = 'all', in
                       <td className={cn('tabular ltr whitespace-nowrap px-3 py-2.5 text-end font-bold', incoming ? 'text-success' : 'text-danger')}>
                         {incoming ? '+' : ''}{formatQuantity(m.quantity)}
                       </td>
-                      {showCost && <td className="tabular whitespace-nowrap px-3 py-2.5">{m.unitCost != null ? formatMoney(m.unitCost) : '—'}</td>}
+                      {showCost && <td className="tabular whitespace-nowrap px-3 py-2.5">{m.unitCost != null ? formatCost(m.unitCost) : '—'}</td>}
                       {showCost && (
                         <td className="tabular whitespace-nowrap px-3 py-2.5 font-semibold">
                           {m.unitCost != null ? formatMoney(Math.abs(m.quantity * m.unitCost)) : '—'}
@@ -291,7 +291,7 @@ export function MovementList({ productId, showProduct, initialFilter = 'all', in
                     </p>
                     <p className="text-xs text-muted">
                       الرصيد بعدها: <span className="tabular">{formatQuantity(m.balanceAfter)}</span>
-                      {m.unitCost != null && <> · التكلفة: <span className="tabular">{formatMoney(m.unitCost)}</span>
+                      {m.unitCost != null && <> · التكلفة: <span className="tabular">{formatCost(m.unitCost)}</span>
                         {' '}· القيمة: <span className="tabular font-semibold text-gray-700">{formatMoney(Math.abs(m.quantity * m.unitCost))}</span></>}
                     </p>
                     {m.notes && <p className="mt-1 text-sm">{m.notes}</p>}

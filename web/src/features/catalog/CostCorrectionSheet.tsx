@@ -6,7 +6,7 @@ import { Field, Input, TextArea } from '@/components/ui/Field';
 import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { errorMessage } from '@/lib/forms';
-import { formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 
@@ -52,7 +52,7 @@ export function CostCorrectionSheet({ product, onClose }: {
       <div className="space-y-4">
         <p className="font-semibold">{product.displayName}</p>
         <p className="rounded-xl bg-canvas p-3 text-sm">
-          متوسط التكلفة الحالي: <b className="tabular">{formatMoney(product.averageCost)}</b> للـ{product.unitName}
+          متوسط التكلفة الحالي: <b className="tabular">{formatCost(product.averageCost)}</b> للـ{product.unitName}
           {' · '}الكمية الموجودة: <b className="tabular">{formatQuantity(product.quantity)}</b>
           {' · '}قيمتها: <b className="tabular">{formatMoney(round2(product.quantity * product.averageCost))}</b>
         </p>

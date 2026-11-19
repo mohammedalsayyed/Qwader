@@ -12,7 +12,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ProductRow } from '@/components/catalog/CatalogBits';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 import { useIdempotencyKey } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
@@ -111,7 +111,7 @@ export function ConversionSheet({ product, onClose }: {
         <div className="rounded-xl bg-canvas p-3">
           <p className="font-semibold">{product.displayName}</p>
           <p className="text-sm text-muted">الموجود: <b className="tabular">{formatQuantity(product.quantity)}</b> {product.unitName}
-            {product.averageCost != null && <> · تكلفة الـ{product.unitName} <b className="tabular">{formatMoney(product.averageCost)}</b></>}</p>
+            {product.averageCost != null && <> · تكلفة الـ{product.unitName} <b className="tabular">{formatCost(product.averageCost)}</b></>}</p>
         </div>
         <Field label={`الكمية التي تُفكَّك (${product.unitName})`} required>
           {(id) => <Input id={id} inputMode="decimal" className="ltr text-lg" autoFocus value={fromQty} onChange={(e) => { setFromQty(e.target.value); setError(null); }} />}

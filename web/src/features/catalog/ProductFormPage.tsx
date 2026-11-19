@@ -20,7 +20,7 @@ import { BarcodeScannerSheet, ScanButton } from '@/components/ui/BarcodeScanner'
 import type { QuickProductDraft } from './QuickProductSheet';
 import { ProductUnitsEditor, toUnitRows, validateUnitRows, type UnitRow } from './ProductUnitsEditor';
 import { applyServerErrors, blankToNull, errorMessage } from '@/lib/forms';
-import { formatMoney } from '@/lib/format';
+import { formatCost, formatMoney } from '@/lib/format';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { suggestPrice, zAmount, zOptionalAmount, zPositive, parseNumber } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
@@ -237,7 +237,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
               changed only by stock movements (or «تصحيح التكلفة» on the product page). */}
           {(canSeeCost || isNew) && (
             <Field label={isNew ? 'سعر الشراء (التكلفة)' : 'آخر سعر شراء'} error={errors.purchasePrice?.message}
-              hint={isNew ? undefined : `لا يغيّر تكلفة البضاعة الموجودة — متوسط التكلفة الحالي ${formatMoney(existing?.averageCost ?? 0)}. لتصحيحها: «تصحيح التكلفة» في صفحة المنتج`}>
+              hint={isNew ? undefined : `لا يغيّر تكلفة البضاعة الموجودة — متوسط التكلفة الحالي ${formatCost(existing?.averageCost ?? 0)}. لتصحيحها: «تصحيح التكلفة» في صفحة المنتج`}>
               {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" invalid={!!errors.purchasePrice} {...register('purchasePrice')} />}
             </Field>
           )}

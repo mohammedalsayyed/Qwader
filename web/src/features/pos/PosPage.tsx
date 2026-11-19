@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/Toast';
 import { ProductThumb } from '@/components/catalog/CatalogBits';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
-import { formatMoney, formatQuantity } from '@/lib/format';
+import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
@@ -257,7 +257,7 @@ export function PosPage() {
                             {inCart > 0 && <> · في الفاتورة {formatQuantity(inCart)}</>}
                             {p.minSalePrice > 0 && <> · <span className="whitespace-nowrap">أقل سعر <span className="tabular font-semibold text-gray-700">{formatMoney(p.minSalePrice)}</span></span></>}
                             {/* Average cost, for those who may see it (others get no cost from the server); zero shows as zero. */}
-                            {p.averageCost != null && <> · <span className="whitespace-nowrap">التكلفة <span className="tabular font-semibold text-gray-700">{formatMoney(p.averageCost)}</span></span></>}
+                            {p.averageCost != null && <> · <span className="whitespace-nowrap">التكلفة <span className="tabular font-semibold text-gray-700">{formatCost(p.averageCost)}</span></span></>}
                           </span>
                         </span>
                         <span className="tabular shrink-0 font-bold">{formatMoney(tierPrice(p, cart.tier))}</span>
