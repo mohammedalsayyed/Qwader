@@ -142,9 +142,20 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
                     (await reports.PayablesAsync(ct)).Select(b => new object?[] { b.Code, b.Name, b.Phone, b.Balance, b.LastActivity }));
                 break;
             case "inventory":
-                file = excel.Write("قيمة المخزون", [new("الصنف", 24), new("عدد المنتجات", 12), new("الكمية", 12), new("القيمة بالتكلفة", 16)],
-                    (await reports.InventoryValueAsync(ct)).Select(c => new object?[] { c.CategoryName, c.ProductCount, c.Quantity, c.Value }));
+            {
+                // Each general category's categories, then its subtotal; the grand total at the end.
+                var rows = await reports.InventoryValueAsync(ct);
+                var lines = new List<object?[]>();
+                foreach (var g in rows.GroupBy(r => r.GroupName ?? "بدون صنف عام"))
+                {
+                    lines.AddRange(g.Select(c => new object?[] { g.Key, c.CategoryName, c.ProductCount, c.Quantity, c.Value, c.SaleValue }));
+                    lines.Add(new object?[] { $"مجموع {g.Key}", null, g.Sum(c => c.ProductCount), g.Sum(c => c.Quantity), g.Sum(c => c.Value), g.Sum(c => c.SaleValue) });
+                }
+                lines.Add(new object?[] { "المجموع الكلي", null, rows.Sum(c => c.ProductCount), rows.Sum(c => c.Quantity), rows.Sum(c => c.Value), rows.Sum(c => c.SaleValue) });
+                file = excel.Write("المنتجات حسب الصنف",
+                    [new("الصنف العام", 20), new("الصنف", 24), new("عدد المنتجات", 12), new("الكمية", 12), new("القيمة بالتكلفة", 16), new("القيمة بسعر البيع", 16)], lines);
                 break;
+            }
             default:
                 throw new NotFoundException("التقرير غير موجود");
         }

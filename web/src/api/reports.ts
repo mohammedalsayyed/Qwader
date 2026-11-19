@@ -114,7 +114,13 @@ export interface InventoryValueRow {
   categoryName: string;
   productCount: number;
   quantity: number;
+  /** Quantity × average cost. */
   value: number;
+  /** Quantity × retail price. */
+  saleValue?: number;
+  /** Its general category («الصنف العام»); null for none. */
+  groupId?: number | null;
+  groupName?: string | null;
 }
 
 export type ProductSort = 'Revenue' | 'Quantity' | 'Profit';

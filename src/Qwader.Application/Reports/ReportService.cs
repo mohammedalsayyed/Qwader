@@ -47,7 +47,11 @@ public sealed record GroupReportRow(int Id, string Name, int Count, decimal Quan
 
 public sealed record BalanceRow(int Id, string Code, string Name, string? Phone, decimal Balance, DateTime? LastActivity);
 
-public sealed record InventoryValueRow(int CategoryId, string CategoryName, int ProductCount, decimal Quantity, decimal Value);
+/// <param name="Value">Quantity × average cost (what the stock cost).</param>
+/// <param name="SaleValue">Quantity × retail price (what it sells for).</param>
+/// <param name="GroupId">The category's general category («الصنف العام»), null for none.</param>
+public sealed record InventoryValueRow(int CategoryId, string CategoryName, int ProductCount, decimal Quantity, decimal Value,
+    decimal SaleValue = 0, int? GroupId = null, string? GroupName = null);
 
 public enum ProductSort
 {
@@ -392,12 +396,18 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
     public async Task<IReadOnlyList<InventoryValueRow>> InventoryValueAsync(CancellationToken ct = default)
     {
         var rows = await db.Products.AsNoTracking().Where(p => !p.IsArchived)
-            .Select(p => new { p.CategoryId, Category = p.Category.Name, Qty = p.StockBalances.Sum(b => (decimal?)b.Quantity) ?? 0, p.AverageCost })
+            .Select(p => new
+            {
+                p.CategoryId, Category = p.Category.Name, p.Category.GroupId, Group = p.Category.Group != null ? p.Category.Group.Name : null,
+                Qty = p.StockBalances.Sum(b => (decimal?)b.Quantity) ?? 0, p.AverageCost, p.RetailPrice,
+            })
             .ToListAsync(ct);
-        return rows.GroupBy(r => new { r.CategoryId, r.Category })
+        // By general category (those without one last), then the biggest value first.
+        return rows.GroupBy(r => new { r.CategoryId, r.Category, r.GroupId, r.Group })
             .Select(g => new InventoryValueRow(g.Key.CategoryId, g.Key.Category, g.Count(), g.Sum(r => r.Qty),
-                Profit || Financial ? CostMath.RoundMoney(g.Sum(r => r.Qty * r.AverageCost)) : 0))
-            .OrderByDescending(r => r.Value)
+                Profit || Financial ? CostMath.RoundMoney(g.Sum(r => r.Qty * r.AverageCost)) : 0,
+                CostMath.RoundMoney(g.Sum(r => r.Qty * r.RetailPrice)), g.Key.GroupId, g.Key.Group))
+            .OrderBy(r => r.GroupId == null).ThenBy(r => r.GroupName).ThenByDescending(r => r.Value).ThenBy(r => r.CategoryName)
             .ToList();
     }
 }

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
-import { reportsApi, type ProductSort } from '@/api/reports';
+import { reportsApi, type InventoryValueRow, type ProductSort } from '@/api/reports';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button, IconButton } from '@/components/ui/Button';
@@ -247,15 +247,11 @@ export function ReportsPage() {
         </div>
       )}
       {(profit || financial) && (
-        <Section title={`قيمة المخزون بالتكلفة${p?.inventoryValue != null ? ` — ${formatMoney(p.inventoryValue)}` : ''}`} exportKey="inventory" onExport={exportExcel}>
-          <QueryList query={inventory} empty="لا يوجد مخزون">
-            {(rows) => rows.map((c) => (
-              <li key={c.categoryId} className="flex items-center justify-between gap-3 px-4 py-3">
-                <span><span className="block font-medium">{c.categoryName}</span><span className="block text-xs text-muted">{c.productCount} منتج · {formatQuantity(c.quantity)} قطعة</span></span>
-                <span className="tabular shrink-0 font-bold">{formatMoney(c.value)}</span>
-              </li>
-            ))}
-          </QueryList>
+        <Section title="المنتجات حسب الصنف" hint="الكمية الموجودة الآن، وقيمتها بالتكلفة (متوسط التكلفة) وبسعر البيع، مقسومة على الأصناف العامة"
+          exportKey="inventory" onExport={exportExcel}>
+          {inventory.isPending ? <Spinner /> : inventory.isError ? <ErrorState message={errorMessage(inventory.error)} onRetry={() => void inventory.refetch()} />
+            : inventory.data.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted">لا يوجد مخزون</p>
+            : <CategoryStockTable rows={inventory.data} />}
         </Section>
       )}
     </div>
@@ -310,4 +306,66 @@ function QueryList<T>({ query, empty, limit, children }: {
   const rows = limit ? (query.data ?? []).slice(0, limit) : query.data ?? [];
   if (rows.length === 0) return <p className="px-4 py-6 text-center text-sm text-muted">{empty}</p>;
   return <ul className="divide-y divide-line">{children(rows)}</ul>;
+}
+
+/** «المنتجات حسب الصنف»: each general category with its categories and subtotal, and the grand total. */
+function CategoryStockTable({ rows }: { rows: InventoryValueRow[] }) {
+  const groups = new Map<string, InventoryValueRow[]>();
+  for (const r of rows) {
+    const key = r.groupName ?? 'بدون صنف عام';
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const sum = (list: InventoryValueRow[]) => ({
+    count: list.reduce((t, r) => t + r.productCount, 0),
+    quantity: list.reduce((t, r) => t + r.quantity, 0),
+    value: list.reduce((t, r) => t + r.value, 0),
+    sale: list.reduce((t, r) => t + (r.saleValue ?? 0), 0),
+  });
+  const Cells = ({ s }: { s: ReturnType<typeof sum> }) => (
+    <>
+      <td className="tabular px-3 py-2 text-end">{s.count}</td>
+      <td className="tabular px-3 py-2 text-end">{formatQuantity(s.quantity)}</td>
+      <td className="tabular px-3 py-2 text-end">{formatMoney(s.value)}</td>
+      <td className="tabular px-3 py-2 text-end">{formatMoney(s.sale)}</td>
+    </>
+  );
+  const showGroups = groups.size > 1 || !groups.has('بدون صنف عام');
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[560px] text-sm">
+        <thead className="bg-canvas text-muted">
+          <tr>
+            <th className="px-3 py-2 text-start font-semibold">الصنف</th>
+            <th className="px-3 py-2 text-end font-semibold">المنتجات</th>
+            <th className="px-3 py-2 text-end font-semibold">الكمية</th>
+            <th className="px-3 py-2 text-end font-semibold">بالتكلفة</th>
+            <th className="px-3 py-2 text-end font-semibold">بسعر البيع</th>
+          </tr>
+        </thead>
+        {[...groups].map(([name, list]) => (
+          <tbody key={name} className="divide-y divide-line border-t border-line">
+            {showGroups && <tr className="bg-brand-50/60"><td colSpan={5} className="px-3 py-2 font-bold">{name}</td></tr>}
+            {list.map((c) => (
+              <tr key={c.categoryId}>
+                <td className="px-3 py-2"><Link to={`/products?categoryId=${c.categoryId}`} className="hover:text-brand-700">{c.categoryName}</Link></td>
+                <Cells s={sum([c])} />
+              </tr>
+            ))}
+            {showGroups && (
+              <tr className="font-semibold">
+                <td className="px-3 py-2">مجموع {name}</td>
+                <Cells s={sum(list)} />
+              </tr>
+            )}
+          </tbody>
+        ))}
+        <tfoot className="border-t-2 border-line bg-canvas font-bold">
+          <tr>
+            <td className="px-3 py-2">المجموع الكلي</td>
+            <Cells s={sum(rows)} />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
 }
