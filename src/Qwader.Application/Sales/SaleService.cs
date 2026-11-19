@@ -369,7 +369,8 @@ public sealed class SaleService(
             if (paid > 0) balance = await customers.PostAsync(customer.Id, CustomerEntryType.Payment, 0, paid, source with { Description = "مدفوع عند البيع" }, now, ct);
             // Left open (not paid, not waiting on a transfer) while the customer holds credit: the credit pays it.
             var open = total - paid - pendingTotal;
-            var creditBefore = open - balance;
+            // Their credit not yet on any invoice: what their invoices show owed (this one included) less what they owe.
+            var creditBefore = await UnpaidOnInvoicesAsync(customer.Id, ct) - balance;
             if (open > 0.004m && creditBefore > 0.004m)
                 await vouchers.ApplyCreditAsync(customer.Id, invoice.Id, open, creditBefore, ct);
         }
@@ -562,6 +563,17 @@ public sealed class SaleService(
         // Owed on this invoice: total − paid at the till − collected later − goods returned against the customer's balance.
         var remaining = invoice.Status == SaleStatus.Voided ? 0
             : Math.Max(0, invoice.Total - invoice.PaidAmount - invoice.CollectedAmount - returns.Where(r => r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => r.Total));
+        // The customer holds credit while this invoice is owed (e.g. it was sold before their old balance could pay it).
+        var creditAvailable = 0m;
+        if (remaining > 0.004m && !s.IsWalkIn)
+        {
+            var balance = await db.Customers.Where(c => c.Id == invoice.CustomerId).Select(c => c.Balance).FirstAsync(ct);
+            // Their credit not yet on any invoice: what all their invoices show owed less what they owe (one customer may have
+            // several open invoices), and never more than their unused old credit and receipts.
+            var unreflected = await UnpaidOnInvoicesAsync(invoice.CustomerId, ct) - balance;
+            if (unreflected > 0.004m)
+                creditAvailable = Math.Min(Math.Min(remaining, unreflected), await vouchers.FreeCreditAsync(invoice.CustomerId, ct));
+        }
         decimal? cost = showCost ? CostMath.RoundMoney(invoice.TotalCost - returnedCost) : null;
         decimal? profit = showCost && invoice.Status != SaleStatus.Voided ? CostMath.RoundMoney(invoice.Total - returnedTotal - cost!.Value) : null;
 
@@ -571,7 +583,34 @@ public sealed class SaleService(
             returnedTotal, cost, profit, s.Salesperson ?? "", invoice.Notes, invoice.VoidedAt, invoice.VoidReason,
             s.Lines.Select(l => new SaleLineDto(l.Id, l.ProductId, l.Sku, l.ProductName, l.Unit, l.Quantity, l.UnitPrice, l.LineDiscount,
                 l.LineTotal, l.NetTotal, l.ReturnedQuantity, showCost ? l.UnitCost : null, l.PriceOverridden, l.UnitFactor, l.ProductUnitId)).ToList(),
-            s.Payments, allReturns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer, invoice.RestoredAt);
+            s.Payments, allReturns, pendingTransfers, invoice.SoldOffline, invoice.ReviewNote, invoice.ReviewedAt, s.Reviewer, invoice.RestoredAt,
+            CostMath.RoundMoney(creditAvailable));
+    }
+
+    /// <summary>What a customer's invoices (not voided) show owed: total − paid − collected − goods returned against their balance.</summary>
+    private async Task<decimal> UnpaidOnInvoicesAsync(int customerId, CancellationToken ct) =>
+        await db.SaleInvoices.Where(s => s.CustomerId == customerId && s.Status != SaleStatus.Voided)
+            .SumAsync(s => (decimal?)(s.Total - s.PaidAmount - s.CollectedAmount
+                - (db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0)), ct) ?? 0;
+
+    public async Task<SaleDetailDto> ApplyCustomerCreditAsync(int id, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.LockRowAsync("SaleInvoices", id, ct);
+        var invoice = await db.SaleInvoices.AsNoTracking().Where(s => s.Id == id)
+            .Select(s => new { s.Id, s.Number, s.CustomerId, s.Status, s.SalespersonId, s.Customer.IsWalkIn }).FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("الفاتورة غير موجودة");
+        if (!CanSeeAll && invoice.SalespersonId != currentUser.UserId) throw new NotFoundException("الفاتورة غير موجودة");
+        if (invoice.Status == SaleStatus.Voided || invoice.IsWalkIn) throw new BusinessRuleException("لا يوجد رصيد للعميل لسداد هذه الفاتورة");
+        // The customer's row lock serializes this with their other credit uses (a sale, a collection).
+        await db.LockRowAsync("Customers", invoice.CustomerId, ct);
+        var available = (await GetAsync(id, ct)).CreditAvailable;
+        if (available <= 0.004m) throw new BusinessRuleException("لا يوجد رصيد للعميل لسداد هذه الفاتورة");
+        await vouchers.ApplyCreditAsync(invoice.CustomerId, id, available, available, ct);
+        audit.Log("Sale.ApplyCredit", "SaleInvoice", id.ToString(), null, new { invoice.Number, Amount = available });
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await GetAsync(id, CancellationToken.None);
     }
 
     public async Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default)
@@ -795,6 +834,7 @@ public sealed class SaleService(
         invoice.Status = SaleStatus.Voided;
         // Money collected later against this invoice stays with the customer as credit: it no longer pays anything.
         await db.ReceiptAllocations.Where(a => a.SaleInvoiceId == id).ExecuteDeleteAsync(ct);
+        await db.OpeningCreditAllocations.Where(a => a.SaleInvoiceId == id).ExecuteDeleteAsync(ct);
         invoice.CollectedAmount = 0;
         invoice.VoidedAt = now;
         invoice.VoidedById = currentUser.UserId;

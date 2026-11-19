@@ -224,7 +224,12 @@ export function CheckoutSheet({ cart, subtotal, lineDiscounts, offline = false, 
           <div className="flex items-center justify-between text-sm">
             <span>الإجمالي <b className="tabular text-xl">{formatMoney(total)}</b></span>
             {pendingPaid > 0 ? <span className="font-semibold text-amber-700">بانتظار التحقق: {formatMoney(pendingPaid)}</span>
-              : remaining > 0 ? <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>
+              : remaining > 0 ? (
+                // A customer with credit (old balance «له», an advance): it pays what is left, no money moves.
+                mode === 'customer' && customer && customer.balance < -0.004
+                  ? <span className="font-semibold text-success">من رصيد العميل: {formatMoney(Math.min(remaining, -customer.balance))}
+                    {remaining + customer.balance > 0.004 && <span className="text-danger"> · آجل: {formatMoney(round2(remaining + customer.balance))}</span>}</span>
+                  : <span className="font-semibold text-danger">آجل: {formatMoney(remaining)}</span>)
               : change > 0 ? <span className="font-semibold text-success">الباقي للزبون: {formatMoney(change)}</span> : null}
           </div>
           {offline && <p className="flex items-center gap-1.5 text-xs text-amber-800"><CloudOff className="size-4" /> بدون إنترنت: تُحفظ على الجهاز وتُرسل عند عودة الاتصال</p>}

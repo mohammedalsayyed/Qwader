@@ -69,7 +69,9 @@ public sealed record SaleDetailDto(
     IReadOnlyList<SaleLineDto> Lines, IReadOnlyList<SalePaymentDto> Payments, IReadOnlyList<SaleReturnSummaryDto> Returns,
     IReadOnlyList<SalePendingTransferDto> Transfers,
     bool SoldOffline = false, string? ReviewNote = null, DateTime? ReviewedAt = null, string? ReviewedByName = null,
-    DateTime? RestoredAt = null);
+    DateTime? RestoredAt = null,
+    /// <summary>Of what is owed on it, how much the customer's own credit (old balance «له», an advance…) can pay now.</summary>
+    decimal CreditAvailable = 0);
 
 public sealed class SaleListRequest : PagedRequest
 {
@@ -132,6 +134,8 @@ public interface ISaleService
     Task<OfflineChangesDto> OfflineChangesAsync(long movementId, long ledgerEntryId, DateTime at, CancellationToken ct = default);
     /// <summary>A manager has looked at an offline sale's problems: it leaves the «تحتاج مراجعة» list.</summary>
     Task<SaleDetailDto> MarkReviewedAsync(int id, CancellationToken ct = default);
+    /// <summary>Pays what is owed on the invoice from the customer's credit (old balance «له», an advance…): no money moves.</summary>
+    Task<SaleDetailDto> ApplyCustomerCreditAsync(int id, CancellationToken ct = default);
 }
 
 public sealed class CreateSaleRequestValidator : AbstractValidator<CreateSaleRequest>

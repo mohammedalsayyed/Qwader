@@ -133,6 +133,8 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
             .Select(g => new { Id = g.Key, Sum = g.Sum(l => l.NetTotal) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
         var payments = await db.SalePayments.AsNoTracking().GroupBy(p => p.SaleInvoiceId)
             .Select(g => new { Id = g.Key, Sum = g.Sum(p => p.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
+        var fromOpening = await db.OpeningCreditAllocations.AsNoTracking().GroupBy(a => a.SaleInvoiceId)
+            .Select(g => new { Id = g.Key, Sum = g.Sum(a => a.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
         var allocated = await db.ReceiptAllocations.AsNoTracking().Where(a => a.SaleInvoiceId != null).GroupBy(a => a.SaleInvoiceId!.Value)
             .Select(g => new { Id = g.Key, Sum = g.Sum(a => a.Amount) }).ToDictionaryAsync(x => x.Id, x => x.Sum, ct);
         var returned = await db.SaleReturns.AsNoTracking().Where(r => r.Settlement == ReturnSettlement.ReduceBalance).GroupBy(r => r.SaleInvoiceId)
@@ -141,7 +143,7 @@ public sealed class IntegrityService(IAppDbContext db, IClock clock) : IIntegrit
         {
             s.Id, s.Number, s.Status, s.Total, s.PaidAmount, s.CollectedAmount,
             Lines = lines.GetValueOrDefault(s.Id), Payments = payments.GetValueOrDefault(s.Id),
-            Allocated = allocated.GetValueOrDefault(s.Id), ReturnedOnBalance = returned.GetValueOrDefault(s.Id),
+            Allocated = allocated.GetValueOrDefault(s.Id) + fromOpening.GetValueOrDefault(s.Id), ReturnedOnBalance = returned.GetValueOrDefault(s.Id),
         }).ToList();
         var issues = new List<IntegrityIssue>();
         foreach (var s in rows)

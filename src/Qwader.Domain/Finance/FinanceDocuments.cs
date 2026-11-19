@@ -166,6 +166,18 @@ public class Expense : AuditableEntity
 /// Which debt a collection paid. Money a customer pays later goes to the invoice it was for (a confirmed till transfer),
 /// then to the opening balance, then to the oldest unpaid invoices; anything left is the customer's credit.
 /// </summary>
+/// <summary>
+/// Which invoice a customer's old credit («رصيد سابق — له», from before the system) paid: it pays their credit purchases as an
+/// advance would. No money moves (it came in before the system); the invoice shows it paid. Σ per customer ≤ their opening credit.
+/// </summary>
+public class OpeningCreditAllocation
+{
+    public long Id { get; set; }
+    public int CustomerId { get; set; }
+    public int SaleInvoiceId { get; set; }
+    public decimal Amount { get; set; }
+}
+
 public class ReceiptAllocation
 {
     public long Id { get; set; }

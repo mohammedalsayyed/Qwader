@@ -63,6 +63,11 @@ public sealed class SalesController(ISaleService sales) : ControllerBase
     public Task<OfflineChangesDto> OfflineChanges([FromQuery] long movementId, [FromQuery] long ledgerEntryId, [FromQuery] DateTime at, CancellationToken ct) =>
         sales.OfflineChangesAsync(movementId, ledgerEntryId, at, ct);
 
+    /// <summary>Pays what is owed on the invoice from the customer's credit (old balance, an advance): no money moves.</summary>
+    [HttpPost("{id:int}/apply-credit")]
+    [HasPermission(Permissions.SalesCreate)]
+    public Task<SaleDetailDto> ApplyCredit(int id, CancellationToken ct) => sales.ApplyCustomerCreditAsync(id, ct);
+
     [HttpPost("{id:int}/reviewed")]
     [HasPermission(Permissions.SalesViewAll)]
     public Task<SaleDetailDto> Reviewed(int id, CancellationToken ct) => sales.MarkReviewedAsync(id, ct);

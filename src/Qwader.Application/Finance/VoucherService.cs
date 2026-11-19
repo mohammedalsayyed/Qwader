@@ -17,6 +17,8 @@ public interface IVoucherService
     Task<VoucherDto> CreateReceiptAsync(CreateReceiptRequest request, CancellationToken ct = default);
     /// <summary>The customer's credit pays (part of) a new invoice of theirs.</summary>
     Task ApplyCreditAsync(int customerId, int saleInvoiceId, decimal open, decimal credit, CancellationToken ct = default);
+    /// <summary>What of a customer's credit can still pay invoices: their old credit not yet used, and their receipts not yet used.</summary>
+    Task<decimal> FreeCreditAsync(int customerId, CancellationToken ct = default);
     Task<VoucherDto> VoidReceiptAsync(int id, VoidDocumentRequest request, CancellationToken ct = default);
 
     Task<PagedResult<VoucherDto>> PaymentsAsync(VoucherListRequest request, CancellationToken ct = default);
@@ -215,19 +217,32 @@ public sealed class VoucherService(
     }
 
     /// <summary>
-    /// A customer with credit («له») buys on credit: the part of their receipts not yet used (an advance, a collection
-    /// beyond their debts, the money of a voided invoice) pays this invoice, so it does not show as owed while they are owed.
-    /// Never more than the invoice leaves open nor than the credit they hold.
+    /// A customer with credit («له») buys on credit: their old credit from before the system («رصيد سابق — له») first, then the
+    /// part of their receipts not yet used (an advance, a collection beyond their debts, the money of a voided invoice) pays this
+    /// invoice, so it does not show as owed while they are owed. Never more than the invoice leaves open nor than the credit they hold.
     /// </summary>
     public async Task ApplyCreditAsync(int customerId, int saleInvoiceId, decimal open, decimal credit, CancellationToken ct = default)
     {
         var left = Math.Min(open, credit);
         if (left <= 0.004m) return;
+        var applied = 0m;
+
+        // The old credit: what the opening entries left them («له»), less what it has already paid.
+        var openingCredit = await db.CustomerLedgerEntries.Where(e => e.CustomerId == customerId && e.Type == Domain.Sales.CustomerEntryType.Opening)
+            .SumAsync(e => (decimal?)(e.Credit - e.Debit), ct) ?? 0;
+        var openingUsed = await db.OpeningCreditAllocations.Where(a => a.CustomerId == customerId).SumAsync(a => (decimal?)a.Amount, ct) ?? 0;
+        var openingFree = Math.Min(left, openingCredit - openingUsed);
+        if (openingFree > 0.004m)
+        {
+            db.OpeningCreditAllocations.Add(new OpeningCreditAllocation { CustomerId = customerId, SaleInvoiceId = saleInvoiceId, Amount = openingFree });
+            applied += openingFree;
+            left -= openingFree;
+        }
+
         var receipts = await db.ReceiptVouchers.Where(v => v.CustomerId == customerId && v.Status == VoucherStatus.Posted
                 && (v.Purpose == ReceiptPurpose.DebtCollection || v.Purpose == ReceiptPurpose.CustomerDeposit))
             .Select(v => new { v.Id, v.Date, Free = v.Amount - (db.ReceiptAllocations.Where(a => a.ReceiptVoucherId == v.Id).Sum(a => (decimal?)a.Amount) ?? 0) })
             .Where(v => v.Free > 0.004m).OrderBy(v => v.Date).ThenBy(v => v.Id).ToListAsync(ct);
-        var applied = 0m;
         foreach (var r in receipts)
         {
             var amount = Math.Min(left, r.Free);
@@ -239,6 +254,17 @@ public sealed class VoucherService(
         if (applied > 0)
             await db.SaleInvoices.Where(s => s.Id == saleInvoiceId)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.CollectedAmount, x => x.CollectedAmount + applied), ct);
+    }
+
+    public async Task<decimal> FreeCreditAsync(int customerId, CancellationToken ct = default)
+    {
+        var openingCredit = await db.CustomerLedgerEntries.Where(e => e.CustomerId == customerId && e.Type == Domain.Sales.CustomerEntryType.Opening)
+            .SumAsync(e => (decimal?)(e.Credit - e.Debit), ct) ?? 0;
+        var openingUsed = await db.OpeningCreditAllocations.Where(a => a.CustomerId == customerId).SumAsync(a => (decimal?)a.Amount, ct) ?? 0;
+        var receipts = await db.ReceiptVouchers.Where(v => v.CustomerId == customerId && v.Status == VoucherStatus.Posted
+                && (v.Purpose == ReceiptPurpose.DebtCollection || v.Purpose == ReceiptPurpose.CustomerDeposit))
+            .SumAsync(v => (decimal?)(v.Amount - (db.ReceiptAllocations.Where(a => a.ReceiptVoucherId == v.Id).Sum(a => (decimal?)a.Amount) ?? 0)), ct) ?? 0;
+        return Math.Max(0, openingCredit - openingUsed) + Math.Max(0, receipts);
     }
 
     /// <summary>A voided collection gives back what it paid: the invoices are owed again.</summary>

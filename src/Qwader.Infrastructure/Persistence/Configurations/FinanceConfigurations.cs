@@ -95,6 +95,18 @@ public sealed class PaymentVoucherConfiguration : IEntityTypeConfiguration<Payme
     }
 }
 
+public sealed class OpeningCreditAllocationConfiguration : IEntityTypeConfiguration<OpeningCreditAllocation>
+{
+    public void Configure(EntityTypeBuilder<OpeningCreditAllocation> b)
+    {
+        b.HasIndex(a => a.CustomerId);
+        b.HasIndex(a => a.SaleInvoiceId);
+        b.HasOne<Domain.Sales.Customer>().WithMany().HasForeignKey(a => a.CustomerId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Domain.Sales.SaleInvoice>().WithMany().HasForeignKey(a => a.SaleInvoiceId).OnDelete(DeleteBehavior.Restrict);
+        b.ToTable(t => t.HasCheckConstraint("CK_OpeningCreditAllocations_Amount", "[Amount] > 0"));
+    }
+}
+
 public sealed class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
 {
     public void Configure(EntityTypeBuilder<Expense> b)

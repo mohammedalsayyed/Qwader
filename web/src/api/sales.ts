@@ -82,6 +82,8 @@ export interface Sale {
   reviewNote: string | null;
   reviewedAt: string | null;
   reviewedByName: string | null;
+  /** Of what is owed, how much the customer's own credit (old balance «له», an advance…) can pay now. */
+  creditAvailable?: number;
 }
 
 export interface CreateSaleInput {
@@ -173,6 +175,8 @@ export const salesApi = {
   create: (input: CreateSaleInput) => api<Sale>('/sales', { method: 'POST', body: input }),
   /** Edits a sale: the old invoice is voided and this one made, together (one or neither). */
   replace: (id: number, input: CreateSaleInput) => api<Sale>(`/sales/${id}/replace`, { method: 'POST', body: input }),
+  /** Pays what is owed on the invoice from the customer's credit (old balance «له», an advance): no money moves. */
+  applyCredit: (id: number) => api<Sale>(`/sales/${id}/apply-credit`, { method: 'POST' }),
   /** Notes, a walk-in's name and phone, or linking a walk-in invoice to a customer: no money or stock moves. */
   updateDetails: (id: number, input: { notes: string | null; customerName?: string | null; customerPhone?: string | null; customerId?: number | null }) =>
     api<Sale>(`/sales/${id}/details`, { method: 'PATCH', body: input }),

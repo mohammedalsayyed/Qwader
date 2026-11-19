@@ -67,6 +67,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<PaymentVoucher> PaymentVouchers => Set<PaymentVoucher>();
     public DbSet<Expense> Expenses => Set<Expense>();
     public DbSet<ReceiptAllocation> ReceiptAllocations => Set<ReceiptAllocation>();
+    public DbSet<OpeningCreditAllocation> OpeningCreditAllocations => Set<OpeningCreditAllocation>();
     public DbSet<Domain.Payroll.Employee> Employees => Set<Domain.Payroll.Employee>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<Domain.Payroll.PayrollEntry> PayrollEntries => Set<Domain.Payroll.PayrollEntry>();

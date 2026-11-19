@@ -59,6 +59,7 @@ export function SaleDetailPage() {
   const { can } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const settings = useStoreSettings();
   const [returning, setReturning] = useState(false);
   const [voiding, setVoiding] = useState(false);
@@ -79,6 +80,11 @@ export function SaleDetailPage() {
     queryClient.setQueryData(['sale', id], sale);
     for (const k of ['sales', 'sales-summary', 'products', 'customers', 'customer', 'notifications']) void queryClient.invalidateQueries({ queryKey: [k] });
   };
+  const applyCredit = useMutation({
+    mutationFn: () => salesApi.applyCredit(id),
+    onSuccess: (sale) => { refresh(sale); toast.success('سُدّدت الفاتورة من رصيد العميل'); },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
 
   if (query.isPending) return <Spinner />;
   if (query.isError) return <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />;
@@ -163,13 +169,24 @@ export function SaleDetailPage() {
               { label: 'الإجمالي', value: <b className="tabular text-lg">{formatMoney(s.total)}</b> },
               ...s.payments.map((p) => ({ label: `مدفوع — ${p.accountName}`, value: <span className="tabular">{formatMoney(p.amount)}{p.reference && <span className="ltr ms-1 text-xs text-muted">({p.reference})</span>}</span> })),
               // Money that came in after the sale (a till transfer confirmed later) — paidAmount already includes it.
-              collected > 0.004 && { label: 'مُحصّل بعد البيع (حوالة مؤكدة)', value: <span className="tabular">{formatMoney(collected)}</span> },
+              collected > 0.004 && { label: 'مُحصّل بعد البيع (سند قبض، حوالة، أو من رصيد العميل)', value: <span className="tabular">{formatMoney(collected)}</span> },
               s.remaining > 0 && { label: 'المتبقي على العميل', value: <span className="tabular text-danger">{formatMoney(s.remaining)}</span> },
               s.returnedTotal > 0 && { label: 'قيمة المرتجعات', value: <span className="tabular text-warning">{formatMoney(s.returnedTotal)}</span> },
               s.profit != null && { label: 'الربح من الفاتورة', value: <span className={cn('tabular', s.profit < 0 ? 'text-danger' : 'text-success')}>{formatMoney(s.profit)}</span> },
             ]} />
           </div>
         </Card>
+
+        {(s.creditAvailable ?? 0) > 0.004 && s.status !== 'Voided' && can(P.SalesCreate) && (
+          // The customer holds credit (old balance «له», an advance) while this invoice shows owed: it pays it, no money moves.
+          <Card className="flex flex-wrap items-center justify-between gap-3 border-success/40 bg-green-50 p-4 print:hidden">
+            <p className="text-sm leading-6">
+              للعميل رصيد يغطي <b className="tabular">{formatMoney(s.creditAvailable!)}</b> من هذه الفاتورة (رصيد سابق أو دفعة مقدمة).
+              <span className="block text-muted">السداد منه لا يحرّك أي حساب؛ الفاتورة تصبح مدفوعة بهذا المبلغ.</span>
+            </p>
+            <Button variant="secondary" loading={applyCredit.isPending} onClick={() => applyCredit.mutate()}>سداد من رصيد العميل</Button>
+          </Card>
+        )}
 
         {s.transfers.length > 0 && (
           <Card className="p-4">

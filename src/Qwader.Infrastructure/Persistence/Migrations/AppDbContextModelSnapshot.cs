@@ -1003,6 +1003,36 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Qwader.Domain.Finance.OpeningCreditAllocation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SaleInvoiceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("SaleInvoiceId");
+
+                    b.ToTable("OpeningCreditAllocations", t =>
+                        {
+                            t.HasCheckConstraint("CK_OpeningCreditAllocations_Amount", "[Amount] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Qwader.Domain.Finance.PaymentVoucher", b =>
                 {
                     b.Property<int>("Id")
@@ -3064,6 +3094,21 @@ namespace Qwader.Infrastructure.Persistence.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("FinancialAccount");
+                });
+
+            modelBuilder.Entity("Qwader.Domain.Finance.OpeningCreditAllocation", b =>
+                {
+                    b.HasOne("Qwader.Domain.Sales.Customer", null)
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Qwader.Domain.Sales.SaleInvoice", null)
+                        .WithMany()
+                        .HasForeignKey("SaleInvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Qwader.Domain.Finance.PaymentVoucher", b =>

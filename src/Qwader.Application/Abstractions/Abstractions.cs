@@ -57,6 +57,7 @@ public interface IAppDbContext
     DbSet<PaymentVoucher> PaymentVouchers { get; }
     DbSet<Expense> Expenses { get; }
     DbSet<ReceiptAllocation> ReceiptAllocations { get; }
+    DbSet<OpeningCreditAllocation> OpeningCreditAllocations { get; }
     DbSet<Employee> Employees { get; }
     DbSet<Domain.Notifications.UserNotification> UserNotifications { get; }
     DbSet<PayrollEntry> PayrollEntries { get; }
