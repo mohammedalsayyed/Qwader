@@ -6,6 +6,7 @@ using Qwader.Domain.Catalog;
 using Qwader.Domain.Finance;
 using Qwader.Domain.Identity;
 using Qwader.Domain.Inventory;
+using Qwader.Domain.Purchasing;
 using Qwader.Domain.Sales;
 
 namespace Qwader.Application.Reports;
@@ -41,6 +42,23 @@ public sealed record PeriodReportDto(
     /// <summary>Discounts suppliers gave on whole purchase invoices in the period («خصم مكتسب من الموردين»): added to the net profit.</summary>
     decimal? PurchaseDiscounts = null);
 
+/// <summary>Where (part of) an invoice's money went: an account, a later collection, the customer's own credit.</summary>
+public sealed record InvoicePaymentPart(string Account, decimal Amount);
+
+/// <summary>
+/// One sale invoice of the period: its total, what came back, what was paid and where to, what is still owed, and its profit
+/// (with «عرض الأرباح»). Status: «مدفوعة», «جزئي», «آجل» or «بانتظار التحقق» (a transfer not confirmed yet).
+/// </summary>
+public sealed record InvoiceReportRow(
+    int Id, string Number, DateTime Date, string CustomerName, bool IsWalkIn, string Salesperson,
+    decimal Total, decimal Returned, decimal Paid, decimal Remaining, decimal PendingTransfers, string Status, decimal? Profit,
+    IReadOnlyList<InvoicePaymentPart> Payments);
+
+/// <summary>The invoices of a period and their totals; ByAccount = how much went into each place.</summary>
+public sealed record InvoiceReportDto(
+    DateOnly From, DateOnly To, IReadOnlyList<InvoiceReportRow> Rows, int Count, decimal Total, decimal Returned, decimal Paid, decimal Remaining, decimal PendingTransfers,
+    decimal? Profit, IReadOnlyList<InvoicePaymentPart> ByAccount);
+
 public sealed record DailyRowDto(DateOnly Day, int Invoices, decimal NetSales, decimal? GrossProfit, decimal? Expenses, decimal? Received);
 
 public sealed record ProductReportRow(int ProductId, string Sku, string Name, string CategoryName, decimal Quantity, decimal Revenue, decimal? Cost, decimal? Profit, decimal? MarginPercent);
@@ -72,6 +90,8 @@ public interface IReportService
     Task<IReadOnlyList<BalanceRow>> ReceivablesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<BalanceRow>> PayablesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<InventoryValueRow>> InventoryValueAsync(CancellationToken ct = default);
+    /// <summary>«فواتير المبيعات»: every sale invoice of the period (not voided) — paid, where to, owed, profit.</summary>
+    Task<InvoiceReportDto> InvoicesAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
 }
 
 public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IClock clock) : IReportService
@@ -403,6 +423,64 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             .Select(s => new BalanceRow(s.Id, s.Code, s.Name, s.Phone, s.Balance,
                 db.SupplierLedgerEntries.Where(e => e.SupplierId == s.Id).Max(e => (DateTime?)e.Date)))
             .ToListAsync(ct);
+
+    public async Task<InvoiceReportDto> InvoicesAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        var (start, end) = Range(from, to);
+        var rows = await db.SaleInvoices.AsNoTracking()
+            .Where(s => s.Date >= start && s.Date < end && s.Status != SaleStatus.Voided)
+            .OrderBy(s => s.Date).ThenBy(s => s.Id)
+            .Select(s => new
+            {
+                s.Id, s.Number, s.Date, s.CustomerName, s.Customer.IsWalkIn,
+                Salesperson = db.Users.Where(u => u.Id == s.SalespersonId).Select(u => u.FullName).FirstOrDefault(),
+                s.Total, s.PaidAmount, s.CollectedAmount, s.TotalCost,
+                // Returns not cancelled (the query filter leaves those out): all of them, and those taken off the customer's debt.
+                Returned = db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id).Sum(r => (decimal?)r.Total) ?? 0,
+                ReturnedOnDebt = db.SaleReturns.Where(r => r.SaleInvoiceId == s.Id && r.Settlement == ReturnSettlement.ReduceBalance).Sum(r => (decimal?)r.Total) ?? 0,
+                ReturnedCost = db.SaleReturnLines.Where(l => l.SaleReturn.SaleInvoiceId == s.Id && l.Condition == ReturnCondition.Sellable)
+                    .Sum(l => (decimal?)(l.Quantity * l.UnitCost)) ?? 0,
+            })
+            .ToListAsync(ct);
+        var ids = rows.Select(r => r.Id).ToList();
+
+        // Where the money went: paid at the till per account, collected later per receipt's account, the customer's old credit,
+        // and transfers still waiting for verification.
+        var parts = new List<(int InvoiceId, string Account, decimal Amount)>();
+        parts.AddRange((await db.SalePayments.AsNoTracking().Where(p => ids.Contains(p.SaleInvoiceId))
+            .Select(p => new { p.SaleInvoiceId, p.FinancialAccount.Name, p.Amount }).ToListAsync(ct))
+            .Select(p => (p.SaleInvoiceId, p.Name, p.Amount)));
+        parts.AddRange((await db.ReceiptAllocations.AsNoTracking().Where(a => a.SaleInvoiceId != null && ids.Contains(a.SaleInvoiceId.Value))
+            .Select(a => new { Id = a.SaleInvoiceId!.Value, Name = db.ReceiptVouchers.Where(v => v.Id == a.ReceiptVoucherId).Select(v => v.FinancialAccount.Name).FirstOrDefault(), a.Amount })
+            .ToListAsync(ct))
+            .Select(a => (a.Id, $"{a.Name} (تحصيل لاحق)", a.Amount)));
+        parts.AddRange((await db.OpeningCreditAllocations.AsNoTracking().Where(a => ids.Contains(a.SaleInvoiceId))
+            .Select(a => new { a.SaleInvoiceId, a.Amount }).ToListAsync(ct))
+            .Select(a => (a.SaleInvoiceId, "رصيد سابق للعميل", a.Amount)));
+        var pending = await db.IncomingTransfers.AsNoTracking()
+            .Where(t => t.SaleInvoiceId != null && ids.Contains(t.SaleInvoiceId.Value) && t.Status == TransferStatus.Pending)
+            .Select(t => new { Id = t.SaleInvoiceId!.Value, t.FinancialAccount.Name, t.Amount }).ToListAsync(ct);
+        parts.AddRange(pending.Select(t => (t.Id, $"{t.Name} (بانتظار التحقق)", t.Amount)));
+        var byInvoice = parts.GroupBy(p => p.InvoiceId).ToDictionary(g => g.Key,
+            g => (IReadOnlyList<InvoicePaymentPart>)g.GroupBy(p => p.Account).Select(a => new InvoicePaymentPart(a.Key, a.Sum(x => x.Amount))).ToList());
+        var pendingBy = pending.GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.Sum(p => p.Amount));
+
+        var result = rows.Select(r =>
+        {
+            var paid = r.PaidAmount + r.CollectedAmount;
+            var remaining = Math.Max(0, r.Total - paid - r.ReturnedOnDebt);
+            var waiting = pendingBy.GetValueOrDefault(r.Id);
+            var status = remaining <= 0.004m ? "مدفوعة" : waiting > 0.004m && remaining - waiting <= 0.004m ? "بانتظار التحقق" : paid > 0.004m ? "جزئي" : "آجل";
+            decimal? profit = Profit ? CostMath.RoundMoney(r.Total - r.Returned - (r.TotalCost - r.ReturnedCost)) : null;
+            return new InvoiceReportRow(r.Id, r.Number, r.Date, r.CustomerName, r.IsWalkIn, r.Salesperson ?? "", r.Total, r.Returned, paid, remaining,
+                waiting, status, profit, byInvoice.GetValueOrDefault(r.Id) ?? []);
+        }).ToList();
+
+        var byAccount = parts.GroupBy(p => p.Account).Select(g => new InvoicePaymentPart(g.Key, g.Sum(p => p.Amount)))
+            .OrderByDescending(p => p.Amount).ToList();
+        return new InvoiceReportDto(from, to, result, result.Count, result.Sum(r => r.Total), result.Sum(r => r.Returned), result.Sum(r => r.Paid),
+            result.Sum(r => r.Remaining), result.Sum(r => r.PendingTransfers), Profit ? result.Sum(r => r.Profit ?? 0) : null, byAccount);
+    }
 
     public async Task<IReadOnlyList<InventoryValueRow>> InventoryValueAsync(CancellationToken ct = default)
     {

@@ -71,6 +71,46 @@ export interface BalanceSheet {
   notRecorded: string[];
 }
 
+/** «مدفوعة» · «جزئي» · «آجل» · «بانتظار التحقق» (what is left is a transfer not confirmed yet). */
+export type InvoiceStatus = 'مدفوعة' | 'جزئي' | 'آجل' | 'بانتظار التحقق';
+
+export interface InvoicePaymentPart {
+  account: string;
+  amount: number;
+}
+
+export interface InvoiceReportRow {
+  id: number;
+  number: string;
+  date: string;
+  customerName: string;
+  isWalkIn: boolean;
+  salesperson: string;
+  total: number;
+  returned: number;
+  paid: number;
+  remaining: number;
+  pendingTransfers: number;
+  status: InvoiceStatus;
+  /** Null without «عرض الأرباح». */
+  profit: number | null;
+  payments: InvoicePaymentPart[];
+}
+
+export interface InvoiceReport {
+  from: string;
+  to: string;
+  rows: InvoiceReportRow[];
+  count: number;
+  total: number;
+  returned: number;
+  paid: number;
+  remaining: number;
+  pendingTransfers: number;
+  profit: number | null;
+  byAccount: InvoicePaymentPart[];
+}
+
 export interface DailyRow {
   day: string;
   invoices: number;
@@ -130,6 +170,7 @@ type Range = { from?: string; to?: string };
 
 export const reportsApi = {
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
+  invoices: (r: Range) => api<InvoiceReport>('/reports/invoices', { query: r }),
   balanceSheet: (date?: string) => api<BalanceSheet>('/reports/balance-sheet', { query: { date } }),
   daily: (r: Range) => api<DailyRow[]>('/reports/daily', { query: r }),
   products: (r: Range, sort: ProductSort, take = 15, categoryId?: number) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take, categoryId } }),

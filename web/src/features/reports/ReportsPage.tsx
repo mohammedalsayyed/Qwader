@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Download, Printer } from 'lucide-react';
+import { Download, FileText, Printer } from 'lucide-react';
 import { reportsApi, type InventoryValueRow, type ProductSort } from '@/api/reports';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -57,7 +57,14 @@ export function ReportsPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="التقارير" subtitle={p ? (p.from === p.to ? formatDate(p.from) : `${formatDate(p.from)} — ${formatDate(p.to)}`) : undefined}
-        actions={<IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface print:hidden"><Printer className="size-5" /></IconButton>} />
+        actions={(
+          <div className="flex gap-2 print:hidden">
+            <Link to="/reports/invoices" className="inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 text-sm font-semibold text-brand-800 hover:bg-brand-100">
+              <FileText className="size-4" /> تقرير الفواتير
+            </Link>
+            <IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface"><Printer className="size-5" /></IconButton>
+          </div>
+        )} />
       <div className="print:hidden">
         <DateRangeFilter value={range} onChange={setRange} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'custom']} />
       </div>

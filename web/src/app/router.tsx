@@ -46,6 +46,7 @@ const EmployeePayrollPage = page(() => import('@/features/payroll/PayrollPages')
 const MyPayrollPage = page(() => import('@/features/payroll/PayrollPages'), 'MyPayrollPage');
 const NotificationFeedPage = page(() => import('@/features/notifications/NotificationFeed'), 'NotificationFeedPage');
 const ReportsPage = page(() => import('@/features/reports/ReportsPage'), 'ReportsPage');
+const InvoicesReportPage = page(() => import('@/features/reports/InvoicesReportPage'), 'InvoicesReportPage');
 const BalanceSheetPage = page(() => import('@/features/reports/BalanceSheetPage'), 'BalanceSheetPage');
 const AuditLogPage = page(() => import('@/features/settings/AuditLogPage'), 'AuditLogPage');
 const HelpPage = page(() => import('@/features/help/HelpPage'), 'HelpPage');
@@ -203,6 +204,7 @@ export const router = createBrowserRouter([
           guarded('audit', <AuditLogPage />, [P.AuditView]),
           { path: 'help', element: <HelpPage /> },
           guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
+          guarded('reports/invoices', <InvoicesReportPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
           guarded('balance-sheet', <BalanceSheetPage />, [P.ProfitView]),
           { path: '*', element: <NotFoundPage /> },
         ],

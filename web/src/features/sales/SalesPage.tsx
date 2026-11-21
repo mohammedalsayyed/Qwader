@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Plus, Receipt } from 'lucide-react';
+import { FileText, Plus, Receipt } from 'lucide-react';
 import { salesApi, SALE_STATUS, type SaleStatus } from '@/api/sales';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
@@ -38,7 +38,14 @@ export function SalesPage() {
 
   return (
     <>
-      <PageHeader title="فواتير المبيعات" subtitle={can(P.SalesViewAll) ? undefined : 'فواتيرك أنت فقط'} actions={<div className="hidden lg:flex">{can(P.SalesCreate) && <Button onClick={() => navigate('/pos')}><Plus className="size-5" /> بيع جديد</Button>}</div>} />
+      <PageHeader title="فواتير المبيعات" subtitle={can(P.SalesViewAll) ? undefined : 'فواتيرك أنت فقط'} actions={(
+        <div className="flex gap-2">
+          {(can(P.ReportsSales) || can(P.ReportsProfit) || can(P.ReportsFinancial)) && (
+            <Button variant="secondary" onClick={() => navigate('/reports/invoices')}><FileText className="size-4" /> تقرير الفواتير</Button>
+          )}
+          <div className="hidden lg:flex">{can(P.SalesCreate) && <Button onClick={() => navigate('/pos')}><Plus className="size-5" /> بيع جديد</Button>}</div>
+        </div>
+      )} />
       <div className="mb-3 space-y-3">
         <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="رقم الفاتورة أو اسم العميل أو جواله" />
         <DateRangeFilter value={range} onChange={(r) => { setRange(r); setPage(1); }} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'all', 'custom']} />
