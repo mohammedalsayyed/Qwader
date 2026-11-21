@@ -104,6 +104,8 @@ export interface Settings {
   paymentHolder?: string | null;
   paymentAccount?: string | null;
   paymentPhone?: string | null;
+  /** Profits hidden on screen until the user's own password (default), or shown at once. */
+  profitsLocked?: boolean;
 }
 
 export interface LookupItem {

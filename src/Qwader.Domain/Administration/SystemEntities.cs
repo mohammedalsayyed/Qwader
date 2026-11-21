@@ -30,6 +30,8 @@ public static class SettingKeys
     public const string PaymentHolder = "Invoice.PaymentHolder";
     public const string PaymentAccount = "Invoice.PaymentAccount";
     public const string PaymentPhone = "Invoice.PaymentPhone";
+    /// <summary>"true" (default): profits show as ••••• until the user's own password; "false": shown at once to those allowed.</summary>
+    public const string ProfitsLocked = "Profits.Locked";
 }
 
 public enum DocumentType

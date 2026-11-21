@@ -7,6 +7,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
+import { useStoreSettings } from '@/lib/queries';
 
 /** How long the profits stay shown after the password (then hidden again by themselves). */
 const SHOWN_FOR_MS = 10 * 60 * 1000;
@@ -31,14 +32,17 @@ export function ProfitLockProvider({ children }: { children: ReactNode }) {
   const [until, setUntil] = useState(0);
   const [asking, setAsking] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const shown = until > now;
+  // The store may turn the lock off in the settings: then profits show at once (to those allowed to see them).
+  const locked = useStoreSettings().data?.profitsLocked ?? true;
+  const unlocked = until > now;
+  const shown = !locked || unlocked;
 
   // Hide again when the time is up.
   useEffect(() => {
-    if (!shown) return;
+    if (!unlocked) return;
     const timer = setTimeout(() => setNow(Date.now()), until - Date.now() + 50);
     return () => clearTimeout(timer);
-  }, [shown, until]);
+  }, [unlocked, until]);
 
   const hide = useCallback(() => { setUntil(0); setNow(Date.now()); }, []);
   const value = useMemo<ProfitLock>(() => ({ shown, show: () => setAsking(true), hide }), [shown, hide]);
@@ -46,7 +50,7 @@ export function ProfitLockProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider value={value}>
       {children}
-      {shown && (
+      {locked && unlocked && (
         <button type="button" onClick={hide}
           className="fixed bottom-fab start-4 z-30 flex items-center gap-1.5 rounded-full bg-gray-900/85 px-3 py-2 text-xs font-semibold text-white shadow-lg lg:bottom-4 lg:start-auto lg:end-4 print:hidden">
           <EyeOff className="size-4" /> إخفاء الأرباح

@@ -25,7 +25,9 @@ public sealed record SettingsDto(
     string? PaymentBank = null,
     string? PaymentHolder = null,
     string? PaymentAccount = null,
-    string? PaymentPhone = null);
+    string? PaymentPhone = null,
+    /// <summary>Profits hidden on screen until the user's own password (true, the default), or shown at once to those allowed.</summary>
+    bool ProfitsLocked = true);
 
 public sealed record SetOwnersRequest(IReadOnlyList<string> Names);
 
@@ -93,6 +95,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         [SettingKeys.PaymentHolder] = "",
         [SettingKeys.PaymentAccount] = "",
         [SettingKeys.PaymentPhone] = "",
+        [SettingKeys.ProfitsLocked] = "true",
     };
 
     /// <summary>The owners stored one per line.</summary>
@@ -148,6 +151,7 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
             [SettingKeys.PaymentHolder] = request.PaymentHolder?.Trim() ?? "",
             [SettingKeys.PaymentAccount] = request.PaymentAccount?.Trim() ?? "",
             [SettingKeys.PaymentPhone] = request.PaymentPhone?.Trim() ?? "",
+            [SettingKeys.ProfitsLocked] = request.ProfitsLocked ? "true" : "false",
         };
 
         var existing = await db.Settings.ToDictionaryAsync(s => s.Key, ct);
@@ -191,7 +195,8 @@ public sealed class SettingsService(IAppDbContext db, ICurrentUser currentUser, 
         NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentBank) ?? ""),
         NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentHolder) ?? ""),
         NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentAccount) ?? ""),
-        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentPhone) ?? ""));
+        NullIfEmpty(v.GetValueOrDefault(SettingKeys.PaymentPhone) ?? ""),
+        v.GetValueOrDefault(SettingKeys.ProfitsLocked) != "false");
 
     private static string? NullIfEmpty(string s) => string.IsNullOrWhiteSpace(s) ? null : s;
 }

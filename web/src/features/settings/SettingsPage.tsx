@@ -36,6 +36,7 @@ const schema = z.object({
   maxDiscountPercent: num(0, 100, 'نسبة الخصم يجب أن تكون بين 0 و100'),
   defaultReorderLevel: num(0, 1_000_000, 'حد التنبيه لا يمكن أن يكون سالبًا'),
   saleTransfersPending: z.boolean(),
+  profitsLocked: z.boolean(),
   defaultPayPeriod: z.enum(['Daily', 'Weekly', 'Monthly']),
   offlineSaleMaxHours: num(1, 168, 'المدة يجب أن تكون بين 1 و168 ساعة').pipe(z.number().int('أدخل عدد ساعات صحيحًا')),
 });
@@ -167,6 +168,25 @@ export function SettingsPage() {
               تطبيق على كل المنتجات
             </Button>
           </div>
+        </Card>
+
+        <Card className="space-y-2 p-5">
+          <h2 className="font-bold">إخفاء الأرباح</h2>
+          <p className="text-sm text-muted">الأرباح تظهر فقط لمن معه صلاحية «عرض الأرباح». هنا تختار هل تبقى مخفية على الشاشة حتى يدخل كلمة المرور الخاصة به.</p>
+          <Controller control={control} name="profitsLocked"
+            render={({ field }) => (
+              <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="إخفاء الأرباح">
+                {[true, false].map((v) => (
+                  <button key={String(v)} type="button" role="radio" aria-checked={field.value === v} onClick={() => field.onChange(v)}
+                    className={cn('rounded-xl border p-3 text-start', field.value === v ? 'border-brand-700 bg-brand-50' : 'border-line')}>
+                    <span className="block font-semibold">{v ? 'مخفية بكلمة المرور' : 'ظاهرة بدون كلمة مرور'}</span>
+                    <span className="block text-xs leading-5 text-muted">
+                      {v ? 'تظهر ••••• ويضغط عليها ويدخل كلمة المرور الخاصة به، فتظهر 10 دقائق (الأكثر أمانًا).' : 'تظهر الأرباح مباشرة لمن معه صلاحية «عرض الأرباح».'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )} />
         </Card>
 
         <Card className="space-y-2 p-5">

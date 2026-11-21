@@ -49,7 +49,11 @@ public sealed class OwnerExpensesTests(ApiFactory factory)
             var saved = await (await admin.GetAsync("/api/settings")).ReadAsync<SettingsDto>();
             saved.Owners.Should().Equal(a, b);
             (saved.PaymentHolder, saved.PaymentAccount, saved.PaymentPhone, saved.PaymentBank).Should().Be(("معتصم قويدر", "123456", "0599000000", (string?)null));
-            (await admin.PutAsJsonAsync("/api/settings", saved with { PaymentHolder = null, PaymentAccount = null, PaymentPhone = null })).EnsureSuccessStatusCode();
+            saved.ProfitsLocked.Should().BeTrue("profits are hidden by default");
+            (await admin.PutAsJsonAsync("/api/settings", saved with { ProfitsLocked = false })).EnsureSuccessStatusCode();
+            (await (await admin.GetAsync("/api/settings")).ReadAsync<SettingsDto>()).ProfitsLocked.Should().BeFalse();
+            (await admin.PutAsJsonAsync("/api/settings", saved with { PaymentHolder = null, PaymentAccount = null, PaymentPhone = null, ProfitsLocked = true }))
+                .EnsureSuccessStatusCode();
         }
         finally
         {
