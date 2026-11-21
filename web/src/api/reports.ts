@@ -97,10 +97,12 @@ export interface InvoiceReportRow {
   payments: InvoicePaymentPart[];
 }
 
+export type InvoiceReportFilter = 'All' | 'Owed' | 'Paid' | 'Pending';
+
+/** Totals over the whole period, totals of what the filter/search kept (matched…), and one page of rows. */
 export interface InvoiceReport {
   from: string;
   to: string;
-  rows: InvoiceReportRow[];
   count: number;
   total: number;
   returned: number;
@@ -109,7 +111,19 @@ export interface InvoiceReport {
   pendingTransfers: number;
   profit: number | null;
   byAccount: InvoicePaymentPart[];
+  matched: number;
+  matchedTotal: number;
+  matchedReturned: number;
+  matchedPaid: number;
+  matchedRemaining: number;
+  matchedProfit: number | null;
+  rows: InvoiceReportRow[];
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
+
+export type InvoiceReportQuery = Range & { filter?: InvoiceReportFilter; search?: string; page?: number; pageSize?: number };
 
 export interface DailyRow {
   day: string;
@@ -170,7 +184,9 @@ type Range = { from?: string; to?: string };
 
 export const reportsApi = {
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
-  invoices: (r: Range) => api<InvoiceReport>('/reports/invoices', { query: r }),
+  invoices: (q: InvoiceReportQuery) => api<InvoiceReport>('/reports/invoices', { query: q }),
+  /** Every invoice the filter and search keep (not one page). */
+  exportInvoices: (q: InvoiceReportQuery) => apiDownload('/reports/invoices/export', q, 'invoices.xlsx'),
   balanceSheet: (date?: string) => api<BalanceSheet>('/reports/balance-sheet', { query: { date } }),
   daily: (r: Range) => api<DailyRow[]>('/reports/daily', { query: r }),
   products: (r: Range, sort: ProductSort, take = 15, categoryId?: number) => api<ProductRow[]>('/reports/products', { query: { ...r, sort, take, categoryId } }),

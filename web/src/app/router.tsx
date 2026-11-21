@@ -204,7 +204,7 @@ export const router = createBrowserRouter([
           guarded('audit', <AuditLogPage />, [P.AuditView]),
           { path: 'help', element: <HelpPage /> },
           guarded('reports', <ReportsPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
-          guarded('reports/invoices', <InvoicesReportPage />, [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial]),
+          guarded('reports/invoices', <InvoicesReportPage />, [P.ReportsInvoices]),
           guarded('balance-sheet', <BalanceSheetPage />, [P.ProfitView]),
           { path: '*', element: <NotFoundPage /> },
         ],

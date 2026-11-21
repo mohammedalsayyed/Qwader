@@ -30,6 +30,8 @@ export const P = {
   ReportsSales: 'Reports.Sales',
   ReportsProfit: 'Reports.Profit',
   ReportsFinancial: 'Reports.Financial',
+  /** «تقرير فواتير المبيعات», its own permission. */
+  ReportsInvoices: 'Reports.Invoices',
   /** Any profit anywhere (the sale's, a product's expected profit, reports, dashboard, balance sheet). */
   ProfitView: 'Profit.View',
   UsersManage: 'Users.Manage',

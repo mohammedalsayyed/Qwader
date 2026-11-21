@@ -40,7 +40,7 @@ export function SalesPage() {
     <>
       <PageHeader title="فواتير المبيعات" subtitle={can(P.SalesViewAll) ? undefined : 'فواتيرك أنت فقط'} actions={(
         <div className="flex gap-2">
-          {(can(P.ReportsSales) || can(P.ReportsProfit) || can(P.ReportsFinancial)) && (
+          {can(P.ReportsInvoices) && (
             <Button variant="secondary" onClick={() => navigate('/reports/invoices')}><FileText className="size-4" /> تقرير الفواتير</Button>
           )}
           <div className="hidden lg:flex">{can(P.SalesCreate) && <Button onClick={() => navigate('/pos')}><Plus className="size-5" /> بيع جديد</Button>}</div>

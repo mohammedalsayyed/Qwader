@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Qwader.Application.Auth;
@@ -16,6 +17,16 @@ namespace Qwader.IntegrationTests;
 [Collection(ApiCollection.Name)]
 public sealed class InvoicesReportTests(ApiFactory factory)
 {
+    private async Task<HttpClient> UserWith(HttpClient admin, params string[] permissions)
+    {
+        var role = await (await admin.PostAsJsonAsync("/api/roles", new SaveRoleRequest(TestData.Unique("دور"), null, permissions))).ReadAsync<RoleDto>();
+        var userName = TestData.Unique("u");
+        (await admin.PostAsJsonAsync("/api/users", new CreateUserRequest(userName, "موظف", null, "Temp12345", [role.Name]))).EnsureSuccessStatusCode();
+        var temp = await factory.LoginAsync(userName, "Temp12345");
+        (await temp.PostAsJsonAsync("/api/auth/change-password", new ChangePasswordRequest("Temp12345", "User123456"))).EnsureSuccessStatusCode();
+        return await factory.LoginAsync(userName, "User123456");
+    }
+
     [Fact]
     public async Task Each_invoice_shows_where_its_money_went_and_what_is_owed()
     {
@@ -41,8 +52,11 @@ public sealed class InvoicesReportTests(ApiFactory factory)
             (await admin.PostAsJsonAsync("/api/receipt-vouchers",
                 new CreateReceiptRequest(Guid.NewGuid(), ReceiptPurpose.DebtCollection, customer.Id, null, null, 30, wallet, null, null, null))).EnsureSuccessStatusCode();
 
-            var report = await (await admin.GetAsync("/api/reports/invoices")).ReadAsync<InvoiceReportDto>();
+            // Newest first, one page at a time; the search finds an invoice on any page.
+            async Task<InvoiceReportDto> Get(HttpClient c, string q = "") => await (await c.GetAsync($"/api/reports/invoices?pageSize=200{q}")).ReadAsync<InvoiceReportDto>();
+            var report = await Get(admin);
             InvoiceReportRow Row(int id) => report.Rows.Single(r => r.Id == id);
+            report.Rows.Select(r => r.Id).Should().ContainInOrder(credit.Id, partly.Id, split.Id);
 
             var a = Row(split.Id);
             (a.Total, a.Paid, a.Remaining, a.Status, a.Profit).Should().Be((50m, 50m, 0m, "مدفوعة", (decimal?)20m));
@@ -56,23 +70,37 @@ public sealed class InvoicesReportTests(ApiFactory factory)
             (c.Paid, c.Remaining, c.Status).Should().Be((0m, 50m, "آجل"));
             c.Payments.Should().BeEmpty();
 
-            report.Count.Should().Be(report.Rows.Count);
-            report.Remaining.Should().Be(report.Rows.Sum(r => r.Remaining));
+            report.Remaining.Should().Be(report.MatchedRemaining);
             report.ByAccount.Single(p => p.Account == walletName).Amount.Should().Be(20);
+            report.ByAccount.Single(p => p.Account == $"{walletName} (تحصيل لاحق)").Amount.Should().Be(30);
 
-            // Without «عرض الأرباح»: the same invoices, no profit.
-            var role = await (await admin.PostAsJsonAsync("/api/roles", new SaveRoleRequest(TestData.Unique("دور"), null, [Permissions.ReportsSales]))).ReadAsync<RoleDto>();
-            var userName = TestData.Unique("u");
-            (await admin.PostAsJsonAsync("/api/users", new CreateUserRequest(userName, "موظف", null, "Temp12345", [role.Name]))).EnsureSuccessStatusCode();
-            var temp = await factory.LoginAsync(userName, "Temp12345");
-            (await temp.PostAsJsonAsync("/api/auth/change-password", new ChangePasswordRequest("Temp12345", "User123456"))).EnsureSuccessStatusCode();
-            var employee = await factory.LoginAsync(userName, "User123456");
-            var plain = await (await employee.GetAsync("/api/reports/invoices")).ReadAsync<InvoiceReportDto>();
-            plain.Profit.Should().BeNull();
+            // Filter and search: the customer's invoices that still owe money, and their totals.
+            var owed = await Get(admin, $"&filter=Owed&search={Uri.EscapeDataString(customer.Name)}");
+            owed.Rows.Select(r => r.Id).Should().Equal(credit.Id, partly.Id);
+            (owed.Matched, owed.MatchedTotal, owed.MatchedPaid, owed.MatchedRemaining, owed.MatchedProfit).Should().Be((2, 150m, 70m, 80m, (decimal?)60m));
+            var paged = await (await admin.GetAsync($"/api/reports/invoices?pageSize=10&page=2&search={Uri.EscapeDataString(customer.Name)}")).ReadAsync<InvoiceReportDto>();
+            (paged.Matched, paged.Rows.Count, paged.TotalPages).Should().Be((2, 0, 1));
+
+            // Its own permission «تقارير الفواتير»: the other report permissions do not open it.
+            var reportsOnly = await UserWith(admin, Permissions.ReportsSales, Permissions.ReportsProfit, Permissions.ReportsFinancial);
+            (await reportsOnly.GetAsync("/api/reports/invoices")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await reportsOnly.GetAsync("/api/reports/invoices/export")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await reportsOnly.GetAsync("/api/reports/period")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // With it but without «عرض الأرباح»: the same invoices, no profit.
+            var employee = await UserWith(admin, Permissions.ReportsInvoices);
+            var plain = await Get(employee, $"&search={Uri.EscapeDataString(customer.Name)}");
+            (plain.Profit, plain.MatchedProfit).Should().Be(((decimal?)null, (decimal?)null));
             plain.Rows.Should().OnlyContain(r => r.Profit == null);
             plain.Rows.Single(r => r.Id == partly.Id).Remaining.Should().Be(30);
+            (await employee.GetAsync("/api/reports/period")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-            (await admin.GetAsync("/api/reports/invoices/export")).EnsureSuccessStatusCode();
+            // Only the administrator has it by itself.
+            var roles = await (await admin.GetAsync("/api/roles")).ReadAsync<List<RoleDto>>();
+            roles.Single(r => r.Name == SystemRoles.Admin).Permissions.Should().Contain(Permissions.ReportsInvoices);
+            roles.Single(r => r.Name == SystemRoles.Manager).Permissions.Should().NotContain(Permissions.ReportsInvoices);
+
+            (await admin.GetAsync("/api/reports/invoices/export?filter=Owed")).EnsureSuccessStatusCode();
         }
         finally
         {

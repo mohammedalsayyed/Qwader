@@ -59,9 +59,9 @@ export function ReportsPage() {
       <PageHeader title="التقارير" subtitle={p ? (p.from === p.to ? formatDate(p.from) : `${formatDate(p.from)} — ${formatDate(p.to)}`) : undefined}
         actions={(
           <div className="flex gap-2 print:hidden">
-            <Link to="/reports/invoices" className="inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 text-sm font-semibold text-brand-800 hover:bg-brand-100">
+            {can(P.ReportsInvoices) && <Link to="/reports/invoices" className="inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 text-sm font-semibold text-brand-800 hover:bg-brand-100">
               <FileText className="size-4" /> تقرير الفواتير
-            </Link>
+            </Link>}
             <IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface"><Printer className="size-5" /></IconButton>
           </div>
         )} />

@@ -4,6 +4,7 @@ import {
   BarChart3,
   BookOpen,
   Boxes,
+  FileSpreadsheet,
   FileText,
   FolderTree,
   HandCoins,
@@ -64,6 +65,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/owner-expenses', label: 'مصاريف صاحب العمل', icon: UserRound, anyOf: [P.VouchersCreate, P.ReportsFinancial], group: 'finance' },
   { to: '/payroll', label: 'الرواتب', icon: Banknote, anyOf: [P.PayrollManage], group: 'finance' },
   { to: '/reports', label: 'التقارير', icon: BarChart3, anyOf: [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial], group: 'finance' },
+  { to: '/reports/invoices', label: 'تقرير الفواتير', icon: FileSpreadsheet, anyOf: [P.ReportsInvoices], group: 'finance' },
   { to: '/balance-sheet', label: 'الميزانية العمومية', icon: Scale, anyOf: [P.ReportsFinancial], allOf: [P.ProfitView, P.ProductsViewCost], group: 'finance' },
 
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },

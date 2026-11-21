@@ -70,14 +70,6 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
     [HasPermission(Permissions.ReportsFinancial)]
     public Task<IReadOnlyList<BalanceRow>> Payables(CancellationToken ct) => reports.PayablesAsync(ct);
 
-    /// <summary>«فواتير المبيعات»: every sale invoice of the period — paid, where to, owed, and its profit with «عرض الأرباح».</summary>
-    [HttpGet("invoices")]
-    public Task<InvoiceReportDto> Invoices([FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct)
-    {
-        var (f, t) = Period(from, to);
-        return reports.InvoicesAsync(f, t, ct);
-    }
-
     [HttpGet("inventory-value")]
     public Task<IReadOnlyList<InventoryValueRow>> InventoryValue(CancellationToken ct) => reports.InventoryValueAsync(ct);
 
@@ -150,27 +142,6 @@ public sealed class ReportsController(IReportService reports, IExcelService exce
                 file = excel.Write("مستحقات الموردين", [new("الكود", 10), new("المورد", 26), new("الجوال", 14), new("المستحق", 14), new("آخر حركة", 18)],
                     (await reports.PayablesAsync(ct)).Select(b => new object?[] { b.Code, b.Name, b.Phone, b.Balance, b.LastActivity }));
                 break;
-            case "invoices":
-            {
-                var r = await reports.InvoicesAsync(f, t, ct);
-                var withProfit = r.Profit is not null;
-                var columns = new List<ExcelColumn> { new("رقم الفاتورة", 18), new("التاريخ", 18), new("العميل", 24), new("الموظف", 18), new("الإجمالي", 12),
-                    new("المرتجع", 12), new("المدفوع", 12), new("المتبقي", 12), new("الحالة", 14), new("وين انحوّلت", 40) };
-                if (withProfit) columns.Add(new("الربح", 12));
-                var lines = r.Rows.Select(x =>
-                {
-                    var row = new List<object?> { x.Number, x.Date.ToLocalTime().ToString("yyyy-MM-dd HH:mm"), x.CustomerName, x.Salesperson, x.Total, x.Returned, x.Paid,
-                        x.Remaining, x.Status, string.Join(" + ", x.Payments.Select(p => $"{p.Account}: {p.Amount:0.00}")) };
-                    if (withProfit) row.Add(x.Profit);
-                    return row.ToArray();
-                }).ToList();
-                var total = new List<object?> { $"المجموع ({r.Count} فاتورة)", null, null, null, r.Total, r.Returned, r.Paid, r.Remaining, null,
-                    string.Join(" + ", r.ByAccount.Select(p => $"{p.Account}: {p.Amount:0.00}")) };
-                if (withProfit) total.Add(r.Profit);
-                lines.Add(total.ToArray());
-                file = excel.Write("فواتير المبيعات", columns, lines);
-                break;
-            }
             case "inventory":
             {
                 // Each general category's categories, then its subtotal; the grand total at the end.

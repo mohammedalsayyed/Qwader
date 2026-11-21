@@ -1,21 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Download, Printer } from 'lucide-react';
-import { reportsApi, type InvoiceReportRow, type InvoiceStatus } from '@/api/reports';
+import { reportsApi, type InvoiceReportFilter, type InvoiceStatus } from '@/api/reports';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
 import { Button, IconButton } from '@/components/ui/Button';
-import { Badge, Card, EmptyState, ErrorState, FilterChips, PageHeader, SearchInput, Spinner } from '@/components/ui/Feedback';
+import { Badge, Card, EmptyState, ErrorState, FilterChips, PageHeader, Pagination, SearchInput, Spinner } from '@/components/ui/Feedback';
 import { DateRangeFilter, resolveRange, type DateRangeValue } from '@/components/ui/DateRange';
 import { Stat } from '@/components/ui/Layout';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
+import { useDebouncedValue } from '@/lib/hooks';
 import { Profit } from '@/features/profit/ProfitLock';
 
-type Filter = 'all' | 'owed' | 'paid' | 'pending';
+const PAGE_SIZE = 50;
 
 const STATUS_TONE: Record<InvoiceStatus, 'success' | 'warning' | 'danger' | 'brand'> = {
   'مدفوعة': 'success',
@@ -24,28 +25,22 @@ const STATUS_TONE: Record<InvoiceStatus, 'success' | 'warning' | 'danger' | 'bra
   'بانتظار التحقق': 'brand',
 };
 
-const matches = (r: InvoiceReportRow, f: Filter) =>
-  f === 'all' || (f === 'paid' ? r.status === 'مدفوعة' : f === 'pending' ? r.pendingTransfers > 0 : r.remaining > 0);
-
 /** «تقرير فواتير المبيعات»: each invoice of the period — its profit, where its money went, who paid and who still owes. */
 export function InvoicesReportPage() {
   const { can } = useAuth();
   const toast = useToast();
   const [range, setRange] = useState<DateRangeValue>({ preset: 'thisMonth', ...resolveRange('thisMonth') });
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<InvoiceReportFilter>('All');
   const [search, setSearch] = useState('');
-  const r = { from: range.from, to: range.to };
-  const query = useQuery({ queryKey: ['report', 'invoices', r], queryFn: () => reportsApi.invoices(r), placeholderData: keepPreviousData });
+  const [page, setPage] = useState(1);
+  const term = useDebouncedValue(search.trim(), 300);
+  // The server sends one page at a time (with the period's totals); the Excel file has every invoice the filter keeps.
+  const q = { from: range.from, to: range.to, filter, search: term || undefined };
+  const query = useQuery({ queryKey: ['report', 'invoices', q, page], queryFn: () => reportsApi.invoices({ ...q, page, pageSize: PAGE_SIZE }), placeholderData: keepPreviousData });
   const d = query.data;
   const profit = can(P.ProfitView) && d?.profit != null;
-
-  const rows = useMemo(() => {
-    const term = search.trim();
-    return (d?.rows ?? []).filter((x) => matches(x, filter)
-      && (!term || x.number.includes(term) || x.customerName.includes(term) || x.salesperson.includes(term)));
-  }, [d, filter, search]);
-  const filtered = rows.length !== (d?.rows.length ?? 0);
-  const sum = (k: 'total' | 'paid' | 'remaining') => rows.reduce((s, x) => s + x[k], 0);
+  const rows = d?.rows ?? [];
+  const filtered = d ? d.matched !== d.count : false;
 
   return (
     <div className="space-y-4">
@@ -53,17 +48,17 @@ export function InvoicesReportPage() {
         subtitle={d ? (d.from === d.to ? formatDate(d.from) : `${formatDate(d.from)} — ${formatDate(d.to)}`) : undefined}
         actions={(
           <div className="flex gap-2 print:hidden">
-            <Button variant="secondary" onClick={() => reportsApi.exportExcel('invoices', r).catch((e) => toast.error(errorMessage(e)))}>
+            <Button variant="secondary" onClick={() => reportsApi.exportInvoices(q).catch((e) => toast.error(errorMessage(e)))}>
               <Download className="size-4" /> Excel
             </Button>
             <IconButton label="طباعة / حفظ PDF" onClick={() => window.print()} className="border border-line bg-surface"><Printer className="size-5" /></IconButton>
           </div>
         )} />
       <div className="space-y-3 print:hidden">
-        <DateRangeFilter value={range} onChange={setRange} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'custom']} />
-        <SearchInput value={search} onChange={setSearch} placeholder="رقم الفاتورة أو العميل أو الموظف" />
-        <FilterChips value={filter} onChange={setFilter}
-          options={[{ value: 'all', label: 'الكل' }, { value: 'owed', label: 'عليها فلوس' }, { value: 'paid', label: 'مدفوعة' }, { value: 'pending', label: 'حوالات بانتظار التحقق' }]} />
+        <DateRangeFilter value={range} onChange={(v) => { setRange(v); setPage(1); }} presets={['today', 'yesterday', 'last7', 'thisMonth', 'lastMonth', 'custom']} />
+        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="رقم الفاتورة أو العميل أو الموظف" />
+        <FilterChips value={filter} onChange={(v) => { setFilter(v); setPage(1); }}
+          options={[{ value: 'All', label: 'الكل' }, { value: 'Owed', label: 'عليها فلوس' }, { value: 'Paid', label: 'مدفوعة' }, { value: 'Pending', label: 'حوالات بانتظار التحقق' }]} />
       </div>
 
       {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : d && (
@@ -150,16 +145,19 @@ export function InvoicesReportPage() {
                   </tbody>
                   <tfoot className="border-t-2 border-line bg-gray-50 font-bold">
                     <tr>
-                      <Td>{filtered ? `مجموع المعروض (${rows.length})` : `المجموع (${d.count})`}</Td><Td /><Td />
-                      <Td num>{formatMoney(sum('total'))}</Td>
-                      <Td num>{filtered ? '' : formatMoney(d.returned)}</Td>
-                      <Td num>{formatMoney(sum('paid'))}</Td>
-                      <Td num>{formatMoney(sum('remaining'))}</Td><Td /><Td />
-                      {profit && <Td num><Profit>{formatMoney(rows.reduce((s, x) => s + (x.profit ?? 0), 0))}</Profit></Td>}
+                      <Td>{filtered ? `مجموع المطابق (${d.matched})` : `المجموع (${d.count})`}</Td><Td /><Td />
+                      <Td num>{formatMoney(d.matchedTotal)}</Td>
+                      <Td num>{formatMoney(d.matchedReturned)}</Td>
+                      <Td num>{formatMoney(d.matchedPaid)}</Td>
+                      <Td num>{formatMoney(d.matchedRemaining)}</Td><Td /><Td />
+                      {profit && <Td num>{d.matchedProfit != null && <Profit>{formatMoney(d.matchedProfit)}</Profit>}</Td>}
                     </tr>
                   </tfoot>
                 </table>
               </Card>
+              <div className="print:hidden">
+                <Pagination page={d.page} totalPages={d.totalPages} totalCount={d.matched} pageSize={PAGE_SIZE} onChange={setPage} />
+              </div>
             </>
           )}
         </div>
