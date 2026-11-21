@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, localToday } from '@/lib/format';
 import { useStoreSettings } from '@/lib/queries';
+import { ProfitGate } from '@/features/profit/ProfitLock';
 
 /**
  * «الميزانية العمومية»: what the store owns, owes and what is left for its owner, at the end of a chosen day — from the
@@ -32,6 +33,8 @@ export function BalanceSheetPage() {
         </Field>
       </div>
 
+      {/* The sheet is made of the profit: hidden until the user's password, like every profit on screen. */}
+      <ProfitGate title="الميزانية العمومية مخفية">
       {query.isPending ? <Spinner /> : query.isError ? <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} /> : b && (
         <div className={cn('space-y-5', query.isPlaceholderData && 'opacity-60')}>
           <p className="hidden text-lg font-bold print:block">{settings.data?.storeName} — الميزانية العمومية كما في {formatDate(b.asOf)}</p>
@@ -83,6 +86,7 @@ export function BalanceSheetPage() {
           </div>
         </div>
       )}
+      </ProfitGate>
     </div>
   );
 }

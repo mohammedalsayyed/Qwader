@@ -8,6 +8,8 @@ export const authApi = {
   me: () => api<CurrentUser>('/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     api<void>('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } }),
+  /** The user's own password, asked before the profits are shown on screen. */
+  confirmPassword: (password: string) => api<void>('/auth/confirm-password', { method: 'POST', body: { password } }),
 };
 
 // ---- Users & roles ----

@@ -22,6 +22,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import { LatestNotifications } from '@/features/notifications/NotificationFeed';
 import { P, type Permission } from '@/auth/permissions';
 import { formatDate, formatMoney, localToday } from '@/lib/format';
+import { Profit } from '@/features/profit/ProfitLock';
 
 interface QuickAction {
   to: string;
@@ -157,10 +158,10 @@ function TodayStats() {
         <div className="mb-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
           <Stat label="المبيعات (الإيرادات)" value={money(r?.netSales)} onClick={() => navigate('/sales')}
             hint={r ? `${r.invoiceCount} فاتورة${r.returns > 0 ? ` · بعد مرتجعات ${formatMoney(r.returns)}` : ''}` : undefined} />
-          <Stat label="إجمالي الربح" value={money(r?.grossProfit)} tone={tone(r?.grossProfit)} hint="المبيعات − سعر الشراء" />
+          <Stat label="إجمالي الربح" value={<Profit>{money(r?.grossProfit)}</Profit>} tone={tone(r?.grossProfit)} hint="المبيعات − سعر الشراء" />
           <Stat label="المصروفات" value={money(r?.totalExpenses ?? r?.expenses)} tone={r && (r.totalExpenses ?? 0) > 0 ? 'warning' : 'default'}
             hint="رواتب، أعطال، مصاريف تشغيلية" onClick={() => navigate('/expenses')} />
-          <Stat label="صافي الربح" value={money(r?.netOperatingProfit)} tone={tone(r?.netOperatingProfit)} hint="إجمالي الربح − المصروفات"
+          <Stat label="صافي الربح" value={<Profit>{money(r?.netOperatingProfit)}</Profit>} tone={tone(r?.netOperatingProfit)} hint="إجمالي الربح − المصروفات"
             onClick={() => navigate('/reports')} />
         </div>
       )}

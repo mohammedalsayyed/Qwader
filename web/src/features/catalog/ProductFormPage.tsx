@@ -24,6 +24,7 @@ import { formatCost, formatMoney } from '@/lib/format';
 import { useUnsavedChangesWarning } from '@/lib/hooks';
 import { suggestPrice, zAmount, zOptionalAmount, zPositive, parseNumber } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
+import { Profit } from '@/features/profit/ProfitLock';
 
 const text = (max: number) => z.string().trim().max(max, 'النص طويل جدًا').optional();
 
@@ -255,8 +256,8 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50 p-3 text-sm">
             <span>
               {profit != null && can(P.ProfitView) && (
-                <>الربح المتوقع: <b className={profit < 0 ? 'text-danger' : 'text-success'}>{formatMoney(profit)}</b>
-                  {' '}({Math.round((profit / cost) * 1000) / 10}%)</>
+                <>الربح المتوقع: <Profit><b className={profit < 0 ? 'text-danger' : 'text-success'}>{formatMoney(profit)}</b>
+                  {' '}({Math.round((profit / cost) * 1000) / 10}%)</Profit></>
               )}
               {profit != null && profit < 0 && <span className="block text-danger">سعر البيع أقل من التكلفة</span>}
             </span>

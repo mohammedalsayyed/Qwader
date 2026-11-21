@@ -23,6 +23,7 @@ import { amountInWords } from '@/lib/tafqeet';
 import { InvoiceExpenses } from '@/components/finance/InvoiceExpenses';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import type { Settings } from '@/api/endpoints';
+import { Profit } from '@/features/profit/ProfitLock';
 
 /** An invoice made without internet that broke a rule a connected till would have refused: shown until a manager reviews it. */
 function ReviewNote({ sale: s }: { sale: Sale }) {
@@ -172,7 +173,7 @@ export function SaleDetailPage() {
               collected > 0.004 && { label: 'مُحصّل بعد البيع (سند قبض، حوالة، أو من رصيد العميل)', value: <span className="tabular">{formatMoney(collected)}</span> },
               s.remaining > 0 && { label: 'المتبقي على العميل', value: <span className="tabular text-danger">{formatMoney(s.remaining)}</span> },
               s.returnedTotal > 0 && { label: 'قيمة المرتجعات', value: <span className="tabular text-warning">{formatMoney(s.returnedTotal)}</span> },
-              s.profit != null && { label: 'الربح من الفاتورة', value: <span className={cn('tabular', s.profit < 0 ? 'text-danger' : 'text-success')}>{formatMoney(s.profit)}</span> },
+              s.profit != null && { label: 'الربح من الفاتورة', value: <Profit><span className={cn('tabular', s.profit < 0 ? 'text-danger' : 'text-success')}>{formatMoney(s.profit)}</span></Profit> },
             ]} />
           </div>
         </Card>

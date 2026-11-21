@@ -16,6 +16,7 @@ import { cn } from '@/lib/cn';
 import { errorMessage } from '@/lib/forms';
 import { formatDate, formatMoney, formatQuantity } from '@/lib/format';
 import { useLookups } from '@/lib/queries';
+import { Profit, ProfitGate, useProfitLock } from '@/features/profit/ProfitLock';
 
 const WEEKDAY = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { weekday: 'long', day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 const SHORT = new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', timeZone: 'UTC' });
@@ -29,7 +30,8 @@ export function ReportsPage() {
   const [categoryId, setCategoryId] = useState('');
   const categoryOptions = useLookups().data?.categories ?? [];
   const r = { from: range.from, to: range.to };
-  const profit = can(P.ReportsProfit);
+  const profit = can(P.ProfitView);
+  const profitShown = useProfitLock().shown;
   const financial = can(P.ReportsFinancial);
   const multiDay = range.from !== range.to;
   // The inventory gains/losses lines open the movements behind them, for the same days.
@@ -65,10 +67,10 @@ export function ReportsPage() {
           {/* ---------- headline figures ---------- */}
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <Stat label="المبيعات (الإيرادات)" value={formatMoney(p.netSales)} hint={`${p.invoiceCount} فاتورة · متوسط ${formatMoney(p.averageInvoice)}`} />
-            {p.grossProfit != null && <Stat label="إجمالي الربح" value={formatMoney(p.grossProfit)} tone={p.grossProfit < 0 ? 'danger' : 'success'}
-              hint={p.netSales ? `المبيعات − سعر الشراء · ${Math.round((p.grossProfit / p.netSales) * 1000) / 10}%` : 'المبيعات − سعر الشراء'} />}
+            {p.grossProfit != null && <Stat label="إجمالي الربح" value={<Profit>{formatMoney(p.grossProfit)}</Profit>} tone={p.grossProfit < 0 ? 'danger' : 'success'}
+              hint={p.netSales && profitShown ? `المبيعات − سعر الشراء · ${Math.round((p.grossProfit / p.netSales) * 1000) / 10}%` : 'المبيعات − سعر الشراء'} />}
             {(p.totalExpenses ?? p.expenses) != null && <Stat label="المصروفات" value={formatMoney((p.totalExpenses ?? p.expenses)!)} hint="رواتب، أعطال، مصاريف تشغيلية" />}
-            {p.netOperatingProfit != null && <Stat label="صافي الربح" value={formatMoney(p.netOperatingProfit)} tone={p.netOperatingProfit < 0 ? 'danger' : 'success'}
+            {p.netOperatingProfit != null && <Stat label="صافي الربح" value={<Profit>{formatMoney(p.netOperatingProfit)}</Profit>} tone={p.netOperatingProfit < 0 ? 'danger' : 'success'}
               hint={p.purchaseDiscounts ? 'إجمالي الربح − المصروفات + خصم مكتسب من الموردين' : 'إجمالي الربح − المصروفات'} />}
             {p.newDebt != null && <Stat label="ديون جديدة" value={formatMoney(p.newDebt)} tone={p.newDebt > 0 ? 'warning' : 'default'} />}
             {p.pendingTransferAmount != null && p.pendingTransferCount > 0 && (
@@ -83,8 +85,10 @@ export function ReportsPage() {
                 <BarChart label="المبيعات (الإيرادات) اليومية" format={formatMoney}
                   data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `المبيعات — ${WEEKDAY.format(new Date(d.day))}`, value: d.netSales }))} />
                 {profit && (
-                  <BarChart label="إجمالي الربح اليومي" format={formatMoney}
-                    data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `إجمالي الربح — ${WEEKDAY.format(new Date(d.day))}`, value: d.grossProfit ?? 0 }))} />
+                  <ProfitGate title="الربح اليومي مخفي">
+                    <BarChart label="إجمالي الربح اليومي" format={formatMoney}
+                      data={daily.data.map((d) => ({ key: d.day, label: SHORT.format(new Date(d.day)), title: `إجمالي الربح — ${WEEKDAY.format(new Date(d.day))}`, value: d.grossProfit ?? 0 }))} />
+                  </ProfitGate>
                 )}
               </div>
             </Section>
@@ -99,11 +103,11 @@ export function ReportsPage() {
               ['= المبيعات (الإيرادات)', p.netSales, 'strong'],
               ...(p.costOfSales != null ? [
                 ['− تكلفة البضاعة (سعر الشراء)', p.costOfSales] as Row,
-                ['= إجمالي الربح', p.grossProfit!, 'strong'] as Row,
+                ['= إجمالي الربح', p.grossProfit!, 'strong', undefined, true] as Row,
               ] : []),
               ...((p.totalExpenses ?? p.expenses) != null ? [['− المصروفات (رواتب، أعطال، مصاريف تشغيلية)', (p.totalExpenses ?? p.expenses)!] as Row] : []),
               ...(p.purchaseDiscounts ? [['+ خصم مكتسب من الموردين (خصم على فواتير الشراء)', p.purchaseDiscounts] as Row] : []),
-              ...(p.netOperatingProfit != null ? [['= صافي الربح', p.netOperatingProfit, 'total'] as Row] : []),
+              ...(p.netOperatingProfit != null ? [['= صافي الربح', p.netOperatingProfit, 'total', undefined, true] as Row] : []),
             ]} />
             {p.damagedReturnsCost != null && p.damagedReturnsCost > 0 && (
               <p className="px-4 pb-3 text-xs text-muted">تكلفة البضاعة تشمل {formatMoney(p.damagedReturnsCost)} لمرتجعات تالفة لم تعد للمخزون.</p>
@@ -182,11 +186,11 @@ export function ReportsPage() {
                 <span className="tabular w-6 shrink-0 text-center text-sm text-muted">{i + 1}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{x.name}</span>
-                  <span className="block text-xs text-muted">{x.categoryName} · {formatQuantity(x.quantity)} قطعة{x.marginPercent != null && ` · هامش ${x.marginPercent}%`}</span>
+                  <span className="block text-xs text-muted">{x.categoryName} · {formatQuantity(x.quantity)} قطعة{x.marginPercent != null && profitShown && ` · هامش ${x.marginPercent}%`}</span>
                 </span>
                 <span className="shrink-0 text-end">
                   <span className="tabular block font-bold">{formatMoney(x.revenue)}</span>
-                  {x.profit != null && <span className={cn('tabular block text-xs', x.profit < 0 ? 'text-danger' : 'text-success')}>ربح {formatMoney(x.profit)}</span>}
+                  {x.profit != null && <span className={cn('tabular block text-xs', x.profit < 0 ? 'text-danger' : 'text-success')}>ربح <Profit>{formatMoney(x.profit)}</Profit></span>}
                 </span>
               </Link>
             </li>
@@ -200,7 +204,7 @@ export function ReportsPage() {
             <li key={c.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="min-w-0"><span className="block font-medium">{c.name}</span><span className="block text-xs text-muted">{c.count} منتج · {formatQuantity(c.quantity)} قطعة</span></span>
               <span className="shrink-0 text-end">
-                <span className="tabular block font-bold">{formatMoney(c.profit ?? c.revenue)}</span>
+                <span className="tabular block font-bold">{c.profit != null ? <Profit>{formatMoney(c.profit)}</Profit> : formatMoney(c.revenue)}</span>
                 <span className="block text-xs text-muted">{c.profit != null ? `من مبيعات ${formatMoney(c.revenue)}` : 'مبيعات'}</span>
               </span>
             </li>
@@ -215,7 +219,7 @@ export function ReportsPage() {
               <span><span className="block font-medium">{c.name}</span><span className="block text-xs text-muted">{c.count} فاتورة</span></span>
               <span className="shrink-0 text-end">
                 <span className="tabular block font-bold">{formatMoney(c.revenue)}</span>
-                {c.profit != null && <span className="tabular block text-xs text-muted">ربح {formatMoney(c.profit)}</span>}
+                {c.profit != null && <span className="tabular block text-xs text-muted">ربح <Profit>{formatMoney(c.profit)}</Profit></span>}
               </span>
             </li>
           ))}
@@ -259,18 +263,18 @@ export function ReportsPage() {
   );
 }
 
-type Row = [label: string, value: number, emphasis?: 'strong' | 'total' | null, link?: string];
+type Row = [label: string, value: number, emphasis?: 'strong' | 'total' | null, link?: string, profit?: boolean];
 
 function Lines({ rows }: { rows: Row[] }) {
   return (
     <dl className="divide-y divide-line">
-      {rows.map(([label, value, emphasis, link]) => (
+      {rows.map(([label, value, emphasis, link, isProfit]) => (
         <div key={label} className={cn('flex items-center justify-between gap-4 px-4 py-2.5', emphasis === 'total' && 'bg-brand-50')}>
           <dt className={cn('text-sm', emphasis ? 'font-bold' : 'text-muted')}>
             {label}
             {link && <Link to={link} className="ms-2 text-xs font-medium text-brand-700 underline print:hidden">التفاصيل</Link>}
           </dt>
-          <dd className={cn('tabular', emphasis === 'total' ? 'text-lg font-bold' : emphasis ? 'font-bold' : 'font-medium', value < 0 && 'text-danger')}>{formatMoney(value)}</dd>
+          <dd className={cn('tabular', emphasis === 'total' ? 'text-lg font-bold' : emphasis ? 'font-bold' : 'font-medium', value < 0 && 'text-danger')}>{isProfit ? <Profit>{formatMoney(value)}</Profit> : formatMoney(value)}</dd>
         </div>
       ))}
     </dl>

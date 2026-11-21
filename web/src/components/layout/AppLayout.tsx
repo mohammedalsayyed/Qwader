@@ -9,6 +9,7 @@ import { ACCESS_CHANGED, useAuth } from '@/auth/AuthProvider';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/api/client';
+import { ProfitLockProvider } from '@/features/profit/ProfitLock';
 import { payrollApi } from '@/api/payroll';
 import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
@@ -45,6 +46,7 @@ export function AppLayout() {
   const moreActive = !tabPaths.has(location.pathname) && !tabs.some((t) => t.to !== '/' && location.pathname.startsWith(t.to));
 
   return (
+    <ProfitLockProvider>
     <div className="min-h-dvh lg:flex">
       {/* Desktop: fixed sidebar */}
       <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-e border-line bg-surface lg:flex print:hidden">
@@ -133,6 +135,7 @@ export function AppLayout() {
         <Credit className="mt-2 border-t border-line pt-4 text-muted" />
       </Sheet>
     </div>
+    </ProfitLockProvider>
   );
 }
 

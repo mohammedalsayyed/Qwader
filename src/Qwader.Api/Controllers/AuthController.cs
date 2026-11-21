@@ -47,6 +47,15 @@ public sealed class AuthController(IAuthService auth, ICurrentUser currentUser) 
     [HttpGet("me")]
     public Task<CurrentUserDto> Me(CancellationToken ct) => auth.GetCurrentUserAsync(currentUser.RequiredUserId, ct);
 
+    /// <summary>The user's own password, asked before the profits are shown on screen. Limited like the sign-in.</summary>
+    [HttpPost("confirm-password")]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> ConfirmPassword(ConfirmPasswordRequest request, CancellationToken ct)
+    {
+        await auth.ConfirmPasswordAsync(currentUser.RequiredUserId, request.Password, ct);
+        return NoContent();
+    }
+
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken ct)
     {

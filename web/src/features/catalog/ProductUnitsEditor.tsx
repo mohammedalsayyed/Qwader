@@ -8,6 +8,7 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
 import { useAuth } from '@/auth/AuthProvider';
 import { P } from '@/auth/permissions';
+import { Profit } from '@/features/profit/ProfitLock';
 
 /** One extra unit as typed (strings, like the rest of the form). */
 export interface UnitRow {
@@ -132,7 +133,7 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
                   {' · '}
                   {profit < 0
                     ? <>سعر {unitName} أقل من تكلفتها بـ <b className="tabular">{formatMoney(-profit)}</b></>
-                    : can(P.ProfitView) ? <>الربح: <b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</> : null}
+                    : can(P.ProfitView) ? <>الربح: <Profit><b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</Profit></> : null}
                 </p>
               );
             })()}

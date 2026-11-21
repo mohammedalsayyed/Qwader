@@ -83,6 +83,18 @@ public sealed class AuthService(
         return ToDto(user, roles, permissions);
     }
 
+    public async Task ConfirmPasswordAsync(int userId, string password, CancellationToken ct = default)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString()) ?? throw new UnauthorizedException();
+        if (!user.IsActive) throw new UnauthorizedException();
+        if (!await userManager.CheckPasswordAsync(user, password ?? ""))
+        {
+            audit.Log("Auth.ConfirmPasswordFailed", "User", user.Id.ToString());
+            await db.SaveChangesAsync(ct);
+            throw new ValidationFailedException("password", "كلمة المرور غير صحيحة");
+        }
+    }
+
     public async Task ChangePasswordAsync(int userId, ChangePasswordRequest request, CancellationToken ct = default)
     {
         var user = await userManager.FindByIdAsync(userId.ToString()) ?? throw new UnauthorizedException();

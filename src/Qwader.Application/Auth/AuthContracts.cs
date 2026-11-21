@@ -6,6 +6,9 @@ public sealed record LoginRequest(string UserName, string Password);
 
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
+/// <summary>The signed-in user's own password, to show what is hidden on screen (the profits).</summary>
+public sealed record ConfirmPasswordRequest(string Password);
+
 public sealed record CurrentUserDto(
     int Id,
     string UserName,
@@ -26,6 +29,8 @@ public interface IAuthService
     Task LogoutAsync(string? refreshToken, CancellationToken ct = default);
     Task<CurrentUserDto> GetCurrentUserAsync(int userId, CancellationToken ct = default);
     Task ChangePasswordAsync(int userId, ChangePasswordRequest request, CancellationToken ct = default);
+    /// <summary>Checks the signed-in user's own password (to show the profits); a wrong one is a validation error.</summary>
+    Task ConfirmPasswordAsync(int userId, string password, CancellationToken ct = default);
 }
 
 public static class PasswordRules

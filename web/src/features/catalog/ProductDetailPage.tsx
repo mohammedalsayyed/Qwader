@@ -16,12 +16,14 @@ import { ProductThumb, StockBadge } from '@/components/catalog/CatalogBits';
 import { AdjustmentSheet, MovementList } from '@/components/catalog/StockWidgets';
 import { errorMessage } from '@/lib/forms';
 import { formatCost, formatDate, formatMoney, formatQuantity } from '@/lib/format';
+import { Profit, useProfitLock } from '@/features/profit/ProfitLock';
 
 type Tab = 'info' | 'movements';
 
 export function ProductDetailPage() {
   const id = Number(useParams().id);
   const { can } = useAuth();
+  const profitShown = useProfitLock().shown;
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -78,8 +80,8 @@ export function ProductDetailPage() {
         {costVisible ? (
           <>
             <Stat label="متوسط التكلفة" value={formatCost(p.averageCost)} />
-            <Stat label="الربح المتوقع (مفرق)" value={p.expectedProfit != null ? formatMoney(p.expectedProfit) : '—'}
-              hint={p.marginPercent != null ? `نسبة الربح ${p.marginPercent}%` : undefined}
+            <Stat label="الربح المتوقع (مفرق)" value={p.expectedProfit != null ? <Profit>{formatMoney(p.expectedProfit)}</Profit> : '—'}
+              hint={p.marginPercent != null && profitShown ? `نسبة الربح ${p.marginPercent}%` : undefined}
               tone={p.expectedProfit != null && p.expectedProfit < 0 ? 'danger' : 'success'} />
           </>
         ) : (
@@ -148,7 +150,7 @@ export function ProductDetailPage() {
                       {formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}
                       {unitCost > 0 && (
                         <span className={`block text-sm ${profit < 0 ? 'text-danger' : 'text-muted'}`}>
-                          التكلفة {formatCost(unitCost)}{can(P.ProfitView) && <> · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}</>}
+                          التكلفة {formatCost(unitCost)}{can(P.ProfitView) && <> · <Profit>{profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}</Profit></>}
                         </span>
                       )}
                     </span>

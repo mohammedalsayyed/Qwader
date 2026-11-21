@@ -19,6 +19,7 @@ import { applyServerErrors } from '@/lib/forms';
 import { formatMoney } from '@/lib/format';
 import { parseNumber, suggestPrice, zOptionalAmount, zPositive } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
+import { Profit } from '@/features/profit/ProfitLock';
 
 const schema = z.object({
   name: z.string().trim().min(1, 'اكتب اسم المنتج').max(150, 'اسم المنتج طويل جدًا'),
@@ -212,7 +213,7 @@ export function QuickProductSheet({ onClose, onCreated, initialName }: {
           <div className="-mt-1 flex flex-wrap items-center justify-between gap-2 text-sm">
             {retail > 0 ? (
               <span className={retail < cost ? 'text-danger' : 'text-success'}>
-                {retail < cost ? 'سعر البيع أقل من سعر الشراء!' : can(P.ProfitView) ? `الربح في القطعة: ${formatMoney(retail - cost)}` : null}
+                {retail < cost ? 'سعر البيع أقل من سعر الشراء!' : can(P.ProfitView) ? <>الربح في القطعة: <Profit>{formatMoney(retail - cost)}</Profit></> : null}
               </span>
             ) : <span />}
             {suggested !== retail && (
