@@ -158,15 +158,20 @@ export const tierPrice = (l: Pick<CartLine, 'retailPrice' | 'wholesalePrice'>, t
 export const floorPrice = (l: Pick<CartLine, 'retailPrice' | 'wholesalePrice' | 'cost'>, tier: PriceTier) =>
   Math.min(Math.round((l.cost ?? 0) * 100) / 100, tierPrice(l, tier));
 
-export const lineTotal = (l: CartLine) => round2(l.quantity * l.unitPrice - l.lineDiscount);
+export const lineTotal = (l: CartLine) => round2(round2(l.quantity * l.unitPrice) - l.lineDiscount);
 
+/**
+ * As the server counts them: each line's quantity × price rounded on its own, then added up. (Added up first and rounded
+ * once, two lines of 0.505 make 1.01 where the server makes 1.02 — and the sale was refused as paid an agora short.)
+ */
 export function cartTotals(cart: Cart) {
-  const gross = round2(cart.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0));
+  const gross = round2(cart.lines.reduce((s, l) => s + round2(l.quantity * l.unitPrice), 0));
   const lineDiscounts = round2(cart.lines.reduce((s, l) => s + l.lineDiscount, 0));
-  const listTotal = round2(cart.lines.reduce((s, l) => s + l.quantity * tierPrice(l, cart.tier), 0));
+  const listTotal = round2(cart.lines.reduce((s, l) => s + round2(l.quantity * tierPrice(l, cart.tier)), 0));
   // A price lowered below the product's price is saved as a discount on the line (the server does the same).
   // Only a price under the cost is a discount (down to the cost it is just the selling price), as the invoice records it.
-  const priceReductions = round2(cart.lines.reduce((s, l) => s + l.quantity * Math.max(0, floorPrice(l, cart.tier) - l.unitPrice), 0));
+  const priceReductions = round2(cart.lines.reduce((s, l) =>
+    s + Math.max(0, round2(l.quantity * floorPrice(l, cart.tier)) - round2(l.quantity * l.unitPrice)), 0));
   const items = cart.lines.reduce((s, l) => s + l.quantity * l.factor, 0);
   return { gross, lineDiscounts, priceReductions, subtotal: round2(gross - lineDiscounts), listTotal, items };
 }

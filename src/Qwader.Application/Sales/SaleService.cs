@@ -172,6 +172,15 @@ public sealed class SaleService(
         var above = paidAll - (subtotal - typedInvoiceDiscount);
         if (paidAll > 0 && paidAll == decimal.Floor(paidAll) && above > 0.004m && above <= 0.05m && typedInvoiceDiscount >= above)
             typedInvoiceDiscount -= above;
+        // The other way: the till paid what it showed, a few agorot under this count (a till that added its lines up before
+        // rounding, e.g. a phone still on an older copy of the app). Those agorot are rounding, not a debt: they come off the
+        // invoice as part of the discount, which they never count against (no permission, outside the limit).
+        var tillCents = 0m;
+        if (paidAll > 0 && -above > 0.004m && -above <= 0.05m)
+        {
+            tillCents = -above;
+            typedInvoiceDiscount += tillCents;
+        }
         var invoiceDiscount = typedInvoiceDiscount;
         var decimals = subtotal - decimal.Floor(subtotal);
         var decimalsDiscount = Math.Min(invoiceDiscount, decimals);
@@ -185,7 +194,7 @@ public sealed class SaleService(
         // Discounts (per line or on the invoice) are separate: they need the discount permission and stay within the store's limit.
         var canOverride = currentUser.HasPermission(Permissions.SalesPriceOverride);
         // Typed discounts only, measured against the lines at the prices the seller charged.
-        var discountGiven = typedLineDiscounts + invoiceDiscount - decimalsDiscount;
+        var discountGiven = Math.Max(0, typedLineDiscounts + invoiceDiscount - decimalsDiscount - tillCents);
         var chargedGross = grossTotal - (lineDiscounts - typedLineDiscounts);
         if (discountGiven > 0.009m)
         {
