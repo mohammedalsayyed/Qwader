@@ -148,7 +148,7 @@ export function ProductDetailPage() {
                       {formatMoney(u.retailPrice)}{u.wholesalePrice !== u.retailPrice && ` · جملة ${formatMoney(u.wholesalePrice)}`}{u.minSalePrice > 0 && ` · أقل ${formatMoney(u.minSalePrice)}`}
                       {unitCost > 0 && (
                         <span className={`block text-sm ${profit < 0 ? 'text-danger' : 'text-muted'}`}>
-                          التكلفة {formatCost(unitCost)} · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}
+                          التكلفة {formatCost(unitCost)}{can(P.ProfitView) && <> · {profit < 0 ? `خسارة ${formatMoney(-profit)}` : `ربح ${formatMoney(profit)} (${Math.round((profit / unitCost) * 1000) / 10}%)`}</>}
                         </span>
                       )}
                     </span>

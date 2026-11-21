@@ -212,7 +212,7 @@ export function QuickProductSheet({ onClose, onCreated, initialName }: {
           <div className="-mt-1 flex flex-wrap items-center justify-between gap-2 text-sm">
             {retail > 0 ? (
               <span className={retail < cost ? 'text-danger' : 'text-success'}>
-                {retail < cost ? 'سعر البيع أقل من سعر الشراء!' : `الربح في القطعة: ${formatMoney(retail - cost)}`}
+                {retail < cost ? 'سعر البيع أقل من سعر الشراء!' : can(P.ProfitView) ? `الربح في القطعة: ${formatMoney(retail - cost)}` : null}
               </span>
             ) : <span />}
             {suggested !== retail && (

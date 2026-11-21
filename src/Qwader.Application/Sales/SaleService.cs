@@ -38,7 +38,10 @@ public sealed class SaleService(
     private const string ReturnOperation = "Sale.Return";
 
     private bool CanSeeAll => currentUser.HasPermission(Permissions.SalesViewAll) || currentUser.HasPermission(Permissions.ReportsSales);
-    private bool CanSeeProfit => currentUser.HasPermission(Permissions.ReportsProfit) || currentUser.HasPermission(Permissions.ProductsViewCost);
+    /// <summary>«عرض الأرباح»: the invoice's profit, the summary's profit.</summary>
+    private bool CanSeeProfit => currentUser.HasPermission(Permissions.ProfitView);
+    /// <summary>«عرض التكلفة»: what the goods cost (each line's cost, the invoice's cost).</summary>
+    private bool CanSeeCost => currentUser.HasPermission(Permissions.ProductsViewCost);
 
     // ------------------------------------------------------------------ create
 
@@ -567,7 +570,7 @@ public sealed class SaleService(
         var pendingTransfers = await db.IncomingTransfers.AsNoTracking().Where(t => t.SaleInvoiceId == id).OrderBy(t => t.Id)
             .Select(t => new SalePendingTransferDto(t.Id, t.Number, t.Amount, t.FinancialAccount.Name, t.ReferenceNo, t.Status, t.FinancialAccountId)).ToListAsync(ct);
 
-        var showCost = CanSeeProfit;
+        var showCost = CanSeeCost;
         var returnedTotal = returns.Sum(r => r.Total);
         // Owed on this invoice: total − paid at the till − collected later − goods returned against the customer's balance.
         var remaining = invoice.Status == SaleStatus.Voided ? 0
@@ -583,8 +586,9 @@ public sealed class SaleService(
             if (unreflected > 0.004m)
                 creditAvailable = Math.Min(Math.Min(remaining, unreflected), await vouchers.FreeCreditAsync(invoice.CustomerId, ct));
         }
-        decimal? cost = showCost ? CostMath.RoundMoney(invoice.TotalCost - returnedCost) : null;
-        decimal? profit = showCost && invoice.Status != SaleStatus.Voided ? CostMath.RoundMoney(invoice.Total - returnedTotal - cost!.Value) : null;
+        var netCost = CostMath.RoundMoney(invoice.TotalCost - returnedCost);
+        decimal? cost = showCost ? netCost : null;
+        decimal? profit = CanSeeProfit && invoice.Status != SaleStatus.Voided ? CostMath.RoundMoney(invoice.Total - returnedTotal - netCost) : null;
 
         return new SaleDetailDto(invoice.Id, invoice.Number, invoice.Date, invoice.Status, invoice.PriceTier,
             invoice.CustomerId, invoice.CustomerName, invoice.CustomerPhone, s.IsWalkIn,
@@ -1124,7 +1128,7 @@ public sealed class SaleService(
         var cost = CostMath.RoundMoney((totals?.Cost ?? 0) - (returnTotals?.Cost ?? 0));
 
         return new SalesSummaryDto(start, end, ownOnly, totals?.Count ?? 0, gross, discounts, returnsTotal, netSales,
-            CanSeeProfit ? cost : null, CanSeeProfit ? CostMath.RoundMoney(netSales - cost) : null,
+            CanSeeCost ? cost : null, CanSeeProfit ? CostMath.RoundMoney(netSales - cost) : null,
             byAccount.Sum(a => a.Amount), (totals?.Net ?? 0) - (totals?.Paid ?? 0), byAccount);
     }
 }

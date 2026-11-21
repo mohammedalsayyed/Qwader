@@ -42,6 +42,8 @@ public static class Permissions
     public const string ReportsSales = "Reports.Sales";
     public const string ReportsProfit = "Reports.Profit";
     public const string ReportsFinancial = "Reports.Financial";
+    /// <summary>Any profit anywhere: the sale's, a product's expected profit, the reports', the dashboard's, the balance sheet.</summary>
+    public const string ProfitView = "Profit.View";
 
     public const string UsersManage = "Users.Manage";
     public const string SettingsManage = "Settings.Manage";
@@ -50,7 +52,7 @@ public static class Permissions
     public static readonly IReadOnlyList<PermissionInfo> All =
     [
         new(ProductsView, "عرض المنتجات والأصناف", "المنتجات"),
-        new(ProductsViewCost, "عرض أسعار التكلفة", "المنتجات"),
+        new(ProductsViewCost, "عرض التكلفة (في كل الشاشات)", "التكلفة والأرباح"),
         new(ProductsManage, "إضافة وتعديل المنتجات والأصناف", "المنتجات"),
         new(ProductsEditPrices, "تعديل أسعار البيع", "المنتجات"),
 
@@ -84,6 +86,7 @@ public static class Permissions
         new(ReportsSales, "تقارير المبيعات", "التقارير"),
         new(ReportsProfit, "تقارير الأرباح والتكلفة", "التقارير"),
         new(ReportsFinancial, "التقارير المالية والذمم", "التقارير"),
+        new(ProfitView, "عرض الأرباح (في كل الشاشات)", "التكلفة والأرباح"),
 
         new(UsersManage, "إدارة المستخدمين والأدوار", "الإدارة"),
         new(SettingsManage, "إدارة الإعدادات", "الإدارة"),
@@ -110,7 +113,7 @@ public static class SystemRoles
         new(Admin, "مدير النظام", "صلاحيات كاملة على النظام", Identity.Permissions.All.Select(p => p.Code).ToArray()),
         new(Manager, "مدير المعرض", "كل العمليات اليومية والمالية والتقارير",
             Identity.Permissions.All.Select(p => p.Code)
-                .Where(c => c is not Identity.Permissions.UsersManage and not Identity.Permissions.SettingsManage)
+                .Where(c => c is not Identity.Permissions.UsersManage and not Identity.Permissions.SettingsManage and not Identity.Permissions.ProfitView)
                 .ToArray()),
         new(Sales, "موظف مبيعات", "البيع وتسجيل الحوالات وسندات القبض",
         [

@@ -141,8 +141,12 @@ public sealed class ProductService(
             value = CostMath.RoundMoney(quantity * product.AverageCost);
             if (cost > 0)
             {
-                profit = CostMath.RoundMoney(product.RetailPrice - cost.Value);
-                margin = Math.Round(profit.Value / cost.Value * 100, 1);
+                // The expected profit is a profit: «عرض الأرباح» too.
+                if (currentUser.HasPermission(Permissions.ProfitView))
+                {
+                    profit = CostMath.RoundMoney(product.RetailPrice - cost.Value);
+                    margin = Math.Round(profit.Value / cost.Value * 100, 1);
+                }
                 suggested = CostMath.SuggestPrice(cost.Value, (await settings.GetAsync(ct)).DefaultMarginPercent);
             }
         }

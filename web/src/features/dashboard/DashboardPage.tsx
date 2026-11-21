@@ -128,7 +128,8 @@ function rangeBounds(range: DateRangeValue): { from?: string; to?: string } {
 function TodayStats() {
   const navigate = useNavigate();
   const { can } = useAuth();
-  const withProfit = can(P.ReportsProfit);
+  // Profit figures need «عرض الأرباح» (and a report permission to read the period).
+  const withProfit = can(P.ProfitView) && can(P.ReportsSales, P.ReportsProfit, P.ReportsFinancial);
   // «اليوم» unless the user picks another period; not remembered, so the home screen always opens on today.
   const [range, setRange] = useState<DateRangeValue>({ preset: 'today', ...resolveRange('today') });
   const { from, to } = rangeBounds(range);

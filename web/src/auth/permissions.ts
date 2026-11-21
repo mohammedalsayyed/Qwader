@@ -30,6 +30,8 @@ export const P = {
   ReportsSales: 'Reports.Sales',
   ReportsProfit: 'Reports.Profit',
   ReportsFinancial: 'Reports.Financial',
+  /** Any profit anywhere (the sale's, a product's expected profit, reports, dashboard, balance sheet). */
+  ProfitView: 'Profit.View',
   UsersManage: 'Users.Manage',
   SettingsManage: 'Settings.Manage',
   AuditView: 'Audit.View',

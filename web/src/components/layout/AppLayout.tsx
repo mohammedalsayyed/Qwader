@@ -20,9 +20,10 @@ const STORE_NAME = 'معرض قويدر';
 
 function useVisibleNav() {
   const { can } = useAuth();
-  const visible = (anyOf: NavItem['anyOf']) => anyOf.length === 0 || can(...anyOf);
+  const visible = (anyOf: NavItem['anyOf'], allOf: NavItem['allOf'] = []) =>
+    (anyOf.length === 0 || can(...anyOf)) && allOf.every((p) => can(p));
   return {
-    items: NAV_ITEMS.filter((i) => visible(i.anyOf)),
+    items: NAV_ITEMS.filter((i) => visible(i.anyOf, i.allOf)),
     tabs: BOTTOM_TABS.filter((t) => visible(t.anyOf)),
   };
 }

@@ -95,7 +95,10 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         db.PayrollSettlements.AsNoTracking()
             .Where(s => s.Date >= start && s.Date < end && s.Status == VoucherStatus.Posted && s.AdvanceExpense > 0);
 
-    private bool Profit => currentUser.HasPermission(Permissions.ReportsProfit);
+    /// <summary>Profit figures (gross, net, per product…): «عرض الأرباح».</summary>
+    private bool Profit => currentUser.HasPermission(Permissions.ProfitView);
+    /// <summary>Cost figures (cost of goods sold, stock value, shrinkage at cost…): «عرض التكلفة».</summary>
+    private bool Cost => currentUser.HasPermission(Permissions.ProductsViewCost);
     private bool Financial => currentUser.HasPermission(Permissions.ReportsFinancial);
 
     private (DateTime Start, DateTime End) Range(DateOnly from, DateOnly to)
@@ -142,11 +145,12 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         decimal? cogs = null, damaged = null, grossProfit = null, losses = null, expenses = null, netProfit = null, gains = null, totalExpenses = null,
             purchaseDiscounts = null;
         IReadOnlyList<NamedAmount>? expensesByCategory = null;
-        if (Profit)
+        if (Profit || Cost)
         {
-            cogs = CostMath.RoundMoney((s?.Cost ?? 0) - (r?.SellableCost ?? 0));
-            damaged = CostMath.RoundMoney(r?.DamagedCost ?? 0);
-            grossProfit = netSales - cogs;
+            var costOfSales = CostMath.RoundMoney((s?.Cost ?? 0) - (r?.SellableCost ?? 0));
+            cogs = Cost ? costOfSales : null;
+            damaged = Cost ? CostMath.RoundMoney(r?.DamagedCost ?? 0) : null;
+            grossProfit = Profit ? netSales - costOfSales : null;
             // Shrinkage: damaged, lost and count shortages cost money.
             losses = CostMath.RoundMoney(await db.StockMovements.AsNoTracking()
                 .Where(m => m.OccurredAt >= start && m.OccurredAt < end && LossTypes.Contains(m.Type))
@@ -154,6 +158,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             gains = CostMath.RoundMoney(await db.StockMovements.AsNoTracking()
                 .Where(m => m.OccurredAt >= start && m.OccurredAt < end && GainTypes.Contains(m.Type))
                 .SumAsync(m => (decimal?)(m.Quantity * m.UnitCost), ct) ?? 0);
+            if (!Cost) { losses = null; gains = null; }
         }
         if (Profit || Financial)
         {
@@ -248,7 +253,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             payables = await db.Suppliers.Where(x => x.Balance > 0).SumAsync(x => (decimal?)x.Balance, ct) ?? 0;
         }
 
-        decimal? inventoryValue = Profit || Financial
+        decimal? inventoryValue = Cost
             ? CostMath.RoundMoney(await db.StockBalances.AsNoTracking().SumAsync(b => (decimal?)(b.Quantity * b.Product.AverageCost), ct) ?? 0)
             : null;
 
@@ -353,7 +358,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             var p = products[o.ProductId];
             var profit = CostMath.RoundMoney(o.Revenue - o.Cost);
             return new ProductReportRow(o.ProductId, p.Sku, Product.BuildDisplayName(p.Name, p.Size, p.Color, p.Model), p.Category, o.Qty, o.Revenue,
-                Profit ? CostMath.RoundMoney(o.Cost) : null, Profit ? profit : null,
+                Cost ? CostMath.RoundMoney(o.Cost) : null, Profit ? profit : null,
                 Profit && o.Revenue != 0 ? Math.Round(profit / o.Revenue * 100, 1) : null);
         }).ToList();
     }
@@ -366,7 +371,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         return facts.GroupBy(f => f.CategoryId)
             .Select(g => new GroupReportRow(g.Key, names.GetValueOrDefault(g.Key, "—"), g.Select(f => f.ProductId).Distinct().Count(),
                 g.Sum(f => f.Qty), g.Sum(f => f.Revenue),
-                Profit ? CostMath.RoundMoney(g.Sum(f => f.Cost)) : null, Profit ? CostMath.RoundMoney(g.Sum(f => f.Revenue - f.Cost)) : null))
+                Cost ? CostMath.RoundMoney(g.Sum(f => f.Cost)) : null, Profit ? CostMath.RoundMoney(g.Sum(f => f.Revenue - f.Cost)) : null))
             .OrderByDescending(r => Profit ? r.Profit : r.Revenue)
             .ToList();
     }
@@ -380,7 +385,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         return facts.GroupBy(f => f.SalespersonId)
             .Select(g => new GroupReportRow(g.Key, names.GetValueOrDefault(g.Key, "—"), g.Where(f => f.InvoiceId != 0).Select(f => f.InvoiceId).Distinct().Count(),
                 g.Sum(f => f.Qty), g.Sum(f => f.Revenue),
-                Profit ? CostMath.RoundMoney(g.Sum(f => f.Cost)) : null, Profit ? CostMath.RoundMoney(g.Sum(f => f.Revenue - f.Cost)) : null))
+                Cost ? CostMath.RoundMoney(g.Sum(f => f.Cost)) : null, Profit ? CostMath.RoundMoney(g.Sum(f => f.Revenue - f.Cost)) : null))
             .OrderByDescending(r => r.Revenue)
             .ToList();
     }
@@ -411,7 +416,7 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
         // By general category (those without one last), then the biggest value first.
         return rows.GroupBy(r => new { r.CategoryId, r.Category, r.GroupId, r.Group })
             .Select(g => new InventoryValueRow(g.Key.CategoryId, g.Key.Category, g.Count(), g.Sum(r => r.Qty),
-                Profit || Financial ? CostMath.RoundMoney(g.Sum(r => r.Qty * r.AverageCost)) : 0,
+                Cost ? CostMath.RoundMoney(g.Sum(r => r.Qty * r.AverageCost)) : 0,
                 CostMath.RoundMoney(g.Sum(r => r.Qty * r.RetailPrice)), g.Key.GroupId, g.Key.Group))
             .OrderBy(r => r.GroupId == null).ThenBy(r => r.GroupName).ThenByDescending(r => r.Value).ThenBy(r => r.CategoryName)
             .ToList();

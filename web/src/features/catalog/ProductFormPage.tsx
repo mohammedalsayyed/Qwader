@@ -254,7 +254,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
         {cost > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-brand-50 p-3 text-sm">
             <span>
-              {profit != null && (
+              {profit != null && can(P.ProfitView) && (
                 <>الربح المتوقع: <b className={profit < 0 ? 'text-danger' : 'text-success'}>{formatMoney(profit)}</b>
                   {' '}({Math.round((profit / cost) * 1000) / 10}%)</>
               )}

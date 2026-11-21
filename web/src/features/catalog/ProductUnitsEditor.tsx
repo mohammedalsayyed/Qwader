@@ -6,6 +6,8 @@ import { UnitSelect } from '@/components/catalog/CatalogBits';
 import { formatCost, formatMoney, formatQuantity } from '@/lib/format';
 import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups } from '@/lib/queries';
+import { useAuth } from '@/auth/AuthProvider';
+import { P } from '@/auth/permissions';
 
 /** One extra unit as typed (strings, like the rest of the form). */
 export interface UnitRow {
@@ -64,6 +66,7 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
   baseMin?: number;
   disabled?: boolean;
 }) {
+  const { can } = useAuth();
   const units = useLookups().data?.units ?? [];
   const baseName = units.find((u) => u.id === baseUnitId)?.name ?? 'قطعة';
   const set = (i: number, patch: Partial<UnitRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch, error: undefined } : r)));
@@ -129,7 +132,7 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
                   {' · '}
                   {profit < 0
                     ? <>سعر {unitName} أقل من تكلفتها بـ <b className="tabular">{formatMoney(-profit)}</b></>
-                    : <>الربح: <b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</>}
+                    : can(P.ProfitView) ? <>الربح: <b className="tabular text-success">{formatMoney(profit)}</b> ({Math.round((profit / unitCost) * 1000) / 10}%)</> : null}
                 </p>
               );
             })()}

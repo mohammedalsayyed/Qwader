@@ -57,7 +57,9 @@ public sealed class BalanceSheetService(IAppDbContext db, ICurrentUser currentUs
 
     public async Task<BalanceSheetDto> AsOfAsync(DateOnly asOf, CancellationToken ct = default)
     {
-        if (!currentUser.HasPermission(Permissions.ReportsFinancial)) throw new ForbiddenException();
+        // Equity is built from the profit, and the stock is valued at cost: the sheet needs both «عرض الأرباح» and «عرض التكلفة».
+        if (!currentUser.HasPermission(Permissions.ReportsFinancial) || !currentUser.HasPermission(Permissions.ProfitView)
+            || !currentUser.HasPermission(Permissions.ProductsViewCost)) throw new ForbiddenException();
         if (asOf > clock.LocalToday) throw new ValidationFailedException("date", "اختر يومًا حتى اليوم");
         var yearStart = new DateOnly(asOf.Year, 1, 1);
         var (_, end) = clock.LocalDaysToUtcRange(asOf, asOf);

@@ -32,6 +32,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** Visible when the user holds any of these; empty = every signed-in user. */
   anyOf: Permission[];
+  /** And all of these as well. */
+  allOf?: Permission[];
   group: 'daily' | 'stock' | 'finance' | 'admin';
 }
 
@@ -62,7 +64,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/owner-expenses', label: 'مصاريف صاحب العمل', icon: UserRound, anyOf: [P.VouchersCreate, P.ReportsFinancial], group: 'finance' },
   { to: '/payroll', label: 'الرواتب', icon: Banknote, anyOf: [P.PayrollManage], group: 'finance' },
   { to: '/reports', label: 'التقارير', icon: BarChart3, anyOf: [P.ReportsSales, P.ReportsProfit, P.ReportsFinancial], group: 'finance' },
-  { to: '/balance-sheet', label: 'الميزانية العمومية', icon: Scale, anyOf: [P.ReportsFinancial], group: 'finance' },
+  { to: '/balance-sheet', label: 'الميزانية العمومية', icon: Scale, anyOf: [P.ReportsFinancial], allOf: [P.ProfitView, P.ProductsViewCost], group: 'finance' },
 
   { to: '/users', label: 'المستخدمون والصلاحيات', icon: ShieldCheck, anyOf: [P.UsersManage], group: 'admin' },
   { to: '/settings', label: 'الإعدادات', icon: Settings, anyOf: [P.SettingsManage], group: 'admin' },
