@@ -214,6 +214,22 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// Permissions changed by an administrator (a role's, the user's roles, the user turned off): the token's fingerprint no
+// longer matches, so it is refused with 401 and a marker; the app refreshes it at once and takes the new permissions.
+app.Use(async (context, next) =>
+{
+    if (context.User.FindFirst(AccessStamp.Claim)?.Value is { } stamp
+        && context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth")
+        && int.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId)
+        && stamp != await context.RequestServices.GetRequiredService<AccessStampCache>().CurrentAsync(userId, context.RequestAborted))
+    {
+        context.Response.Headers["X-Access-Changed"] = "1";
+        await ProblemWriter.WriteAsync(context, 401, "تغيّرت صلاحياتك؛ جارٍ تحديثها");
+        return;
+    }
+    await next();
+});
+
 app.UseAuthorization();
 app.MapControllers();
 

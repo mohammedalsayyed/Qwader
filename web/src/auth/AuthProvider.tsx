@@ -20,19 +20,26 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Fired when the signed-in user's permissions change while the app is open (see AppLayout: home + a note). */
+export const ACCESS_CHANGED = 'qwader:access-changed';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading');
   const [user, setUser] = useState<CurrentUser | null>(null);
   const queryClient = useQueryClient();
 
-  useEffect(
-    () =>
-      session.subscribe((s) => {
-        setUser(s?.user ?? null);
-        setStatus(s ? 'authenticated' : 'anonymous');
-      }),
-    [],
-  );
+  useEffect(() => {
+    // The same user's permissions changed (an administrator edited their role): the screens take the new ones at once.
+    let last: CurrentUser | null = null;
+    const key = (u: CurrentUser) => [...u.roles].sort().join('|') + '#' + [...u.permissions].sort().join('|');
+    return session.subscribe((s) => {
+      const next = s?.user ?? null;
+      if (last && next && last.id === next.id && key(last) !== key(next)) window.dispatchEvent(new CustomEvent(ACCESS_CHANGED));
+      last = next;
+      setUser(next);
+      setStatus(s ? 'authenticated' : 'anonymous');
+    });
+  }, []);
 
   const reload = useCallback(async () => {
     try {

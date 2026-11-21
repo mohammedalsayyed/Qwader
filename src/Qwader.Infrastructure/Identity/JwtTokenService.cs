@@ -51,6 +51,8 @@ public sealed class JwtTokenService(IOptions<JwtOptions> options)
         if (user.MustChangePassword) claims.Add(new Claim(MustChangePasswordClaim, "true"));
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
         claims.AddRange(permissions.Select(p => new Claim(Permissions.ClaimType, p)));
+        // What the user may do, fingerprinted: a change by an administrator makes this token refresh at once (see AccessStamp).
+        claims.Add(new Claim(AccessStamp.Claim, AccessStamp.Of(roles, permissions)));
 
         var expires = utcNow.AddMinutes(_options.AccessTokenMinutes);
         var token = new JwtSecurityToken(

@@ -47,6 +47,8 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.Section));
         services.AddSingleton<JwtTokenService>();
+        services.AddMemoryCache();
+        services.AddSingleton<AccessStampCache>();
 
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<IDocumentNumberGenerator, DocumentNumberGenerator>();

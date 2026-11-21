@@ -1,12 +1,14 @@
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Spinner } from '@/components/ui/Feedback';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Banknote, BellRing, Download, KeyRound, LogOut, Menu, UserCircle2 } from 'lucide-react';
 import { IosInstallSheet, OfflineBanner, useInstall } from '@/app/pwa';
 import { Credit } from './Credit';
 import { TestBanner } from './TestBanner';
-import { useAuth } from '@/auth/AuthProvider';
-import { useQuery } from '@tanstack/react-query';
+import { ACCESS_CHANGED, useAuth } from '@/auth/AuthProvider';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/Toast';
+import { api } from '@/api/client';
 import { payrollApi } from '@/api/payroll';
 import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
@@ -35,6 +37,7 @@ export function AppLayout() {
   const [moreOpen, setMoreOpen] = useState(false);
   const { items, tabs } = useVisibleNav();
   const location = useLocation();
+  useAccessChanges();
   const groups = groupItems(items);
 
   const tabPaths = new Set(tabs.map((t) => t.to));
@@ -243,4 +246,31 @@ function TopBar() {
       {iosHelp && <IosInstallSheet onClose={() => setIosHelp(false)} />}
     </header>
   );
+}
+
+/**
+ * An administrator changed this user's permissions while the app was open: the server refused the old ones, the app took the
+ * new ones; here the screens follow — back to the home screen (the page open may no longer be allowed), every list read again
+ * (costs and profits shown or hidden as now allowed), and a note.
+ */
+function useAccessChanges() {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const changed = () => {
+      navigate('/', { replace: true });
+      void queryClient.invalidateQueries();
+      toast.info('تم تحديث صلاحياتك');
+    };
+    window.addEventListener(ACCESS_CHANGED, changed);
+    // A light check every 20 seconds while the app is on screen, so a change shows without waiting for the next action.
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine) void api('/health').catch(() => undefined);
+    }, 20_000);
+    return () => {
+      window.removeEventListener(ACCESS_CHANGED, changed);
+      clearInterval(timer);
+    };
+  }, [navigate, queryClient, toast]);
 }
