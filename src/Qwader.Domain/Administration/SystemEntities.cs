@@ -32,6 +32,8 @@ public static class SettingKeys
     public const string PaymentPhone = "Invoice.PaymentPhone";
     /// <summary>"true" (default): profits show as ••••• until the user's own password; "false": shown at once to those allowed.</summary>
     public const string ProfitsLocked = "Profits.Locked";
+    /// <summary>«إقفال السنة»: "true" turns it on (off by default). Off, no year is locked, even one closed before.</summary>
+    public const string YearClosing = "Finance.YearClosing";
 }
 
 public enum DocumentType

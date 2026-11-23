@@ -15,6 +15,16 @@ public sealed class SettingConfiguration : IEntityTypeConfiguration<Setting>
     }
 }
 
+public sealed class ClosedYearConfiguration : IEntityTypeConfiguration<ClosedYear>
+{
+    public void Configure(EntityTypeBuilder<ClosedYear> b)
+    {
+        b.HasIndex(y => y.Year);
+        b.Property(y => y.Snapshot).IsRequired();
+        b.Property(y => y.ReopenReason).HasMaxLength(500);
+    }
+}
+
 public sealed class PushSubscriptionConfiguration : IEntityTypeConfiguration<PushSubscription>
 {
     public void Configure(EntityTypeBuilder<PushSubscription> b)

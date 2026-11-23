@@ -14,6 +14,7 @@ namespace Qwader.Application.Abstractions;
 public interface IAppDbContext
 {
     DbSet<Setting> Settings { get; }
+    DbSet<ClosedYear> ClosedYears { get; }
     DbSet<DocumentSequence> DocumentSequences { get; }
     DbSet<IdempotencyRecord> IdempotencyRecords { get; }
     DbSet<AuditLog> AuditLogs { get; }

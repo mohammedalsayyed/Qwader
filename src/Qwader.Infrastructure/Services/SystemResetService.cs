@@ -82,6 +82,7 @@ public sealed class SystemResetService(
             await db.IncomingTransfers.ExecuteUpdateAsync(s => s.SetProperty(t => t.ReceiptVoucherId, (int?)null), ct);
             deleted += await db.ReceiptAllocations.ExecuteDeleteAsync(ct);
             deleted += await db.OpeningCreditAllocations.ExecuteDeleteAsync(ct);
+            deleted += await db.ClosedYears.ExecuteDeleteAsync(ct); // the closed years were of the books just emptied
             deleted += await db.UserNotifications.ExecuteDeleteAsync(ct); // they point at invoices and transfers that are gone
             deleted += await db.PayrollEntries.ExecuteDeleteAsync(ct);
             deleted += await db.PayrollSettlements.ExecuteDeleteAsync(ct);

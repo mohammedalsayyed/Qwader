@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<Setting> Settings => Set<Setting>();
+    public DbSet<ClosedYear> ClosedYears => Set<ClosedYear>();
     public DbSet<DocumentSequence> DocumentSequences => Set<DocumentSequence>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -88,16 +89,59 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
         builder.Properties<DateTime?>().HaveConversion<UtcDateTimeConverter>();
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampAuditFields();
-        return base.SaveChangesAsync(cancellationToken);
+        await GuardClosedYearsAsync(cancellationToken);
+        return await base.SaveChangesAsync(cancellationToken);
     }
 
     public override int SaveChanges()
     {
         StampAuditFields();
+        GuardClosedYearsAsync(CancellationToken.None).GetAwaiter().GetResult();
         return base.SaveChanges();
+    }
+
+    /// <summary>
+    /// «إقفال السنة»: while it is on, nothing dated in a closed year (or any year before it) may be added, re-dated, voided,
+    /// restored or deleted — every document, ledger entry and stock movement has a <c>Date</c>, so this one check covers them
+    /// all, whichever screen saves them. Other changes to an old document (a debt collected today on last year's invoice, a
+    /// return made today) are allowed: their own entries carry today's date.
+    /// </summary>
+    private async Task GuardClosedYearsAsync(CancellationToken ct)
+    {
+        var dated = ChangeTracker.Entries()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+                && e.Metadata.FindProperty("Date")?.ClrType == typeof(DateTime))
+            .ToList();
+        if (dated.Count == 0) return;
+        if (await Settings.AsNoTracking().Where(s => s.Key == SettingKeys.YearClosing).Select(s => s.Value).FirstOrDefaultAsync(ct) != "true") return;
+        var lockedThrough = await ClosedYears.AsNoTracking().Where(y => y.ReopenedAt == null).MaxAsync(y => (int?)y.Year, ct);
+        if (lockedThrough is not { } last) return;
+
+        bool Locked(object? utc) => utc is DateTime d && clock.ToLocal(d).Year <= last;
+        static bool IsVoided(object? status) => status?.ToString() == "Voided";
+        foreach (var e in dated)
+        {
+            var date = e.Property("Date");
+            var refused = e.State switch
+            {
+                EntityState.Added => Locked(date.CurrentValue),
+                EntityState.Deleted => Locked(date.OriginalValue),
+                _ => (date.IsModified && (Locked(date.OriginalValue) || Locked(date.CurrentValue)))
+                    || (Locked(date.OriginalValue)
+                        && ((e.Metadata.FindProperty("Status") is not null && e.Property("Status") is { IsModified: true } s
+                                && (IsVoided(s.OriginalValue) || IsVoided(s.CurrentValue)))
+                            || (e.Metadata.FindProperty("VoidedAt") is not null && e.Property("VoidedAt").IsModified))),
+            };
+            if (refused)
+            {
+                var year = clock.ToLocal((DateTime)(e.State == EntityState.Added ? date.CurrentValue! : date.OriginalValue!)).Year;
+                throw new Application.Common.BusinessRuleException(
+                    $"سنة {Math.Min(year, last)} مقفلة: لا يمكن تسجيل أو تعديل أو إلغاء عملية بتاريخ فيها. سجّلها بتاريخ اليوم، أو أعد فتح السنة من الإعدادات.");
+            }
+        }
     }
 
     private void StampAuditFields()
