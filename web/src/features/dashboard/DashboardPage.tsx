@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { DateRangeFilter, resolveRange, type DateRangeValue, type RangePreset } from '@/components/ui/DateRange';
 import { searchApi } from '@/api/catalog';
-import { reportsApi } from '@/api/reports';
+import { reportsApi, type CashSummary } from '@/api/reports';
 import { salesApi } from '@/api/sales';
 import { Stat } from '@/components/ui/Layout';
 import { InstallBanner } from '@/app/pwa';
@@ -175,6 +175,60 @@ function TodayStats() {
           hint={s?.receivedByAccount.slice(0, 2).map((a) => `${a.accountName} ${formatMoney(a.amount)}`).join(' · ') || undefined} />
         <Stat label={range.preset === 'today' ? 'ديون جديدة اليوم' : 'ديون جديدة'} value={value(s?.newDebt)} tone={s && s.newDebt > 0 ? 'warning' : 'default'} />
       </div>
+      {can(P.DashboardCashFlow) && <CashFlow from={from} to={to} ready={ready} />}
     </section>
+  );
+}
+
+/**
+ * «حركة الفلوس»: money that really came in and went out in the period — not profit (credit sales are not in it until
+ * collected, and goods bought are still on the shelf). المقبوض − المشتريات − مصاريف المحل = صافي المحل؛ − المسحوبات الشخصية = الباقي.
+ */
+function CashFlow({ from, to, ready }: { from?: string; to?: string; ready: boolean }) {
+  const navigate = useNavigate();
+  const q = useQuery({ queryKey: ['cash-summary', from, to], queryFn: () => reportsApi.cashSummary({ from, to }), refetchInterval: 60_000, enabled: ready,
+    placeholderData: keepPreviousData });
+  if (q.isError) return null;
+  const c: CashSummary | undefined = q.data;
+  const m = (v: number | undefined) => (c ? formatMoney(v ?? 0) : '…');
+  const row = (label: string, v: number | undefined, sign: '+' | '−' | '', hint?: string, to?: string) => (
+    <li key={label}>
+      <button type="button" disabled={!to} onClick={() => to && navigate(to)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-start enabled:hover:bg-brand-50 disabled:cursor-default">
+        <span>
+          <span className="font-semibold">{label}</span>
+          {hint && <span className="block text-xs text-muted">{hint}</span>}
+        </span>
+        <span className="tabular shrink-0 font-semibold" dir="ltr">{sign && <span className="text-muted">{sign} </span>}{m(v)}</span>
+      </button>
+    </li>
+  );
+  const total = (label: string, v: number | undefined, hint: string) => (
+    <li className={`flex items-center justify-between gap-3 px-4 py-3 ${v != null && v < 0 ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'}`}>
+      <span>
+        <span className="font-bold">{label}</span>
+        <span className="block text-xs opacity-80">{hint}</span>
+      </span>
+      <span className="tabular shrink-0 text-lg font-bold" dir="ltr">{m(v)}</span>
+    </li>
+  );
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
+      <h3 className="border-b border-line px-4 py-2.5 text-sm font-bold">حركة الفلوس</h3>
+      <ul className="divide-y divide-line text-sm">
+        {row('المقبوض من المبيعات', c?.received, '', 'نقدي وتحصيل ديون، بعد المرتجعات', '/reports/invoices')}
+        {!!c?.otherIncome && row('إيرادات أخرى', c.otherIncome, '+')}
+        {row('المدفوع على المشتريات', c?.supplierPayments, '−', 'للموردين، بعد ما رجّعوه', '/purchases')}
+        {row('مصاريف المحل', c?.expenses, '−', 'رواتب وسلف ومصاريف تشغيل', '/expenses')}
+        {!!c?.otherPayments && row('مدفوعات أخرى', c.otherPayments, '−', undefined, '/payments')}
+        {total('صافي المحل', c?.storeNet, 'اللي جابه المحل بهالفترة')}
+        {row('المسحوبات الشخصية', c?.ownerWithdrawals, '−', 'مصاريف صاحب العمل', '/owner-expenses')}
+        {total('الباقي', c?.remaining, 'الفرق بالصندوق والبنوك بهالفترة')}
+      </ul>
+      {!!c?.capitalAdded && (
+        <p className="border-t border-line px-4 py-2 text-xs text-muted">مش محسوب فيها: رأس مال مضاف {formatMoney(c.capitalAdded)}</p>
+      )}
+    </div>
   );
 }

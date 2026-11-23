@@ -61,6 +61,15 @@ public enum InvoiceReportFilter { All, Owed, Paid, Pending }
 /// The invoices of a period: totals over the whole period (Count…Profit, ByAccount = how much went into each place),
 /// totals of the invoices the filter/search kept (Matched…), and one page of them (Rows; payments read for that page only).
 /// </summary>
+/// <summary>
+/// «حركة الفلوس» (home screen): money that actually came in and went out in the period. Received (sales paid, debts collected,
+/// customers' advances, less refunds) + other income − paid to suppliers (less their refunds) − the store's expenses (salaries and
+/// advances included) − other payments = the store's net; − the owners' withdrawals = what is left. Transfers between the store's
+/// accounts, opening balances and capital added are not in it; a voided document and its reversal cancel out.
+/// </summary>
+public sealed record CashSummaryDto(DateOnly From, DateOnly To, decimal Received, decimal OtherIncome, decimal SupplierPayments,
+    decimal Expenses, decimal OtherPayments, decimal StoreNet, decimal OwnerWithdrawals, decimal Remaining, decimal CapitalAdded);
+
 public sealed record InvoiceReportDto(
     DateOnly From, DateOnly To, int Count, decimal Total, decimal Returned, decimal Paid, decimal Remaining, decimal PendingTransfers,
     decimal? Profit, IReadOnlyList<InvoicePaymentPart> ByAccount,
@@ -105,6 +114,8 @@ public interface IReportService
     /// <param name="pageSize">0 = every invoice (the Excel file).</param>
     Task<InvoiceReportDto> InvoicesAsync(DateOnly from, DateOnly to, InvoiceReportFilter filter = InvoiceReportFilter.All, string? search = null,
         int page = 1, int pageSize = 50, CancellationToken ct = default);
+    /// <summary>«حركة الفلوس» on the home screen (its own permission).</summary>
+    Task<CashSummaryDto> CashSummaryAsync(DateOnly from, DateOnly to, CancellationToken ct = default);
 }
 
 public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IClock clock) : IReportService
@@ -294,6 +305,34 @@ public sealed class ReportService(IAppDbContext db, ICurrentUser currentUser, IC
             cogs, damaged, grossProfit, losses, expenses, netProfit, expensesByCategory,
             cashIn, cashOut, cashIn - cashOut, inByCategory, outByCategory, accounts,
             newDebt, collections, pendingCount, pendingAmount, receivables, payables, inventoryValue, gains, totalExpenses, PurchaseDiscounts: purchaseDiscounts);
+    }
+
+    // ------------------------------------------------------------------ home screen: money in and out
+
+    public async Task<CashSummaryDto> CashSummaryAsync(DateOnly from, DateOnly to, CancellationToken ct = default)
+    {
+        var (start, end) = Range(from, to);
+        // As in the cash flow: a voided document and its reversing entry are neither money in nor out.
+        var reversals = db.AccountTransactions.Where(r => r.Category == AccountTransactionCategory.Reversal);
+        var flows = await db.AccountTransactions.AsNoTracking()
+            .Where(t => t.Date >= start && t.Date < end && !NotCashFlow.Contains(t.Category) && t.Category != AccountTransactionCategory.Reversal
+                && !reversals.Any(r => r.SourceType == t.SourceType && r.SourceId == t.SourceId && r.FinancialAccountId == t.FinancialAccountId))
+            .GroupBy(t => new { t.Direction, t.Category })
+            .Select(g => new { g.Key.Direction, g.Key.Category, Amount = g.Sum(t => t.Amount) })
+            .ToListAsync(ct);
+        decimal Sum(MoneyDirection direction, params AccountTransactionCategory[] categories) =>
+            flows.Where(f => f.Direction == direction && categories.Contains(f.Category)).Sum(f => f.Amount);
+
+        var received = Sum(MoneyDirection.In, AccountTransactionCategory.SaleReceipt, AccountTransactionCategory.DebtCollection, AccountTransactionCategory.CustomerDeposit)
+            - Sum(MoneyDirection.Out, AccountTransactionCategory.SaleRefund);
+        var otherIncome = Sum(MoneyDirection.In, AccountTransactionCategory.OtherIncome);
+        var suppliers = Sum(MoneyDirection.Out, AccountTransactionCategory.SupplierPayment) - Sum(MoneyDirection.In, AccountTransactionCategory.SupplierRefund);
+        var expenses = Sum(MoneyDirection.Out, AccountTransactionCategory.Expense, AccountTransactionCategory.EmployeeAdvance);
+        var otherPayments = Sum(MoneyDirection.Out, AccountTransactionCategory.OtherPayment);
+        var storeNet = received + otherIncome - suppliers - expenses - otherPayments;
+        var owners = Sum(MoneyDirection.Out, AccountTransactionCategory.OwnerWithdrawal);
+        return new CashSummaryDto(from, to, received, otherIncome, suppliers, expenses, otherPayments, storeNet, owners, storeNet - owners,
+            Sum(MoneyDirection.In, AccountTransactionCategory.CapitalContribution));
     }
 
     // ------------------------------------------------------------------ daily series

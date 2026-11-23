@@ -44,6 +44,8 @@ public static class Permissions
     public const string ReportsFinancial = "Reports.Financial";
     /// <summary>«تقرير فواتير المبيعات» (each invoice: paid, where to, owed, profit with «عرض الأرباح»). Its own, not the other reports'.</summary>
     public const string ReportsInvoices = "Reports.Invoices";
+    /// <summary>«حركة الفلوس» on the home screen: received − paid to suppliers − store expenses − the owners' withdrawals.</summary>
+    public const string DashboardCashFlow = "Dashboard.CashFlow";
     /// <summary>Any profit anywhere: the sale's, a product's expected profit, the reports', the dashboard's, the balance sheet.</summary>
     public const string ProfitView = "Profit.View";
 
@@ -89,6 +91,7 @@ public static class Permissions
         new(ReportsProfit, "تقارير الأرباح والتكلفة", "التقارير"),
         new(ReportsFinancial, "التقارير المالية والذمم", "التقارير"),
         new(ReportsInvoices, "تقارير الفواتير", "التقارير"),
+        new(DashboardCashFlow, "حركة الفلوس في الصفحة الرئيسية", "التقارير"),
         new(ProfitView, "عرض الأرباح (في كل الشاشات)", "التكلفة والأرباح"),
 
         new(UsersManage, "إدارة المستخدمين والأدوار", "الإدارة"),
@@ -117,7 +120,7 @@ public static class SystemRoles
         new(Manager, "مدير المعرض", "كل العمليات اليومية والمالية والتقارير",
             Identity.Permissions.All.Select(p => p.Code)
                 .Where(c => c is not Identity.Permissions.UsersManage and not Identity.Permissions.SettingsManage and not Identity.Permissions.ProfitView
-                    and not Identity.Permissions.ReportsInvoices)
+                    and not Identity.Permissions.ReportsInvoices and not Identity.Permissions.DashboardCashFlow)
                 .ToArray()),
         new(Sales, "موظف مبيعات", "البيع وتسجيل الحوالات وسندات القبض",
         [

@@ -32,6 +32,8 @@ export const P = {
   ReportsFinancial: 'Reports.Financial',
   /** «تقرير فواتير المبيعات», its own permission. */
   ReportsInvoices: 'Reports.Invoices',
+  /** «حركة الفلوس» on the home screen, its own permission. */
+  DashboardCashFlow: 'Dashboard.CashFlow',
   /** Any profit anywhere (the sale's, a product's expected profit, reports, dashboard, balance sheet). */
   ProfitView: 'Profit.View',
   UsersManage: 'Users.Manage',

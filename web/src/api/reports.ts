@@ -182,7 +182,23 @@ export interface InventoryValueRow {
 export type ProductSort = 'Revenue' | 'Quantity' | 'Profit';
 type Range = { from?: string; to?: string };
 
+/** «حركة الفلوس»: storeNet = received + otherIncome − supplierPayments − expenses − otherPayments; remaining = storeNet − ownerWithdrawals. */
+export interface CashSummary {
+  from: string;
+  to: string;
+  received: number;
+  otherIncome: number;
+  supplierPayments: number;
+  expenses: number;
+  otherPayments: number;
+  storeNet: number;
+  ownerWithdrawals: number;
+  remaining: number;
+  capitalAdded: number;
+}
+
 export const reportsApi = {
+  cashSummary: (r: Range) => api<CashSummary>('/reports/cash-summary', { query: r }),
   period: (r: Range) => api<PeriodReport>('/reports/period', { query: r }),
   invoices: (q: InvoiceReportQuery) => api<InvoiceReport>('/reports/invoices', { query: q }),
   /** Every invoice the filter and search keep (not one page). */
