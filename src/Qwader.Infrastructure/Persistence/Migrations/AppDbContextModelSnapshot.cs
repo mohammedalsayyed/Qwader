@@ -579,7 +579,7 @@ namespace Qwader.Infrastructure.Persistence.Migrations
 
                     b.ToTable("ProductUnits", t =>
                         {
-                            t.HasCheckConstraint("CK_ProductUnits_Values", "[Factor] > 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0");
+                            t.HasCheckConstraint("CK_ProductUnits_Values", "[Factor] > 0 AND [Factor] <> 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0");
                         });
                 });
 

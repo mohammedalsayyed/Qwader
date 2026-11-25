@@ -329,9 +329,10 @@ public sealed class ProductService(
                 throw new ValidationFailedException("units", "إحدى الوحدات غير موجودة");
             if (r.Units.Any(u => u.UnitId == r.UnitId))
                 throw new ValidationFailedException("units", "الوحدة الإضافية يجب أن تختلف عن الوحدة الأساسية");
-            // A carton of a unit counted whole holds a whole number of them (not 1.5 pieces).
+            // A carton of a unit counted whole holds a whole number of them (not 1.5 pieces, nor half a piece): a unit smaller than
+            // the base (a set = 0.44 kilo) needs a base counted in fractions.
             if (r.Units.Any(u => u.Factor != decimal.Truncate(u.Factor)) && await db.Units.AnyAsync(u => u.Id == r.UnitId && u.WholeNumbersOnly, ct))
-                throw new ValidationFailedException("units", "الوحدة الأساسية تُعدّ بدون كسور: عدد القطع في الوحدة الإضافية يجب أن يكون عددًا صحيحًا");
+                throw new ValidationFailedException("units", "الوحدة الأساسية تُعدّ بدون كسور: عدد القطع في الوحدة الإضافية يجب أن يكون عددًا صحيحًا أكبر من 1");
             // Updated in place by unit, so invoices that point at a unit keep pointing at it.
             foreach (var gone in product.Units.Where(u => !unitIds.Contains(u.UnitId)).ToList()) product.Units.Remove(gone);
             foreach (var u in r.Units)

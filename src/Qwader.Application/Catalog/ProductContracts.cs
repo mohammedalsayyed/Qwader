@@ -171,7 +171,9 @@ public sealed class SaveProductRequestValidator : AbstractValidator<SaveProductR
         RuleForEach(x => x.Units).ChildRules(u =>
         {
             u.RuleFor(x => x.UnitId).GreaterThan(0).WithMessage("اختر الوحدة");
-            u.RuleFor(x => x.Factor).GreaterThan(1).WithMessage("عدد القطع في الوحدة يجب أن يكون أكبر من 1")
+            // Bigger (a dozen = 12 pieces) or, for a base counted in fractions, smaller (a set = 0.44 kilo); never the base itself.
+            u.RuleFor(x => x.Factor).GreaterThan(0).WithMessage("اكتب كم من الوحدة الأساسية في هذه الوحدة")
+                .NotEqual(1).WithMessage("الوحدة الإضافية تساوي الوحدة الأساسية نفسها (1): اكتب كم فيها")
                 .LessThanOrEqualTo(100000).WithMessage("عدد القطع في الوحدة كبير جدًا");
             u.RuleFor(x => x.RetailPrice).GreaterThan(0).WithMessage("سعر بيع الوحدة مطلوب");
             u.RuleFor(x => x.WholesalePrice).GreaterThanOrEqualTo(0).WithMessage("سعر الجملة لا يمكن أن يكون سالبًا");
