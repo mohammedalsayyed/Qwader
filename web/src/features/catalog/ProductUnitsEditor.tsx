@@ -28,7 +28,7 @@ export const toUnitRows = (units: ProductUnit[] | null | undefined): UnitRow[] =
   }));
 
 /** Checks the rows; returns them with their errors, and the request when everything is valid. */
-export function validateUnitRows(rows: UnitRow[], baseUnitId: number): { rows: UnitRow[]; units: SaveProductUnit[] | null } {
+export function validateUnitRows(rows: UnitRow[], baseUnitId: number, baseWhole = false): { rows: UnitRow[]; units: SaveProductUnit[] | null } {
   const units: SaveProductUnit[] = [];
   let ok = true;
   const checked = rows.map((row) => {
@@ -40,7 +40,8 @@ export function validateUnitRows(rows: UnitRow[], baseUnitId: number): { rows: U
     if (!row.unitId) error = 'اختر الوحدة';
     else if (row.unitId === baseUnitId) error = 'اختر وحدة غير الوحدة الأساسية';
     else if (rows.filter((r) => r.unitId === row.unitId).length > 1) error = 'هذه الوحدة مكررة';
-    else if (factor == null || Number.isNaN(factor) || factor <= 1) error = 'اكتب كم قطعة في هذه الوحدة (أكثر من 1)';
+    else if (factor == null || Number.isNaN(factor) || factor <= 0 || factor === 1) error = 'اكتب كم من الوحدة الأساسية في هذه الوحدة (لا تساوي 1)';
+    else if (baseWhole && !Number.isInteger(factor)) error = 'الوحدة الأساسية بدون كسور: اكتب عددًا صحيحًا أكبر من 1';
     else if (retail == null || Number.isNaN(retail) || retail <= 0) error = 'اكتب سعر بيع الوحدة';
     else if (wholesale != null && (Number.isNaN(wholesale) || wholesale < 0)) error = 'سعر الجملة غير صحيح';
     else if (min != null && (Number.isNaN(min) || min < 0 || min > retail)) error = 'أقل سعر يجب ألا يتجاوز سعر البيع';
@@ -81,14 +82,14 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">
-        المخزون يُحسب بالـ«{baseName}». أضف وحدة أكبر إذا كان المنتج يُباع أو يُشترى بها أيضًا (مثل دزينة = 12 {baseName}).
+        المخزون يُحسب بالـ«{baseName}». أضف وحدة أخرى إذا كان المنتج يُباع أو يُشترى بها أيضًا (مثل دزينة = 12 {baseName}، أو طقم = 0.44 كيلو إذا كانت الوحدة الأساسية تقبل الكسور).
         إذا كان المنتج يُباع بالدزينة فقط فاجعل «وحدة القياس» نفسها دزينة ولا تضف شيئًا هنا.
       </p>
       {rows.map((row, i) => {
         const factor = parseNumber(row.factor);
         const unitName = units.find((u) => u.id === row.unitId)?.name ?? 'الوحدة';
-        const suggestRetail = factor && factor > 1 && baseRetail > 0 ? round2(factor * baseRetail) : null;
-        const suggestWholesale = factor && factor > 1 && baseWholesale > 0 ? round2(factor * baseWholesale) : null;
+        const suggestRetail = factor && factor > 0 && factor !== 1 && baseRetail > 0 ? round2(factor * baseRetail) : null;
+        const suggestWholesale = factor && factor > 0 && factor !== 1 && baseWholesale > 0 ? round2(factor * baseWholesale) : null;
         return (
           <div key={i} className="space-y-3 rounded-xl border border-line p-3">
             {row.error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-danger">{row.error}</p>}
@@ -122,7 +123,7 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
             {(() => {
               // The unit's cost is factor × the piece's cost; its profit is measured against that.
               const price = parseNumber(row.retailPrice);
-              if (!(baseCost > 0) || !factor || Number.isNaN(factor) || factor <= 1) return null;
+              if (!(baseCost > 0) || !factor || Number.isNaN(factor) || factor <= 0 || factor === 1) return null;
               const unitCost = round2(factor * baseCost);
               if (price == null || Number.isNaN(price) || price <= 0)
                 return <p className="text-sm text-muted">تكلفة {unitName}: <b className="tabular">{formatCost(unitCost)}</b></p>;
@@ -140,7 +141,7 @@ export function ProductUnitsEditor({ rows, onChange, baseUnitId, baseRetail, bas
             {(() => {
               // The piece has a floor but this unit has none: a seller could sell the carton for anything.
               const typedMin = parseNumber(row.minSalePrice);
-              if (disabled || !(baseMin > 0) || !factor || Number.isNaN(factor) || factor <= 1 || (typedMin != null && !Number.isNaN(typedMin) && typedMin > 0)) return null;
+              if (disabled || !(baseMin > 0) || !factor || Number.isNaN(factor) || factor <= 0 || factor === 1 || (typedMin != null && !Number.isNaN(typedMin) && typedMin > 0)) return null;
               const price = parseNumber(row.retailPrice);
               const floor = round2(Math.min(factor * baseMin, price != null && !Number.isNaN(price) && price > 0 ? price : Infinity));
               return (

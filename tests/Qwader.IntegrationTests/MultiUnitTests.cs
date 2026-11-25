@@ -113,4 +113,30 @@ public sealed class MultiUnitTests(ApiFactory factory)
             .ReadAsync<List<ProductReportRow>>();
         rows.Single(r => r.ProductId == product.Id).Quantity.Should().Be(13);
     }
+
+    /// <summary>A product counted by the kilo and also sold as a set of 0.44 kilo: a unit smaller than the base, only for a base with fractions.</summary>
+    [Fact]
+    public async Task A_unit_smaller_than_a_base_counted_in_fractions()
+    {
+        var admin = await factory.LoginAsync();
+        var kilo = await UnitAsync(admin, TestData.Unique("كيلو"));
+        var set = await UnitAsync(admin, TestData.Unique("طقم"));
+        var category = await admin.CreateCategoryAsync();
+        SaveProductRequest Request(string name, int baseUnit, decimal factor) => new(name, null, null, category.Id, null, baseUnit, null, null,
+            null, null, null, null, 50, 100, 100, 0, 1, null, 10, 50, Units: [new SaveProductUnit(set, factor, 44, 44, 0)]);
+
+        var product = await (await admin.PostAsJsonAsync("/api/products", Request(TestData.Unique("منتج بالكيلو"), kilo, 0.44m))).ReadAsync<ProductDetailDto>();
+        var unit = product.Units!.Single();
+        unit.Factor.Should().Be(0.44m);
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Name == "الصندوق النقدي").Id;
+        var sale = await (await admin.PostAsJsonAsync("/api/sales", Sale([new(product.Id, 3, 44, 0, unit.Id)], [new(cash, 132)]))).ReadAsync<SaleDetailDto>();
+        sale.TotalCost.Should().Be(3 * 0.44m * 50);
+        (await admin.GetProductAsync(product.Id)).Quantity.Should().Be(10 - 1.32m);
+
+        // The unit itself (1) is no other unit; a base counted whole takes no half of it.
+        (await admin.PostAsJsonAsync("/api/products", Request(TestData.Unique("منتج"), kilo, 1))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var box = await UnitAsync(admin, TestData.Unique("علبة"));
+        (await admin.PutAsJsonAsync($"/api/lookups/units/{box}", new { wholeNumbersOnly = true })).EnsureSuccessStatusCode();
+        (await admin.PostAsJsonAsync("/api/products", Request(TestData.Unique("منتج"), box, 0.5m))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

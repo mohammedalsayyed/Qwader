@@ -96,7 +96,7 @@ public sealed class ProductUnitConfiguration : IEntityTypeConfiguration<ProductU
         b.HasOne(u => u.Product).WithMany(p => p.Units).HasForeignKey(u => u.ProductId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(u => u.Unit).WithMany().HasForeignKey(u => u.UnitId).OnDelete(DeleteBehavior.Restrict);
         b.ToTable(t => t.HasCheckConstraint("CK_ProductUnits_Values",
-            "[Factor] > 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0"));
+            "[Factor] > 0 AND [Factor] <> 1 AND [RetailPrice] >= 0 AND [WholesalePrice] >= 0 AND [MinSalePrice] >= 0"));
     }
 }
 

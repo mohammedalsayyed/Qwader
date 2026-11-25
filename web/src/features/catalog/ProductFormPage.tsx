@@ -190,7 +190,7 @@ function ProductForm({ existing, variantParent, margin, defaultReorder }: {
   }, [purchaseRaw, setValue]);
 
   const onSubmit = handleSubmit((v) => {
-    const checked = validateUnitRows(unitRows, v.unitId);
+    const checked = validateUnitRows(unitRows, v.unitId, !!lookups.data?.units.find((u) => u.id === v.unitId)?.wholeNumbersOnly);
     if (!checked.units) {
       setUnitRows(checked.rows);
       toast.error('راجع وحدات البيع الإضافية');
