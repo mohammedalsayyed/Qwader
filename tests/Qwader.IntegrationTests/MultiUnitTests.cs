@@ -139,4 +139,31 @@ public sealed class MultiUnitTests(ApiFactory factory)
         (await admin.PutAsJsonAsync($"/api/lookups/units/{box}", new { wholeNumbersOnly = true })).EnsureSuccessStatusCode();
         (await admin.PostAsJsonAsync("/api/products", Request(TestData.Unique("منتج"), box, 0.5m))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    /// <summary>A purchase at a higher price lifts the cost above the selling prices: the invoice lists the product with prices to save.</summary>
+    [Fact]
+    public async Task A_purchase_that_lifts_the_cost_above_the_prices_suggests_new_ones()
+    {
+        var admin = await factory.LoginAsync();
+        var product = await admin.CreateProductAsync(retail: 30, openingQuantity: 10, openingCost: 20);
+        (await (await admin.PostAsJsonAsync("/api/products/prices", new UpdatePricesRequest([new(product.Id, 30, 30, 25)]))).ReadAsync<int>()).Should().Be(1);
+
+        var supplier = await admin.CreateSupplierAsync();
+        var cheap = await admin.PurchaseAsync(supplier.Id, [new(product.Id, 1, 20)]);
+        (await (await admin.GetAsync($"/api/purchases/{cheap.Id}/price-alerts")).ReadAsync<List<PriceAlertRow>>()).Should().BeEmpty();
+
+        var dear = await admin.PurchaseAsync(supplier.Id, [new(product.Id, 29, 40)]);   // (11 × 20 + 29 × 40) / 40 = 34.5
+        var alert = (await (await admin.GetAsync($"/api/purchases/{dear.Id}/price-alerts")).ReadAsync<List<PriceAlertRow>>()).Should().ContainSingle().Subject;
+        (alert.Cost, alert.RetailPrice, alert.MinSalePrice).Should().Be(((decimal?)34.5m, 30m, 25m));
+        alert.SuggestedRetail.Should().BeGreaterThan(34.5m);
+        alert.SuggestedWholesale.Should().BeInRange(34.5m, alert.SuggestedRetail);
+        alert.SuggestedMin.Should().Be(34.5m);
+
+        (await admin.PostAsJsonAsync("/api/products/prices", new UpdatePricesRequest([new(product.Id, 40, 38, 45)]))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await (await admin.PostAsJsonAsync("/api/products/prices",
+            new UpdatePricesRequest([new(product.Id, alert.SuggestedRetail, alert.SuggestedWholesale, alert.SuggestedMin)]))).ReadAsync<int>()).Should().Be(1);
+        (await (await admin.GetAsync($"/api/purchases/{dear.Id}/price-alerts")).ReadAsync<List<PriceAlertRow>>()).Should().BeEmpty();
+        var saved = await admin.GetProductAsync(product.Id);
+        (saved.RetailPrice, saved.MinSalePrice).Should().Be((alert.SuggestedRetail, 34.5m));
+    }
 }

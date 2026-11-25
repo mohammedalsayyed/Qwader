@@ -46,7 +46,8 @@ public sealed class ProductService(
         if (request.GroupId is { } groupId) query = query.Where(p => p.Category.GroupId == groupId);
         if (request.SupplierId is { } supplierId) query = query.Where(p => p.DefaultSupplierId == supplierId);
         if (request.NoCost && canViewCost) query = query.Where(p => p.PurchasePrice == 0 && p.AverageCost == 0);
-        if (request.CostAbovePrice && canViewCost) query = query.Where(p => p.AverageCost > p.RetailPrice);
+        if (request.CostAbovePrice && canViewCost)
+            query = query.Where(p => p.AverageCost > p.RetailPrice || p.AverageCost > p.WholesalePrice || (p.MinSalePrice > 0 && p.AverageCost > p.MinSalePrice));
         if (request.PriceFrom is { } from) query = query.Where(p => p.RetailPrice >= from);
         if (request.PriceTo is { } to) query = query.Where(p => p.RetailPrice <= to);
         return request.Stock switch
@@ -218,6 +219,56 @@ public sealed class ProductService(
         audit.Log(pricesChanged ? "Product.UpdatePrices" : "Product.Update", "Product", id.ToString(), before, Snapshot(product));
         await db.SaveChangesAsync(ct);
         return await GetAsync(id, ct);
+    }
+
+    public async Task<IReadOnlyList<PriceAlertRow>> PriceAlertsAsync(IReadOnlyCollection<int> productIds, CancellationToken ct = default)
+    {
+        var rows = await db.Products.AsNoTracking()
+            .Where(p => productIds.Contains(p.Id) && !p.IsArchived && p.AverageCost > 0
+                && (p.AverageCost > p.RetailPrice || p.AverageCost > p.WholesalePrice || (p.MinSalePrice > 0 && p.AverageCost > p.MinSalePrice)))
+            .OrderBy(p => p.Name)
+            .Select(p => new { p.Id, p.Name, p.Sku, p.AverageCost, p.RetailPrice, p.WholesalePrice, p.MinSalePrice })
+            .ToListAsync(ct);
+        if (rows.Count == 0) return [];
+        var margin = (await settings.GetAsync(ct)).DefaultMarginPercent;
+        return rows.Select(p =>
+        {
+            var cost = p.AverageCost;
+            var retail = p.RetailPrice >= cost ? p.RetailPrice : CostMath.SuggestPrice(cost, margin);
+            var wholesale = p.WholesalePrice >= cost ? Math.Min(p.WholesalePrice, retail) : Math.Min(retail, CostMath.SuggestPrice(cost, margin / 2));
+            var min = p.MinSalePrice == 0 ? 0 : p.MinSalePrice >= cost ? Math.Min(p.MinSalePrice, retail) : Math.Min(retail, CostMath.SuggestPrice(cost, 0));
+            return new PriceAlertRow(p.Id, p.Name, p.Sku, CanViewCost ? CostMath.RoundMoney(cost) : null, p.RetailPrice, p.WholesalePrice, p.MinSalePrice,
+                retail, wholesale, min);
+        }).ToList();
+    }
+
+    public async Task<int> UpdatePricesAsync(UpdatePricesRequest request, CancellationToken ct = default)
+    {
+        if (!currentUser.HasPermission(Permissions.ProductsEditPrices)) throw new ForbiddenException("ليست لديك صلاحية تعديل أسعار البيع");
+        if (request.Items is not { Count: > 0 }) return 0;
+        foreach (var i in request.Items)
+        {
+            if (i.RetailPrice <= 0) throw new ValidationFailedException("items", "سعر البيع مطلوب");
+            if (i.WholesalePrice < 0 || i.MinSalePrice < 0) throw new ValidationFailedException("items", "الأسعار لا تكون سالبة");
+            if (i.MinSalePrice > i.RetailPrice) throw new ValidationFailedException("items", "أقل سعر يجب ألا يتجاوز سعر البيع");
+        }
+        var ids = request.Items.Select(i => i.ProductId).Distinct().ToList();
+        var products = await db.Products.Include(p => p.Units).Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+        if (products.Count != ids.Count) throw new NotFoundException("أحد المنتجات غير موجود");
+        var changed = 0;
+        foreach (var i in request.Items)
+        {
+            var product = products.Single(p => p.Id == i.ProductId);
+            if (product.RetailPrice == i.RetailPrice && product.WholesalePrice == i.WholesalePrice && product.MinSalePrice == i.MinSalePrice) continue;
+            var before = Snapshot(product);
+            product.RetailPrice = i.RetailPrice;
+            product.WholesalePrice = i.WholesalePrice;
+            product.MinSalePrice = i.MinSalePrice;
+            audit.Log("Product.UpdatePrices", "Product", product.Id.ToString(), before, Snapshot(product));
+            changed++;
+        }
+        await db.SaveChangesAsync(ct);
+        return changed;
     }
 
     public async Task SetArchivedAsync(int id, bool archived, CancellationToken ct = default)

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Qwader.Api.Authorization;
+using Qwader.Application.Catalog;
 using Qwader.Application.Common;
 using Qwader.Application.Purchasing;
 using Qwader.Domain.Identity;
@@ -56,6 +57,14 @@ public sealed class PurchasesController(IPurchaseService purchases) : Controller
     [HttpPost("{id:int}/post")]
     [HasPermission(Permissions.PurchasesManage)]
     public Task<PurchaseDetailDto> Post(int id, PostPurchaseRequest request, CancellationToken ct) => purchases.PostAsync(id, request, ct);
+
+    /// <summary>The invoice's products whose cost is now above a selling price, with suggested prices (shown after posting).</summary>
+    [HttpGet("{id:int}/price-alerts")]
+    public async Task<IReadOnlyList<PriceAlertRow>> PriceAlerts(int id, [FromServices] IProductService products, CancellationToken ct)
+    {
+        var invoice = await purchases.GetAsync(id, ct);
+        return await products.PriceAlertsAsync(invoice.Lines.Select(l => l.ProductId).Distinct().ToList(), ct);
+    }
 
     [HttpPost("{id:int}/void")]
     [HasPermission(Permissions.PurchasesManage)]
