@@ -293,7 +293,22 @@ export const suppliersApi = {
     api<Supplier>(`/suppliers/${id}/old-balance`, { method: 'POST', body: input }),
 };
 
+/** A product of the invoice whose cost is now above a selling price, with suggested prices (cost only for those who see it). */
+export interface PriceAlert {
+  productId: number;
+  name: string;
+  sku: string | null;
+  cost: number | null;
+  retailPrice: number;
+  wholesalePrice: number;
+  minSalePrice: number;
+  suggestedRetail: number;
+  suggestedWholesale: number;
+  suggestedMin: number;
+}
+
 export const purchasesApi = {
+  priceAlerts: (id: number) => api<PriceAlert[]>(`/purchases/${id}/price-alerts`),
   list: (params: { page?: number; pageSize?: number; search?: string; supplierId?: number; status?: PurchaseStatus; from?: string; to?: string }) =>
     api<PagedResult<PurchaseListItem>>('/purchases', { query: params }),
   get: (id: number) => api<Purchase>(`/purchases/${id}`),

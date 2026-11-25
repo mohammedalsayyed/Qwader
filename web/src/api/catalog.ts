@@ -196,6 +196,9 @@ export const categoriesApi = {
 };
 
 export const productsApi = {
+  /** New selling prices for several products at once; returns how many changed. */
+  updatePrices: (items: { productId: number; retailPrice: number; wholesalePrice: number; minSalePrice: number }[]) =>
+    api<number>('/products/prices', { method: 'POST', body: { items } }),
   list: (params: ProductListParams, signal?: AbortSignal) =>
     api<PagedResult<ProductListItem>>('/products', { query: { ...params }, signal }),
   get: (id: number) => api<ProductDetail>(`/products/${id}`),

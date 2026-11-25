@@ -211,7 +211,7 @@ function PurchaseForm({ existing, initialSupplier }: { existing?: Purchase; init
       queryClient.setQueryData(['purchase', saved.id], saved);
       toast.success(posted ? `تم تعديل الفاتورة: أُلغيت ${existing!.number} وأصبحت ${saved.number}`
         : post ? `تم اعتماد الفاتورة ${saved.number} وإضافة البضاعة للمخزون` : `تم حفظ المسودة ${saved.number}`);
-      navigate(`/purchases/${saved.id}`, { replace: true });
+      navigate(`/purchases/${saved.id}`, { replace: true, state: post || posted ? { checkPrices: true } : undefined });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.fieldErrors) setErrors(Object.fromEntries(Object.entries(e.fieldErrors).map(([k, v]) => [k === 'paymentAccountId' || k === 'paidAmount' || k.startsWith('payments') ? 'paid' : k === 'supplierId' ? 'supplier' : k, v[0]])));

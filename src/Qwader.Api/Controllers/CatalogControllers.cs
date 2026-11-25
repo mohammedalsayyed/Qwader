@@ -62,6 +62,11 @@ public sealed class ProductsController(IProductService products, IProductExcelSe
     [HttpGet]
     public Task<PagedResult<ProductListItemDto>> List([FromQuery] ProductListRequest request, CancellationToken ct) => products.ListAsync(request, ct);
 
+    /// <summary>New selling prices for several products at once (after a purchase raised their cost).</summary>
+    [HttpPost("prices")]
+    [HasPermission(Permissions.ProductsEditPrices)]
+    public Task<int> UpdatePrices(UpdatePricesRequest request, CancellationToken ct) => products.UpdatePricesAsync(request, ct);
+
     [HttpGet("{id:int}")]
     public Task<ProductDetailDto> Get(int id, CancellationToken ct) => products.GetAsync(id, ct);
 

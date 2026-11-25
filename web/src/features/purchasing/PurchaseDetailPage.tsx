@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Ban, CheckCircle2, FilePen, NotebookPen, Pencil, Printer, Undo2 } from 'lucide-react';
 import { purchasesApi, type Purchase, type ReturnSettlement } from '@/api/stock';
@@ -20,6 +20,7 @@ import { parseNumber, round2 } from '@/lib/numbers';
 import { useLookups, useStoreSettings } from '@/lib/queries';
 import { InvoiceExpenses } from '@/components/finance/InvoiceExpenses';
 import { PurchaseStatusBadge } from './PurchasesPage';
+import { PriceAlerts } from './PriceAlerts';
 
 export function PurchaseDetailPage() {
   const id = Number(useParams().id);
@@ -33,6 +34,9 @@ export function PurchaseDetailPage() {
   const [returning, setReturning] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
+  // Right after posting (here or from the form), the products whose cost went above a selling price are shown at once.
+  const location = useLocation();
+  const [pricesOpen, setPricesOpen] = useState(!!(location.state as { checkPrices?: boolean } | null)?.checkPrices);
   const query = useQuery({ queryKey: ['purchase', id], queryFn: () => purchasesApi.get(id) });
 
   const refresh = (p: Purchase) => {
@@ -43,7 +47,12 @@ export function PurchaseDetailPage() {
 
   const post = useMutation({
     mutationFn: () => purchasesApi.post(id, postKey),
-    onSuccess: (p) => { refresh(p); toast.success('تم اعتماد الفاتورة وإضافة البضاعة للمخزون'); },
+    onSuccess: (p) => {
+      refresh(p);
+      void queryClient.invalidateQueries({ queryKey: ['purchase-price-alerts', id] });
+      setPricesOpen(true);
+      toast.success('تم اعتماد الفاتورة وإضافة البضاعة للمخزون');
+    },
     onError: (e) => toast.error(errorMessage(e)),
   });
 
@@ -80,6 +89,8 @@ export function PurchaseDetailPage() {
       {p.status === 'Voided' && (
         <p className="rounded-xl bg-red-50 p-3 text-sm text-danger">ألغيت في {formatDateTime(p.voidedAt)} — السبب: {p.voidReason}</p>
       )}
+
+      {p.status === 'Posted' && <PriceAlerts purchaseId={p.id} open={pricesOpen} onOpenChange={setPricesOpen} />}
 
       {manage && (
         <div className="flex flex-wrap gap-2 print:hidden">

@@ -187,8 +187,23 @@ public sealed class SaveProductRequestValidator : AbstractValidator<SaveProductR
     }
 }
 
+/// <summary>
+/// A product whose cost is now above one of its selling prices (after a purchase at a higher price), with prices that would
+/// clear it: the retail at the store's default margin, the wholesale at half that margin, the minimum at the cost — each one
+/// left as it is when it is already above the cost. <paramref name="Cost"/>: only for those who see costs.
+/// </summary>
+public sealed record PriceAlertRow(int ProductId, string Name, string? Sku, decimal? Cost, decimal RetailPrice, decimal WholesalePrice,
+    decimal MinSalePrice, decimal SuggestedRetail, decimal SuggestedWholesale, decimal SuggestedMin);
+
+public sealed record PriceUpdate(int ProductId, decimal RetailPrice, decimal WholesalePrice, decimal MinSalePrice);
+public sealed record UpdatePricesRequest(IReadOnlyList<PriceUpdate> Items);
+
 public interface IProductService
 {
+    /// <summary>Of these products, those whose cost is above their retail, wholesale or minimum price.</summary>
+    Task<IReadOnlyList<PriceAlertRow>> PriceAlertsAsync(IReadOnlyCollection<int> productIds, CancellationToken ct = default);
+    /// <summary>Sets the base unit's selling prices of several products at once («عرض الأسعار المقترحة» after a purchase).</summary>
+    Task<int> UpdatePricesAsync(UpdatePricesRequest request, CancellationToken ct = default);
     Task<PagedResult<ProductListItemDto>> ListAsync(ProductListRequest request, CancellationToken ct = default);
     Task<ProductDetailDto> GetAsync(int id, CancellationToken ct = default);
     Task<ProductDetailDto?> FindByCodeAsync(string code, CancellationToken ct = default);
