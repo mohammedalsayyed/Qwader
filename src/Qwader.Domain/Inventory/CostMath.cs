@@ -9,13 +9,20 @@ public static class CostMath
     public static decimal RoundCost(decimal value) => Math.Round(value, CostDecimals, MidpointRounding.AwayFromZero);
     public static decimal RoundMoney(decimal value) => Math.Round(value, MoneyDecimals, MidpointRounding.AwayFromZero);
 
-    /// <summary>Average after receiving <paramref name="inQuantity"/> units at <paramref name="inUnitCost"/>.</summary>
+    /// <summary>
+    /// The store's rule for the average cost: up to the next half shekel (21.3043 → 21.50, 21.50 stays). Only a cost typed in
+    /// «تصحيح التكلفة» is kept exactly as typed. Rounded to 4 decimals first so a division's noise does not push it up a step.
+    /// </summary>
+    public static decimal RoundUpToHalf(decimal value) => value <= 0 ? 0 : Math.Ceiling(RoundCost(value) * 2) / 2;
+
+    /// <summary>Average after receiving <paramref name="inQuantity"/> units at <paramref name="inUnitCost"/> (up to the next half shekel).</summary>
     public static decimal AverageAfterReceipt(decimal onHand, decimal currentAverage, decimal inQuantity, decimal inUnitCost)
     {
         if (inQuantity <= 0) throw new ArgumentOutOfRangeException(nameof(inQuantity));
         // A negative or zero balance has no meaningful value to blend with.
-        if (onHand <= 0) return RoundCost(inUnitCost);
-        return RoundCost((onHand * currentAverage + inQuantity * inUnitCost) / (onHand + inQuantity));
+        var exact = onHand <= 0 ? RoundCost(inUnitCost) : RoundCost((onHand * currentAverage + inQuantity * inUnitCost) / (onHand + inQuantity));
+        // Goods coming back at the average (a return, a voided sale) leave it as it is — also a cost corrected by hand.
+        return exact == currentAverage ? currentAverage : RoundUpToHalf(exact);
     }
 
     /// <summary>
@@ -27,7 +34,9 @@ public static class CostMath
         var remaining = onHand - outQuantity;
         if (remaining <= 0) return currentAverage;
         var value = onHand * currentAverage - outQuantity * outUnitCost;
-        return value <= 0 ? 0 : RoundCost(value / remaining);
+        if (value <= 0) return 0;
+        var exact = RoundCost(value / remaining);
+        return exact == currentAverage ? currentAverage : RoundUpToHalf(exact);
     }
 
     /// <summary>Selling price that yields <paramref name="marginPercent"/> markup on cost, rounded up to 0.5 ₪.</summary>

@@ -467,14 +467,16 @@ public sealed class SalesTests(ApiFactory factory)
     }
 
     [Fact]
-    public async Task The_average_cost_keeps_four_places_so_stock_value_is_exact()
+    public async Task The_average_cost_goes_up_to_the_next_half_shekel_unless_corrected_by_hand()
     {
         var admin = await factory.LoginAsync();
         var product = await admin.CreateProductAsync(retail: 25, openingQuantity: 9, openingCost: 20);
         await admin.PurchaseAsync((await admin.CreateSupplierAsync()).Id, [new PurchaseLineInput(product.Id, 5, 22)]);
         var after = await admin.GetProductAsync(product.Id);
-        after.AverageCost.Should().Be(20.7143m, "290 / 14, not rounded to 20.71");
-        after.StockValue.Should().Be(290m);
+        after.AverageCost.Should().Be(21m, "290 / 14 = 20.7143, up to the next half shekel");
+        after.StockValue.Should().Be(294m);
+        await admin.PurchaseAsync((await admin.CreateSupplierAsync()).Id, [new PurchaseLineInput(product.Id, 1, 22)]);
+        (await admin.GetProductAsync(product.Id)).AverageCost.Should().Be(21.5m, "(14 × 21 + 22) / 15 = 21.0667");
     }
 
     [Fact]

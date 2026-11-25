@@ -42,6 +42,13 @@ public sealed class CostMathTests
     }
 
     [Fact]
-    public void No_discount_means_zero_shares() =>
-        CostMath.AllocateDiscount([5m, 7m], 0).Should().AllBeEquivalentTo(0m);
+    public void The_average_goes_up_to_the_next_half_shekel_when_it_changes()
+    {
+        CostMath.AverageAfterReceipt(9, 20, 5, 22).Should().Be(21);        // 20.7143
+        CostMath.AverageAfterReceipt(10, 21, 10, 21.6m).Should().Be(21.5m); // 21.3
+        CostMath.AverageAfterReceipt(10, 21.5m, 10, 21.5m).Should().Be(21.5m);
+        CostMath.AverageAfterReceipt(10, 7.25m, 2, 7.25m).Should().Be(7.25m, "goods back at a hand-corrected average leave it");
+        CostMath.AverageAfterReceipt(0, 0, 3, 4.2m).Should().Be(4.5m);
+    }
 }
+
