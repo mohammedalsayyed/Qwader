@@ -36,8 +36,13 @@ public sealed record SaveEmployeeRequest(int UserId, string? Phone, PayPeriod Pa
 public sealed record CreatePayrollEntryRequest(
     Guid IdempotencyKey, PayrollEntryType Type, decimal Amount, DateOnly? Date, int? FinancialAccountId, string? Notes);
 
+/// <param name="AdvanceDeduction">
+/// How much of the open advances this salary takes: null = all of them (as before), 0 = none (the full salary is paid), or part.
+/// What is not taken waits for the next settlement.
+/// </param>
 public sealed record CreateSettlementRequest(
-    Guid IdempotencyKey, DateOnly PeriodFrom, DateOnly PeriodTo, decimal Units, int? FinancialAccountId, string? Notes);
+    Guid IdempotencyKey, DateOnly PeriodFrom, DateOnly PeriodTo, decimal Units, int? FinancialAccountId, string? Notes,
+    decimal? AdvanceDeduction = null);
 
 public interface IPayrollService
 {
@@ -88,6 +93,7 @@ public sealed class CreateSettlementRequestValidator : AbstractValidator<CreateS
         RuleFor(x => x.PeriodTo).GreaterThanOrEqualTo(x => x.PeriodFrom).WithMessage("نهاية الفترة قبل بدايتها");
         RuleFor(x => x.Units).GreaterThan(0).WithMessage("أدخل عدد الأيام أو الأسابيع أو الأشهر").LessThanOrEqualTo(400);
         RuleFor(x => x.Notes).MaximumLength(300);
+        RuleFor(x => x.AdvanceDeduction).GreaterThanOrEqualTo(0).When(x => x.AdvanceDeduction is not null).WithMessage("مبلغ خصم السلفة لا يكون سالبًا");
     }
 }
 
@@ -328,9 +334,14 @@ public sealed class PayrollService(
         var bonuses = open.Where(e => e.Type == PayrollEntryType.Bonus).Sum(e => e.Amount);
         var deductions = open.Where(e => e.Type == PayrollEntryType.Deduction).Sum(e => e.Amount);
         var advances = open.Where(e => e.Type == PayrollEntryType.Advance).Sum(e => e.Amount);
-        var due = gross + bonuses - deductions - advances;
+        // The store decides how much of the advances this salary takes: all (default), none, or part.
+        var deducted = request.AdvanceDeduction ?? advances;
+        if (deducted > advances)
+            throw new ValidationFailedException("advanceDeduction", $"خصم السلفة ({deducted:0.##}) أكبر من السلف المفتوحة ({advances:0.##})");
+        var due = gross + bonuses - deductions - deducted;
         var net = Math.Max(0, due);
-        var carried = due < 0 ? -due : 0;
+        // What is left of the advances (not taken, or more than the salary) waits for the next settlement.
+        var carried = advances - deducted + (due < 0 ? -due : 0);
         // Advances were paid earlier and owed by the employee; the part this salary covers becomes a salary expense now.
         // (Advances recorded before this rule were already counted as an expense when paid.)
         var advanceExpense = Math.Max(0, open.Where(e => e.Type == PayrollEntryType.Advance && e.ExpenseId == null).Sum(e => e.Amount) - carried);
@@ -378,7 +389,7 @@ public sealed class PayrollService(
             });
 
         audit.Log("Payroll.Settle", "PayrollSettlement", settlement.Id.ToString(), null,
-            new { settlement.Number, employee.User.FullName, gross, bonuses, deductions, advances, net, carried });
+            new { settlement.Number, employee.User.FullName, gross, bonuses, deductions, advances, deducted, net, carried });
         idempotency.Record(request.IdempotencyKey, operation, "PayrollSettlement", settlement.Id.ToString());
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -387,8 +398,8 @@ public sealed class PayrollService(
         var lines = new List<string> { $"الفترة: {request.PeriodFrom:yyyy/MM/dd} — {request.PeriodTo:yyyy/MM/dd}", $"الراتب: {PushMessage.Money(gross)}" };
         if (bonuses > 0) lines.Add($"مكافآت: + {PushMessage.Money(bonuses)}");
         if (deductions > 0) lines.Add($"خصومات: − {PushMessage.Money(deductions)}");
-        if (advances > 0) lines.Add($"سلف: − {PushMessage.Money(advances)}");
-        if (carried > 0) lines.Add($"باقي سلف تُخصم من المخالصة القادمة: {PushMessage.Money(carried)}");
+        if (advances - carried > 0) lines.Add($"سلف: − {PushMessage.Money(advances - carried)}");
+        if (carried > 0) lines.Add($"باقي سلف تُخصم لاحقًا: {PushMessage.Money(carried)}");
         push.NotifyUser(employee.UserId, new PushMessage(
             net > 0 ? $"تم صرف راتبك — {PushMessage.Money(net)}" : "تمت مخالصة راتبك",
             string.Join('\n', lines), "/account/payroll", $"salary-{settlement.Id}"));

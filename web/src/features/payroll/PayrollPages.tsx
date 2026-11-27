@@ -223,8 +223,8 @@ function History({ employee: e, manage }: { employee: Employee; manage: boolean 
                   <Line label={`${s.units} ${PAY_PERIOD[s.payPeriod].unit} × ${formatMoney(s.rate)}`} value={s.gross} />
                   {s.bonuses > 0 && <Line label="+ مكافآت" value={s.bonuses} />}
                   {s.deductions > 0 && <Line label="− خصومات" value={s.deductions} />}
-                  {s.advances > 0 && <Line label="− سلف" value={s.advances} />}
-                  {s.carriedAdvance > 0 && <Line label="باقي سلف للمخالصة القادمة" value={s.carriedAdvance} />}
+                  {s.advances - s.carriedAdvance > 0 && <Line label="− سلف مخصومة" value={round2(s.advances - s.carriedAdvance)} />}
+                  {s.carriedAdvance > 0 && <Line label="باقي سلف تُخصم لاحقًا" value={s.carriedAdvance} />}
                 </dl>
                 {s.notes && <p className="mt-1 text-sm text-muted">{s.notes}</p>}
                 {s.status === 'Voided' && s.voidReason && <p className="mt-1 text-xs text-danger">سبب الإلغاء: {s.voidReason}</p>}
@@ -443,11 +443,17 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
   const [accountId, setAccountId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string>();
+  // How much of the open advances this salary takes: all of them, none (the full salary is paid), or a part typed here.
+  const [advanceMode, setAdvanceMode] = useState<'all' | 'none' | 'part'>('all');
+  const [advancePart, setAdvancePart] = useState('');
 
   const u = parseNumber(units) ?? 0;
   const gross = round2((Number.isNaN(u) ? 0 : u) * e.rate);
-  const due = round2(gross + e.openBonuses - e.openDeductions - e.openAdvances);
+  const part = parseNumber(advancePart);
+  const deducted = advanceMode === 'all' ? e.openAdvances : advanceMode === 'none' ? 0 : part == null || Number.isNaN(part) ? 0 : part;
+  const due = round2(gross + e.openBonuses - e.openDeductions - deducted);
   const net = Math.max(0, due);
+  const leftAdvance = round2(e.openAdvances - deducted + (due < 0 ? -due : 0));
 
   const changeDates = (f: string, t: string) => {
     setFrom(f);
@@ -459,7 +465,8 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
   const unitWord = e.payPeriod === 'Daily' ? 'الأيام' : e.payPeriod === 'Weekly' ? 'الأسابيع' : 'الأشهر';
 
   const save = useMutation({
-    mutationFn: () => payrollApi.settle(e.id, { idempotencyKey: key, periodFrom: from, periodTo: to, units: u, financialAccountId: net > 0 ? accountId : null, notes: notes.trim() || null }),
+    mutationFn: () => payrollApi.settle(e.id, { idempotencyKey: key, periodFrom: from, periodTo: to, units: u, financialAccountId: net > 0 ? accountId : null, notes: notes.trim() || null,
+      advanceDeduction: e.openAdvances > 0 ? deducted : null }),
     onSuccess: (data) => {
       refresh(data);
       toast.success(net > 0 ? `تم صرف راتب ${formatMoney(net)} لـ ${e.fullName}` : 'تم تسجيل المخالصة');
@@ -472,6 +479,8 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
     if (!from || !to || to < from) return setError('حدد الفترة');
     if (!u || Number.isNaN(u) || u <= 0) return setError(`أدخل عدد ${unitWord}`);
     if (u > most + 0.001) return setError(`عدد ${unitWord} (${u}) أكبر مما في الفترة (${most})`);
+    if (advanceMode === 'part' && (part == null || Number.isNaN(part) || part < 0)) return setError('اكتب مبلغ السلفة الذي يُخصم');
+    if (deducted > e.openAdvances + 0.001) return setError(`خصم السلفة أكبر من السلف المفتوحة (${formatMoney(e.openAdvances)})`);
     if (net > 0 && !accountId) return setError('اختر الحساب الذي يُصرف منه الراتب');
     setError(undefined);
     save.mutate();
@@ -504,11 +513,36 @@ function SettleSheet({ employee: e, onClose }: { employee: Employee; onClose: ()
             <Line label="الراتب" value={gross} />
             {e.openBonuses > 0 && <Line label="+ مكافآت" value={e.openBonuses} />}
             {e.openDeductions > 0 && <Line label="− خصومات" value={e.openDeductions} />}
-            {e.openAdvances > 0 && <Line label="− سلف" value={e.openAdvances} />}
+            {deducted > 0 && <Line label="− سلف مخصومة" value={deducted} />}
             <div className="flex justify-between border-t border-line pt-1 font-bold"><dt>الصافي</dt><dd className="tabular">{formatMoney(net)}</dd></div>
           </dl>
-          {due < 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">السلف أكبر من الراتب: لا يُصرف شيء، ويبقى {formatMoney(-due)} سلفة تُخصم من المخالصة القادمة.</p>}
+          {due < 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-800">الخصم أكبر من الراتب: لا يُصرف شيء، والباقي يبقى سلفة تُخصم لاحقًا.</p>}
+          {e.openAdvances > 0 && leftAdvance > 0 && (
+            <p className="mt-2 text-xs text-muted">يبقى على العامل {formatMoney(leftAdvance)} سلفة تُخصم في مخالصة لاحقة.</p>
+          )}
         </Card>
+
+        {e.openAdvances > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">السلف المفتوحة {formatMoney(e.openAdvances)} — كم تخصم منها الآن؟</p>
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="خصم السلفة">
+              {([['all', 'كلها'], ['part', 'جزء منها'], ['none', 'بدون خصم']] as const).map(([v, label]) => (
+                <button key={v} type="button" role="radio" aria-checked={advanceMode === v}
+                  onClick={() => { setAdvanceMode(v); setError(undefined); }}
+                  className={cn('h-11 rounded-xl border text-sm font-semibold', advanceMode === v ? 'border-brand-700 bg-brand-50 text-brand-800' : 'border-line')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {advanceMode === 'part' && (
+              <Field label="المبلغ الذي يُخصم من السلفة" hint={`من 0 حتى ${formatMoney(e.openAdvances)}`}>
+                {(id, d) => <Input id={id} aria-describedby={d} inputMode="decimal" className="ltr" value={advancePart} autoFocus
+                  onChange={(ev) => { setAdvancePart(ev.target.value); setError(undefined); }} />}
+              </Field>
+            )}
+            {advanceMode === 'none' && <p className="text-xs text-muted">يُصرف الراتب كاملًا، وتبقى السلف كلها لمخالصة لاحقة.</p>}
+          </div>
+        )}
 
         {net > 0 && <AccountChips accounts={accounts} value={accountId} onChange={(id) => { setAccountId(id); setError(undefined); }} label="يُصرف من حساب" />}
         <Field label="ملاحظات">{(id) => <TextArea id={id} rows={2} value={notes} onChange={(ev) => setNotes(ev.target.value)} />}</Field>

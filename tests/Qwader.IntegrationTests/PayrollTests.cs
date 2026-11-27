@@ -35,6 +35,41 @@ public sealed class PayrollTests(ApiFactory factory)
         return await db.FinancialAccounts.Where(a => a.Id == accountId).Select(a => a.CurrentBalance).FirstAsync();
     }
 
+    /// <summary>The store decides at each settlement how much of the advances to take: all, none (the full salary), or a part.</summary>
+    [Fact]
+    public async Task A_settlement_takes_all_none_or_part_of_the_advances()
+    {
+        var admin = await factory.LoginAsync();
+        var (userId, _) = await NewUserAsync(admin);
+        var cash = (await admin.LookupsAsync()).Accounts.First(a => a.Type == FinancialAccountType.Cash).Id;
+        await admin.FundAsync(cash, 10_000);
+        var employee = await (await admin.PostAsJsonAsync("/api/payroll/employees", new SaveEmployeeRequest(userId, null, PayPeriod.Monthly, 3000, null, null)))
+            .ReadAsync<EmployeeDto>();
+        (await admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/entries",
+            new CreatePayrollEntryRequest(Guid.NewGuid(), PayrollEntryType.Advance, 800, null, cash, null))).EnsureSuccessStatusCode();
+        Task<HttpResponseMessage> Settle(int month, decimal? take) => admin.PostAsJsonAsync($"/api/payroll/employees/{employee.Id}/settlements",
+            new CreateSettlementRequest(Guid.NewGuid(), new DateOnly(2025, month, 1), new DateOnly(2025, month, 28), 1, cash, null, take));
+
+        (await Settle(1, 900)).StatusCode.Should().Be((HttpStatusCode)400, "more than the open advances");
+        (await Settle(1, -1)).StatusCode.Should().Be((HttpStatusCode)400);
+
+        // None: the full salary is paid and the whole advance waits.
+        var full = await (await Settle(1, 0)).ReadAsync<EmployeeDto>();
+        full.Settlements.Single().Net.Should().Be(3000);
+        full.Settlements.Single().CarriedAdvance.Should().Be(800);
+        full.OpenAdvances.Should().Be(800);
+
+        // A part: 300 now, 500 left.
+        var part = await (await Settle(2, 300)).ReadAsync<EmployeeDto>();
+        part.Settlements.First(x => x.PeriodFrom.Month == 2).Net.Should().Be(2700);
+        part.OpenAdvances.Should().Be(500);
+
+        // Left out (null) = all that is left, as before.
+        var all = await (await Settle(3, null)).ReadAsync<EmployeeDto>();
+        all.Settlements.First(x => x.PeriodFrom.Month == 3).Net.Should().Be(2500);
+        all.OpenAdvances.Should().Be(0);
+    }
+
     [Fact]
     public async Task Advances_deductions_and_bonuses_settle_into_one_salary_paid_from_an_account()
     {
