@@ -10,7 +10,7 @@ public interface ISupplierStatementExcel
 {
     /// <summary>
     /// The supplier's statement as an Excel workbook: «الملخص» (bought, returned, paid, still owed), «كشف الحساب» (every entry
-    /// with its running balance), «الفواتير» (each purchase invoice in its own section with its lines) and «الدفعات».
+    /// with its running balance), «فواتير الشراء» (the list, then each invoice in its own section: صنف | عدد | سعر | إجمالي) and «الدفعات».
     /// </summary>
     Task<(byte[] File, string FileName)> BuildAsync(int supplierId, DateOnly? from, DateOnly? to, CancellationToken ct = default);
 }
@@ -65,7 +65,7 @@ public sealed class SupplierStatementExcel(IAppDbContext db, ISupplierService su
         if (refunded != 0) summary.Add(ExcelRow.Data("استرداد من المورد", refunded));
         summary.Add(ExcelRow.Total(closing >= 0 ? "الباقي له علينا" : "لنا عنده (دفعنا أكثر)", Math.Abs(closing)));
         summary.Add(ExcelRow.Blank);
-        summary.Add(ExcelRow.Note("الفواتير الملغاة لا تُحسب. التفاصيل في الأوراق: «كشف الحساب»، «الفواتير» (كل فاتورة في قسم)، «الدفعات»."));
+        summary.Add(ExcelRow.Note("الفواتير الملغاة لا تُحسب. التفاصيل في الأوراق: «فواتير الشراء» (قائمة الفواتير ثم كل فاتورة في قسم)، «كشف الحساب»، «الدفعات»."));
 
         // ---- the statement
         var ledger = new List<ExcelRow>
@@ -95,8 +95,19 @@ public sealed class SupplierStatementExcel(IAppDbContext db, ISupplierService su
         var returns = await db.PurchaseReturns.AsNoTracking().Where(r => r.SupplierId == supplierId)
             .Select(r => new { r.PurchaseInvoiceId, r.Number, r.Date, r.Total }).ToListAsync(ct);
 
-        var invoiceRows = new List<ExcelRow>();
+        // «فواتير الشراء»: the list of the period's invoices, then each invoice in its own section: صنف | عدد | سعر | إجمالي.
+        var posted = invoices.Where(i => i.Status != PurchaseStatus.Voided).ToList();
+        var invoiceRows = new List<ExcelRow> { ExcelRow.Title($"فواتير الشراء من {supplier.Name} — {period}") };
         if (invoices.Count == 0) invoiceRows.Add(ExcelRow.Note("لا توجد فواتير شراء في هذه الفترة."));
+        else
+        {
+            invoiceRows.Add(ExcelRow.Header("الفاتورة", "التاريخ", "رقم فاتورة المورد", "الإجمالي", "مدفوع عند الشراء"));
+            invoiceRows.AddRange(invoices.Select(i => i.Status == PurchaseStatus.Voided
+                ? ExcelRow.Data($"{i.Number} (ملغاة)", Local(i.Date), i.SupplierInvoiceNo, null, null)
+                : ExcelRow.Data(i.Number, Local(i.Date), i.SupplierInvoiceNo, i.Total, i.PaidAmount == 0 ? null : i.PaidAmount)));
+            invoiceRows.Add(ExcelRow.Total($"المجموع ({posted.Count} فاتورة)", null, null, posted.Sum(i => i.Total), posted.Sum(i => i.PaidAmount)));
+            invoiceRows.Add(ExcelRow.Blank);
+        }
         foreach (var inv in invoices)
         {
             var voided = inv.Status == PurchaseStatus.Voided;
@@ -104,21 +115,20 @@ public sealed class SupplierStatementExcel(IAppDbContext db, ISupplierService su
                 + (string.IsNullOrWhiteSpace(inv.SupplierInvoiceNo) ? "" : $" — رقم فاتورة المورد {inv.SupplierInvoiceNo}")
                 + (voided ? " — ملغاة" : "")));
             if (voided) invoiceRows.Add(ExcelRow.Note($"ملغاة ولا تُحسب في المجاميع{(string.IsNullOrWhiteSpace(inv.VoidReason) ? "" : $": {inv.VoidReason}")}"));
-            invoiceRows.Add(ExcelRow.Header("المنتج", "الكود", "الكمية", "الوحدة", "سعر الوحدة", "الخصم", "الإجمالي", "المُرجَع"));
-            invoiceRows.AddRange(inv.Lines.Select(l => ExcelRow.Data(l.Name, l.Sku, l.Quantity, l.Unit, l.UnitCost,
-                l.LineDiscount == 0 ? null : l.LineDiscount, l.LineTotal, l.ReturnedQuantity == 0 ? null : l.ReturnedQuantity)));
-            invoiceRows.Add(ExcelRow.Total("المجموع", null, inv.Lines.Sum(l => l.Quantity), null, null, null, inv.Subtotal, null));
-            if (inv.Discount != 0) invoiceRows.Add(ExcelRow.Data(inv.DiscountIsIncome ? "خصم على الفاتورة (خصم مكتسب)" : "خصم على الفاتورة", null, null, null, null, null, -inv.Discount));
-            invoiceRows.Add(ExcelRow.Total("إجمالي الفاتورة", null, null, null, null, null, inv.Total));
+            invoiceRows.Add(ExcelRow.Header("الصنف", "العدد", "السعر", "الإجمالي"));
+            invoiceRows.AddRange(inv.Lines.Select(l => ExcelRow.Data(
+                l.Name + (string.IsNullOrWhiteSpace(l.Sku) ? "" : $" ({l.Sku})") + $" — {l.Unit}" + (l.LineDiscount == 0 ? "" : $" — خصم {l.LineDiscount:0.##}"),
+                l.Quantity, l.UnitCost, l.LineTotal)));
+            invoiceRows.Add(ExcelRow.Total("المجموع", inv.Lines.Sum(l => l.Quantity), null, inv.Subtotal));
+            if (inv.Discount != 0) invoiceRows.Add(ExcelRow.Data(inv.DiscountIsIncome ? "خصم على الفاتورة (خصم مكتسب)" : "خصم على الفاتورة", null, null, -inv.Discount));
+            if (inv.Discount != 0) invoiceRows.Add(ExcelRow.Total("إجمالي الفاتورة", null, null, inv.Total));
             var payments = inv.Payments.Count > 0 ? inv.Payments.Select(x => (x.Account, x.Amount)).ToList()
                 : inv.PaidAmount > 0 ? [(inv.OldAccount ?? "—", inv.PaidAmount)] : new List<(string Account, decimal Amount)>();
-            foreach (var (account, amount) in payments) invoiceRows.Add(ExcelRow.Data($"مدفوع عند الشراء من {account}", null, null, null, null, null, amount));
+            foreach (var (account, amount) in payments) invoiceRows.Add(ExcelRow.Data($"مدفوع عند الشراء من {account}", null, null, amount));
             foreach (var r in returns.Where(r => r.PurchaseInvoiceId == inv.Id).OrderBy(r => r.Date))
-                invoiceRows.Add(ExcelRow.Data($"مردود {r.Number} بتاريخ {Local(r.Date):yyyy-MM-dd}", null, null, null, null, null, -r.Total));
+                invoiceRows.Add(ExcelRow.Data($"مردود {r.Number} بتاريخ {Local(r.Date):yyyy-MM-dd}", null, null, -r.Total));
             invoiceRows.Add(ExcelRow.Blank);
         }
-        var posted = invoices.Where(i => i.Status != PurchaseStatus.Voided).ToList();
-        if (posted.Count > 0) invoiceRows.Add(ExcelRow.Total($"مجموع الفواتير المعتمدة ({posted.Count})", null, null, null, null, null, posted.Sum(i => i.Total)));
 
         // ---- payments: vouchers to the supplier and what was paid when buying
         var vouchers = await db.PaymentVouchers.AsNoTracking()
@@ -143,8 +153,8 @@ public sealed class SupplierStatementExcel(IAppDbContext db, ISupplierService su
         var file = excel.WriteSheets(
         [
             new ExcelSheet("الملخص", [34, 22], summary),
+            new ExcelSheet("فواتير الشراء", [44, 16, 18, 16, 18], invoiceRows),
             new ExcelSheet("كشف الحساب", [17, 18, 20, 36, 16, 16, 14], ledger),
-            new ExcelSheet("الفواتير", [34, 14, 10, 10, 12, 10, 14, 10], invoiceRows),
             new ExcelSheet("الدفعات", [17, 20, 18, 20, 14, 34], paymentRows),
         ]);
         return (file, $"supplier-{supplier.Code}-{end:yyyyMMdd}.xlsx");
