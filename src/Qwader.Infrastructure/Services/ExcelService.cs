@@ -7,6 +7,79 @@ namespace Qwader.Infrastructure.Services;
 /// <summary>Right-to-left Arabic workbooks with a bold, frozen header row.</summary>
 public sealed class ExcelService : IExcelService
 {
+    private static void SetValue(IXLCell cell, object? value)
+    {
+        switch (value)
+        {
+            case null: break;
+            case decimal d: cell.Value = d; cell.Style.NumberFormat.Format = d == decimal.Truncate(d) ? "#,##0" : "#,##0.00"; break;
+            case int i: cell.Value = i; break;
+            case double dbl: cell.Value = dbl; break;
+            case DateTime dt: cell.Value = dt; cell.Style.DateFormat.Format = dt.TimeOfDay == TimeSpan.Zero ? "yyyy-mm-dd" : "yyyy-mm-dd hh:mm"; break;
+            case DateOnly day: cell.Value = day.ToDateTime(TimeOnly.MinValue); cell.Style.DateFormat.Format = "yyyy-mm-dd"; break;
+            case string s: cell.SetValue(s); cell.Style.NumberFormat.Format = "@"; break;
+            default: cell.Value = Convert.ToString(value, CultureInfo.InvariantCulture); break;
+        }
+    }
+
+    public byte[] WriteSheets(IReadOnlyList<ExcelSheet> sheets)
+    {
+        using var workbook = new XLWorkbook();
+        foreach (var spec in sheets)
+        {
+            var sheet = workbook.Worksheets.Add(spec.Name);
+            sheet.RightToLeft = true;
+            var width = Math.Max(1, spec.Widths.Count);
+            for (var c = 0; c < spec.Widths.Count; c++) sheet.Column(c + 1).Width = spec.Widths[c];
+            var r = 1;
+            foreach (var row in spec.Rows)
+            {
+                if (row.Kind is ExcelRowKind.Title or ExcelRowKind.Note)
+                {
+                    var range = sheet.Range(r, 1, r, width).Merge();
+                    SetValue(range.FirstCell(), row.Cells.FirstOrDefault());
+                    range.Style.Alignment.WrapText = true;
+                    if (row.Kind == ExcelRowKind.Title)
+                    {
+                        range.Style.Font.Bold = true;
+                        range.Style.Font.FontSize = 13;
+                        range.Style.Fill.BackgroundColor = XLColor.FromHtml("#0B3B6F");
+                        range.Style.Font.FontColor = XLColor.White;
+                        sheet.Row(r).Height = 22;
+                    }
+                    else range.Style.Font.FontColor = XLColor.FromHtml("#555555");
+                }
+                else
+                {
+                    for (var c = 0; c < row.Cells.Count && c < width; c++) SetValue(sheet.Cell(r, c + 1), row.Cells[c]);
+                    if (row.Kind != ExcelRowKind.Blank && row.Cells.Count > 0)
+                    {
+                        var range = sheet.Range(r, 1, r, width);
+                        if (row.Kind == ExcelRowKind.Header)
+                        {
+                            range.Style.Font.Bold = true;
+                            range.Style.Fill.BackgroundColor = XLColor.FromHtml("#D5EEEB");
+                        }
+                        else if (row.Kind == ExcelRowKind.Total)
+                        {
+                            range.Style.Font.Bold = true;
+                            range.Style.Fill.BackgroundColor = XLColor.FromHtml("#F1F3F5");
+                            range.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+                        }
+                    }
+                }
+                r++;
+            }
+            sheet.PageSetup.PageOrientation = XLPageOrientation.Portrait;
+            sheet.PageSetup.PaperSize = XLPaperSize.A4Paper;
+            sheet.PageSetup.FitToPages(1, 0);
+        }
+        workbook.Worksheet(1).SetTabActive();
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] Write(string sheetName, IReadOnlyList<ExcelColumn> columns, IEnumerable<object?[]> rows, string? listsSheet = null)
     {
         using var workbook = new XLWorkbook();
