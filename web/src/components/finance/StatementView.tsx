@@ -26,6 +26,7 @@ export function StatementView({
   balanceHint,
   increases = 'credit',
   exportExcel,
+  exportExcelSheet,
 }: {
   queryKey: unknown[];
   load: (from?: string, to?: string) => Promise<Statement>;
@@ -36,8 +37,15 @@ export function StatementView({
   increases?: 'debit' | 'credit';
   /** «Excel»: the statement of the period chosen as a workbook. */
   exportExcel?: (from?: string, to?: string) => Promise<void>;
+  /** A second file: everything on one printed sheet under the store's name. */
+  exportExcelSheet?: (from?: string, to?: string) => Promise<void>;
 }) {
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'book' | 'sheet' | null>(null);
+  const run = async (kind: 'book' | 'sheet', exporter: (from?: string, to?: string) => Promise<void>) => {
+    setExporting(kind);
+    setExportError(null);
+    try { await exporter(range.from, range.to); } catch (e) { setExportError(errorMessage(e)); } finally { setExporting(null); }
+  };
   const [exportError, setExportError] = useState<string | null>(null);
   const [range, setRange] = useState<DateRangeValue>({ preset: 'all' });
   const query = useQuery({
@@ -50,12 +58,19 @@ export function StatementView({
     <div className="space-y-3">
       <div className="space-y-2 print:hidden">
         <DateRangeFilter value={range} onChange={setRange} />
-        {exportExcel && (
-          <Button variant="outline" size="sm" loading={exporting} onClick={async () => {
-            setExporting(true);
-            setExportError(null);
-            try { await exportExcel(range.from, range.to); } catch (e) { setExportError(errorMessage(e)); } finally { setExporting(false); }
-          }}><FileSpreadsheet className="size-4" /> تصدير Excel</Button>
+        {(exportExcel || exportExcelSheet) && (
+          <div className="flex flex-wrap gap-2">
+            {exportExcelSheet && (
+              <Button variant="outline" size="sm" loading={exporting === 'sheet'} onClick={() => void run('sheet', exportExcelSheet)}>
+                <FileSpreadsheet className="size-4" /> Excel (ورقة واحدة للطباعة)
+              </Button>
+            )}
+            {exportExcel && (
+              <Button variant="outline" size="sm" loading={exporting === 'book'} onClick={() => void run('book', exportExcel)}>
+                <FileSpreadsheet className="size-4" /> Excel (عدة أوراق)
+              </Button>
+            )}
+          </div>
         )}
         {exportError && <p role="alert" className="text-sm text-danger">{exportError}</p>}
       </div>

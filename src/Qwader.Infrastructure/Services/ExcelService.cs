@@ -22,6 +22,11 @@ public sealed class ExcelService : IExcelService
         }
     }
 
+    private static readonly XLColor Navy = XLColor.FromHtml("#0B3B6F");
+    private static readonly XLColor Teal = XLColor.FromHtml("#D5EEEB");
+    private static readonly XLColor Stripe = XLColor.FromHtml("#F7F9FB");
+    private static readonly XLColor Line = XLColor.FromHtml("#C9D2DC");
+
     public byte[] WriteSheets(IReadOnlyList<ExcelSheet> sheets)
     {
         using var workbook = new XLWorkbook();
@@ -32,47 +37,110 @@ public sealed class ExcelService : IExcelService
             var width = Math.Max(1, spec.Widths.Count);
             for (var c = 0; c < spec.Widths.Count; c++) sheet.Column(c + 1).Width = spec.Widths[c];
             var r = 1;
+            var striped = 0;
             foreach (var row in spec.Rows)
             {
-                if (row.Kind is ExcelRowKind.Title or ExcelRowKind.Note)
+                if (row.Kind is ExcelRowKind.Title or ExcelRowKind.Note or ExcelRowKind.Brand or ExcelRowKind.Subtitle or ExcelRowKind.Section)
                 {
                     var range = sheet.Range(r, 1, r, width).Merge();
                     SetValue(range.FirstCell(), row.Cells.FirstOrDefault());
                     range.Style.Alignment.WrapText = true;
-                    if (row.Kind == ExcelRowKind.Title)
+                    range.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    switch (row.Kind)
                     {
-                        range.Style.Font.Bold = true;
-                        range.Style.Font.FontSize = 13;
-                        range.Style.Fill.BackgroundColor = XLColor.FromHtml("#0B3B6F");
-                        range.Style.Font.FontColor = XLColor.White;
-                        sheet.Row(r).Height = 22;
+                        case ExcelRowKind.Brand:
+                            range.Style.Font.Bold = true;
+                            range.Style.Font.FontSize = 22;
+                            range.Style.Font.FontColor = Navy;
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                            sheet.Row(r).Height = 36;
+                            break;
+                        case ExcelRowKind.Subtitle:
+                            range.Style.Font.FontColor = XLColor.FromHtml("#4B5563");
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                            break;
+                        case ExcelRowKind.Section:
+                            range.Style.Font.Bold = true;
+                            range.Style.Font.FontSize = 13;
+                            range.Style.Font.FontColor = Navy;
+                            range.Style.Border.BottomBorder = XLBorderStyleValues.Medium;
+                            range.Style.Border.BottomBorderColor = Navy;
+                            sheet.Row(r).Height = 24;
+                            break;
+                        case ExcelRowKind.Title:
+                            range.Style.Font.Bold = true;
+                            range.Style.Font.FontSize = spec.Report ? 12 : 13;
+                            range.Style.Fill.BackgroundColor = Navy;
+                            range.Style.Font.FontColor = XLColor.White;
+                            sheet.Row(r).Height = 22;
+                            break;
+                        default:
+                            range.Style.Font.FontColor = XLColor.FromHtml("#6B7280");
+                            range.Style.Font.Italic = spec.Report;
+                            break;
                     }
-                    else range.Style.Font.FontColor = XLColor.FromHtml("#555555");
+                    striped = 0;
                 }
                 else
                 {
-                    for (var c = 0; c < row.Cells.Count && c < width; c++) SetValue(sheet.Cell(r, c + 1), row.Cells[c]);
-                    if (row.Kind != ExcelRowKind.Blank && row.Cells.Count > 0)
+                    var count = Math.Min(row.Cells.Count, width);
+                    for (var c = 0; c < count; c++) SetValue(sheet.Cell(r, c + 1), row.Cells[c]);
+                    if (row.Kind != ExcelRowKind.Blank && count > 0)
                     {
-                        var range = sheet.Range(r, 1, r, width);
-                        if (row.Kind == ExcelRowKind.Header)
+                        // A table row spans the columns it fills (a report's tables have different widths) or the whole sheet.
+                        var range = sheet.Range(r, 1, r, spec.Report ? count : width);
+                        switch (row.Kind)
                         {
-                            range.Style.Font.Bold = true;
-                            range.Style.Fill.BackgroundColor = XLColor.FromHtml("#D5EEEB");
+                            case ExcelRowKind.Header:
+                                range.Style.Font.Bold = true;
+                                range.Style.Fill.BackgroundColor = Teal;
+                                range.Style.Font.FontColor = Navy;
+                                striped = 0;
+                                break;
+                            case ExcelRowKind.Total:
+                                range.Style.Font.Bold = true;
+                                range.Style.Fill.BackgroundColor = XLColor.FromHtml("#EEF1F5");
+                                range.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+                                break;
+                            case ExcelRowKind.Highlight:
+                                range.Style.Font.Bold = true;
+                                range.Style.Font.FontSize = 13;
+                                range.Style.Fill.BackgroundColor = XLColor.FromHtml("#FFF4D6");
+                                range.Style.Font.FontColor = XLColor.FromHtml("#7A4B00");
+                                sheet.Row(r).Height = 22;
+                                break;
+                            default:
+                                if (spec.Report && striped++ % 2 == 1) range.Style.Fill.BackgroundColor = Stripe;
+                                break;
                         }
-                        else if (row.Kind == ExcelRowKind.Total)
+                        if (spec.Report)
                         {
-                            range.Style.Font.Bold = true;
-                            range.Style.Fill.BackgroundColor = XLColor.FromHtml("#F1F3F5");
-                            range.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+                            range.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                            range.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+                            range.Style.Border.OutsideBorderColor = Line;
+                            range.Style.Border.InsideBorderColor = Line;
+                            range.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                            if (sheet.Row(r).Height < 18) sheet.Row(r).Height = 18;
                         }
                     }
+                    if (row.Kind == ExcelRowKind.Blank) striped = 0;
                 }
                 r++;
             }
             sheet.PageSetup.PageOrientation = XLPageOrientation.Portrait;
             sheet.PageSetup.PaperSize = XLPaperSize.A4Paper;
             sheet.PageSetup.FitToPages(1, 0);
+            if (spec.Report)
+            {
+                sheet.ShowGridLines = false;
+                sheet.PageSetup.CenterHorizontally = true;
+                sheet.PageSetup.Margins.Left = 0.4;
+                sheet.PageSetup.Margins.Right = 0.4;
+                sheet.PageSetup.Margins.Top = 0.5;
+                sheet.PageSetup.Margins.Bottom = 0.75;
+                sheet.PageSetup.Margins.Footer = 0.3;
+                sheet.PageSetup.Footer.Center.AddText("صفحة &P من &N");
+            }
         }
         workbook.Worksheet(1).SetTabActive();
         using var stream = new MemoryStream();

@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IProductExcelService, ProductExcelService>();
         services.AddScoped<IInventoryService, InventoryService>();
         services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<ISupplierReportService, SupplierReportService>();
         services.AddScoped<ISupplierStatementExcel, SupplierStatementExcel>();
         services.AddScoped<IPurchaseService, PurchaseService>();
         services.AddScoped<ISearchService, SearchService>();

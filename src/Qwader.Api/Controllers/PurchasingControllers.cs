@@ -22,12 +22,17 @@ public sealed class SuppliersController(ISupplierService suppliers) : Controller
     public Task<StatementDto> Statement(int id, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to, CancellationToken ct) =>
         suppliers.StatementAsync(id, from, to, ct);
 
+    /// <summary>Everything about the supplier over a period: totals, each invoice with its lines, returns and vouchers, the payments.</summary>
+    [HttpGet("{id:int}/report")]
+    public Task<SupplierReportDto> Report(int id, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromServices] ISupplierReportService reports, CancellationToken ct) => reports.ReportAsync(id, from, to, ct);
+
     /// <summary>The statement as Excel: summary, every entry, each invoice in its own section, the payments.</summary>
     [HttpGet("{id:int}/statement/export")]
     public async Task<IActionResult> ExportStatement(int id, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromServices] ISupplierStatementExcel workbook, CancellationToken ct)
+        [FromServices] ISupplierStatementExcel workbook, CancellationToken ct, [FromQuery] bool single = false)
     {
-        var (file, name) = await workbook.BuildAsync(id, from, to, ct);
+        var (file, name) = await workbook.BuildAsync(id, from, to, ct, single);
         return File(file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name);
     }
 

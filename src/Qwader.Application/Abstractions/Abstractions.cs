@@ -132,7 +132,7 @@ public interface IFileStorage
 public sealed record ExcelColumn(string Header, int Width = 16, IReadOnlyList<string>? Choices = null);
 
 /// <summary>How a row of a report sheet looks: a title across the sheet, a table header, data, a bold total, or a grey note.</summary>
-public enum ExcelRowKind { Normal, Title, Header, Total, Note, Blank }
+public enum ExcelRowKind { Normal, Title, Header, Total, Note, Blank, Brand, Subtitle, Section, Highlight }
 
 public sealed record ExcelRow(ExcelRowKind Kind, IReadOnlyList<object?> Cells)
 {
@@ -142,10 +142,18 @@ public sealed record ExcelRow(ExcelRowKind Kind, IReadOnlyList<object?> Cells)
     public static ExcelRow Total(params object?[] cells) => new(ExcelRowKind.Total, cells);
     public static ExcelRow Note(string text) => new(ExcelRowKind.Note, [text]);
     public static readonly ExcelRow Blank = new(ExcelRowKind.Blank, []);
+    /// <summary>The store's name, large, across the sheet.</summary>
+    public static ExcelRow Brand(string text) => new(ExcelRowKind.Brand, [text]);
+    public static ExcelRow Subtitle(string text) => new(ExcelRowKind.Subtitle, [text]);
+    /// <summary>A band opening a section of a one-sheet report.</summary>
+    public static ExcelRow Section(string text) => new(ExcelRowKind.Section, [text]);
+    /// <summary>The figure the report is about (what is still owed), bold on a coloured band.</summary>
+    public static ExcelRow Highlight(params object?[] cells) => new(ExcelRowKind.Highlight, cells);
 }
 
 /// <summary>One sheet of a report workbook: column widths and its rows, top to bottom (sections one under another).</summary>
-public sealed record ExcelSheet(string Name, IReadOnlyList<int> Widths, IReadOnlyList<ExcelRow> Rows);
+/// <param name="Report">A printed-report look: tables framed and striped, no grid lines, centred on A4 with page numbers.</param>
+public sealed record ExcelSheet(string Name, IReadOnlyList<int> Widths, IReadOnlyList<ExcelRow> Rows, bool Report = false);
 
 public interface IExcelService
 {
