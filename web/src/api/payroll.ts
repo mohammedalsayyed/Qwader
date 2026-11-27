@@ -107,7 +107,8 @@ export const payrollApi = {
   addEntry: (id: number, input: { idempotencyKey: string; type: PayrollEntryType; amount: number; date?: string | null; financialAccountId?: number | null; notes?: string | null }) =>
     api<Employee>(`/payroll/employees/${id}/entries`, { method: 'POST', body: input }),
   voidEntry: (id: number, reason: string) => api<Employee>(`/payroll/entries/${id}/void`, { method: 'POST', body: { reason } }),
-  settle: (id: number, input: { idempotencyKey: string; periodFrom: string; periodTo: string; units: number; financialAccountId?: number | null; notes?: string | null }) =>
+  settle: (id: number, input: { idempotencyKey: string; periodFrom: string; periodTo: string; units: number; financialAccountId?: number | null; notes?: string | null;
+    /** Of the open advances: all (null), none (0) or part. */ advanceDeduction?: number | null }) =>
     api<Employee>(`/payroll/employees/${id}/settlements`, { method: 'POST', body: input }),
   voidSettlement: (id: number, reason: string) => api<Employee>(`/payroll/settlements/${id}/void`, { method: 'POST', body: { reason } }),
 };
