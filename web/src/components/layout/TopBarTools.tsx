@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ArrowLeftRight, Bell, FileText, FolderTree, PackageX, Receipt, Search, TrendingDown, Truck, UserRound } from 'lucide-react';
+import { ArrowLeftRight, Bell, FileText, FolderTree, Moon, PackageX, Receipt, Search, Sun, TrendingDown, Truck, UserRound } from 'lucide-react';
+import { useTheme } from '@/lib/theme';
 import { searchApi, type SearchHit, type SearchKind } from '@/api/catalog';
 import { useAuth } from '@/auth/AuthProvider';
 import { IconButton } from '@/components/ui/Button';
@@ -157,6 +158,17 @@ function HitIcon({ kind }: { kind: SearchKind }) {
     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
       <Icon className="size-5" />
     </span>
+  );
+}
+
+/** «ليلي / نهاري»: switches the colours on this device (remembered here only). */
+export function ThemeButton() {
+  const [theme, setTheme] = useTheme();
+  const dark = theme === 'dark';
+  return (
+    <IconButton label={dark ? 'الوضع النهاري' : 'الوضع الليلي'} onClick={() => setTheme(dark ? 'light' : 'dark')}>
+      {dark ? <Sun className="size-6" /> : <Moon className="size-6" />}
+    </IconButton>
   );
 }
 

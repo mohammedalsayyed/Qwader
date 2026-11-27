@@ -14,7 +14,7 @@ import { payrollApi } from '@/api/payroll';
 import { cn } from '@/lib/cn';
 import { Sheet } from '@/components/ui/Sheet';
 import { BOTTOM_TABS, NAV_GROUP_LABELS, NAV_ITEMS, type NavItem } from './navigation';
-import { GlobalSearchButton, NotificationsButton } from './TopBarTools';
+import { GlobalSearchButton, NotificationsButton, ThemeButton } from './TopBarTools';
 import { OfflineSync, QueuedSalesChip } from '@/features/pos/OfflineSales';
 
 const STORE_NAME = 'معرض قويدر';
@@ -177,6 +177,7 @@ function TopBar() {
       <div className="flex items-center gap-1">
       <QueuedSalesChip />
       <div className="lg:hidden"><GlobalSearchButton /></div>
+      <ThemeButton />
       <NotificationsButton />
       <button
         type="button"
