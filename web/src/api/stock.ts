@@ -281,13 +281,55 @@ export interface SavePurchaseInput {
   post: boolean;
 }
 
+export interface SupplierReportInvoice {
+  id: number;
+  number: string;
+  date: string;
+  supplierInvoiceNo: string | null;
+  voided: boolean;
+  voidReason: string | null;
+  subtotal: number;
+  discount: number;
+  discountIsIncome: boolean;
+  total: number;
+  paidAmount: number;
+  lines: { productId: number; name: string; sku: string | null; unit: string; quantity: number; unitCost: number; lineDiscount: number; lineTotal: number; returnedQuantity: number }[];
+  paidWhenBuying: { account: string; amount: number }[];
+  returns: { id: number; number: string; date: string; total: number }[];
+  /** Payment vouchers tied to the invoice (transport…), an expense of the store. */
+  expenses: { paymentVoucherId: number; number: string; date: string; category: string; description: string; account: string; amount: number; voided: boolean }[];
+}
+
+/** Everything about a supplier over a period (the «التفاصيل» tab; the same figures as the Excel files). */
+export interface SupplierReport {
+  supplierId: number;
+  name: string;
+  code: string;
+  phone: string | null;
+  from: string | null;
+  to: string;
+  openingBalance: number;
+  oldBalance: number;
+  bought: number;
+  returned: number;
+  paid: number;
+  refunded: number;
+  closing: number;
+  invoices: SupplierReportInvoice[];
+  payments: { voucherId: number | null; purchaseInvoiceId: number | null; date: string; number: string; kind: string; account: string; amount: number; voided: boolean; notes: string | null }[];
+}
+
 export const suppliersApi = {
+  report: (id: number, from?: string, to?: string) => api<SupplierReport>(`/suppliers/${id}/report`, { query: { from, to } }),
   list: (params: { page?: number; pageSize?: number; search?: string; isActive?: boolean; withBalance?: boolean }, signal?: AbortSignal) =>
     api<PagedResult<SupplierListItem>>('/suppliers', { query: params, signal }),
   get: (id: number) => api<Supplier>(`/suppliers/${id}`),
   statement: (id: number, from?: string, to?: string) => api<Statement>(`/suppliers/${id}/statement`, { query: { from, to } }),
   /** Summary, every entry, each invoice in its own section, the payments. */
   exportStatement: (id: number, from?: string, to?: string) => apiDownload(`/suppliers/${id}/statement/export`, { from, to }, 'supplier-statement.xlsx'),
+  /** The same on one printed sheet under the store's name. */
+  exportStatementSheet: (id: number, from?: string, to?: string) =>
+    apiDownload(`/suppliers/${id}/statement/export`, { from, to, single: true }, 'supplier-statement-sheet.xlsx'),
   create: (input: SaveSupplierInput) => api<Supplier>('/suppliers', { method: 'POST', body: input }),
   update: (id: number, input: SaveSupplierInput) => api<Supplier>(`/suppliers/${id}`, { method: 'PUT', body: input }),
   /** An old balance from before the system: owed to the supplier, or paid to them ahead. */

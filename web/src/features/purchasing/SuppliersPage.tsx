@@ -25,6 +25,7 @@ import { formatDate, formatMoney, localToday } from '@/lib/format';
 import { useDebouncedValue } from '@/lib/hooks';
 import { parseNumber, zOptionalAmount } from '@/lib/numbers';
 import { PurchaseStatusBadge } from './PurchasesPage';
+import { SupplierDetails } from './SupplierDetails';
 
 type Filter = 'active' | 'balance' | 'all';
 
@@ -184,7 +185,7 @@ export function SupplierSheet({ supplier, onClose }: { supplier: Supplier | null
   );
 }
 
-type DetailTab = 'statement' | 'purchases';
+type DetailTab = 'statement' | 'purchases' | 'details';
 
 export function SupplierDetailPage() {
   const id = Number(useParams().id);
@@ -240,11 +241,14 @@ export function SupplierDetailPage() {
         <Card className="px-4"><InfoList items={[s.address && { label: 'العنوان', value: s.address }, s.notes && { label: 'ملاحظات', value: s.notes }]} /></Card>
       )}
 
-      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'statement', label: 'كشف الحساب' }, { value: 'purchases', label: 'فواتير الشراء' }]} />
+      <Tabs value={tab} onChange={setTab} tabs={[{ value: 'statement', label: 'كشف الحساب' }, { value: 'purchases', label: 'فواتير الشراء' }, { value: 'details', label: 'التفاصيل' }]} />
       {tab === 'statement' ? (
         <StatementView queryKey={['supplier-statement', id]} load={(from, to) => suppliersApi.statement(id, from, to)}
           debitLabel="مدين (سداد/مردود)" creditLabel="دائن (مشتريات)" balanceHint="الموجب = علينا للمورد، السالب = لنا عنده"
-          exportExcel={(from, to) => suppliersApi.exportStatement(id, from, to)} />
+          exportExcel={(from, to) => suppliersApi.exportStatement(id, from, to)}
+          exportExcelSheet={(from, to) => suppliersApi.exportStatementSheet(id, from, to)} />
+      ) : tab === 'details' ? (
+        <SupplierDetails supplierId={id} />
       ) : (
         <SupplierPurchases supplierId={id} />
       )}

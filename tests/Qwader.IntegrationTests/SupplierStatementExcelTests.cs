@@ -60,5 +60,24 @@ public sealed class SupplierStatementExcelTests(ApiFactory factory)
 
         var payments = wb.Worksheet("الدفعات");
         payments.RowsUsed().Single(r => r.Cell(1).GetString() == "مجموع الدفعات").Cell(5).GetValue<decimal>().Should().Be(80);
+
+        // The page's «التفاصيل» tab reads the same report.
+        var report = await (await admin.GetAsync($"/api/suppliers/{supplier.Id}/report")).ReadAsync<SupplierReportDto>();
+        (report.Bought, report.Paid, report.Returned, report.OldBalance, report.Closing).Should().Be((220m, 80m, 24m, 100m, balance));
+        var firstRow = report.Invoices.Single(i => i.Id == first.Id);
+        firstRow.Lines.Should().Contain(l => l.ProductId == a.Id && l.Quantity == 4 && l.LineTotal == 100);
+        firstRow.Returns.Should().ContainSingle().Which.Total.Should().Be(24);
+        report.Invoices.Single(i => i.Id == voided.Id).Voided.Should().BeTrue();
+
+        // One printed sheet under the store's name, with everything in it.
+        var single = await admin.GetAsync($"/api/suppliers/{supplier.Id}/statement/export?single=true");
+        single.EnsureSuccessStatusCode();
+        using var one = new XLWorkbook(new MemoryStream(await single.Content.ReadAsByteArrayAsync()));
+        var sheet = one.Worksheets.Should().ContainSingle().Subject;
+        var storeName = (await (await admin.GetAsync("/api/settings")).ReadAsync<Application.Settings.SettingsDto>()).StoreName;
+        sheet.Cell(1, 1).GetString().Should().Be(storeName);
+        sheet.RowsUsed().Single(r => r.Cell(1).GetString() == "الباقي له علينا").Cell(2).GetValue<decimal>().Should().Be(balance);
+        sheet.RowsUsed().Should().Contain(r => r.Cell(1).GetString().StartsWith(a.Name) && r.Cell(2).GetValue<decimal>() == 4 && r.Cell(4).GetValue<decimal>() == 100);
+        sheet.RowsUsed().Should().Contain(r => r.Cell(1).GetString().Contains("كشف الحساب"));
     }
 }
