@@ -65,6 +65,7 @@ public sealed class ExcelService : IExcelService
                             range.Style.Font.FontColor = Navy;
                             range.Style.Border.BottomBorder = XLBorderStyleValues.Medium;
                             range.Style.Border.BottomBorderColor = Navy;
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                             sheet.Row(r).Height = 24;
                             break;
                         case ExcelRowKind.Title:
@@ -72,6 +73,7 @@ public sealed class ExcelService : IExcelService
                             range.Style.Font.FontSize = spec.Report ? 12 : 13;
                             range.Style.Fill.BackgroundColor = Navy;
                             range.Style.Font.FontColor = XLColor.White;
+                            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                             sheet.Row(r).Height = 22;
                             break;
                         default:
