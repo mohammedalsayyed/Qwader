@@ -243,7 +243,8 @@ export function SupplierDetailPage() {
       <Tabs value={tab} onChange={setTab} tabs={[{ value: 'statement', label: 'كشف الحساب' }, { value: 'purchases', label: 'فواتير الشراء' }]} />
       {tab === 'statement' ? (
         <StatementView queryKey={['supplier-statement', id]} load={(from, to) => suppliersApi.statement(id, from, to)}
-          debitLabel="مدين (سداد/مردود)" creditLabel="دائن (مشتريات)" balanceHint="الموجب = علينا للمورد، السالب = لنا عنده" />
+          debitLabel="مدين (سداد/مردود)" creditLabel="دائن (مشتريات)" balanceHint="الموجب = علينا للمورد، السالب = لنا عنده"
+          exportExcel={(from, to) => suppliersApi.exportStatement(id, from, to)} />
       ) : (
         <SupplierPurchases supplierId={id} />
       )}

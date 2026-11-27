@@ -130,8 +130,27 @@ public interface IFileStorage
 /// <param name="Choices">Offered as a drop-down list in the column's cells (other values may still be typed).</param>
 public sealed record ExcelColumn(string Header, int Width = 16, IReadOnlyList<string>? Choices = null);
 
+/// <summary>How a row of a report sheet looks: a title across the sheet, a table header, data, a bold total, or a grey note.</summary>
+public enum ExcelRowKind { Normal, Title, Header, Total, Note, Blank }
+
+public sealed record ExcelRow(ExcelRowKind Kind, IReadOnlyList<object?> Cells)
+{
+    public static ExcelRow Title(string text) => new(ExcelRowKind.Title, [text]);
+    public static ExcelRow Header(params object?[] cells) => new(ExcelRowKind.Header, cells);
+    public static ExcelRow Data(params object?[] cells) => new(ExcelRowKind.Normal, cells);
+    public static ExcelRow Total(params object?[] cells) => new(ExcelRowKind.Total, cells);
+    public static ExcelRow Note(string text) => new(ExcelRowKind.Note, [text]);
+    public static readonly ExcelRow Blank = new(ExcelRowKind.Blank, []);
+}
+
+/// <summary>One sheet of a report workbook: column widths and its rows, top to bottom (sections one under another).</summary>
+public sealed record ExcelSheet(string Name, IReadOnlyList<int> Widths, IReadOnlyList<ExcelRow> Rows);
+
 public interface IExcelService
 {
+    /// <summary>A report of several right-to-left sheets (a statement, its invoices, its payments…), ready to print.</summary>
+    byte[] WriteSheets(IReadOnlyList<ExcelSheet> sheets);
+
     /// <param name="listsSheet">
     /// Name of a visible second sheet listing every column's choices (the drop-downs read from it); null keeps that sheet hidden.
     /// </param>

@@ -1,4 +1,4 @@
-import { api, type PagedResult } from './client';
+import { api, apiDownload, type PagedResult } from './client';
 
 export type MovementType =
   | 'OpeningBalance'
@@ -286,6 +286,8 @@ export const suppliersApi = {
     api<PagedResult<SupplierListItem>>('/suppliers', { query: params, signal }),
   get: (id: number) => api<Supplier>(`/suppliers/${id}`),
   statement: (id: number, from?: string, to?: string) => api<Statement>(`/suppliers/${id}/statement`, { query: { from, to } }),
+  /** Summary, every entry, each invoice in its own section, the payments. */
+  exportStatement: (id: number, from?: string, to?: string) => apiDownload(`/suppliers/${id}/statement/export`, { from, to }, 'supplier-statement.xlsx'),
   create: (input: SaveSupplierInput) => api<Supplier>('/suppliers', { method: 'POST', body: input }),
   update: (id: number, input: SaveSupplierInput) => api<Supplier>(`/suppliers/${id}`, { method: 'PUT', body: input }),
   /** An old balance from before the system: owed to the supplier, or paid to them ahead. */

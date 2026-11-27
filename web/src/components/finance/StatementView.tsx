@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Printer } from 'lucide-react';
+import { FileSpreadsheet, Printer } from 'lucide-react';
 import type { Statement } from '@/api/stock';
 import { Button } from '@/components/ui/Button';
 import { DateRangeFilter, type DateRangeValue } from '@/components/ui/DateRange';
@@ -25,6 +25,7 @@ export function StatementView({
   creditLabel,
   balanceHint,
   increases = 'credit',
+  exportExcel,
 }: {
   queryKey: unknown[];
   load: (from?: string, to?: string) => Promise<Statement>;
@@ -33,7 +34,11 @@ export function StatementView({
   balanceHint?: string;
   /** The side that adds to the balance: a customer's purchases (debit), what the store owes a supplier (credit). */
   increases?: 'debit' | 'credit';
+  /** «Excel»: the statement of the period chosen as a workbook. */
+  exportExcel?: (from?: string, to?: string) => Promise<void>;
 }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [range, setRange] = useState<DateRangeValue>({ preset: 'all' });
   const query = useQuery({
     queryKey: [...queryKey, range.from, range.to],
@@ -43,8 +48,16 @@ export function StatementView({
 
   return (
     <div className="space-y-3">
-      <div className="print:hidden">
+      <div className="space-y-2 print:hidden">
         <DateRangeFilter value={range} onChange={setRange} />
+        {exportExcel && (
+          <Button variant="outline" size="sm" loading={exporting} onClick={async () => {
+            setExporting(true);
+            setExportError(null);
+            try { await exportExcel(range.from, range.to); } catch (e) { setExportError(errorMessage(e)); } finally { setExporting(false); }
+          }}><FileSpreadsheet className="size-4" /> تصدير Excel</Button>
+        )}
+        {exportError && <p role="alert" className="text-sm text-danger">{exportError}</p>}
       </div>
       {query.isPending ? (
         <Spinner />
