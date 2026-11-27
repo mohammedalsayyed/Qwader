@@ -13,7 +13,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900 shadow-sm',
+  primary: 'bg-brand-700 text-white hover:bg-brand-800 active:bg-brand-900 shadow-sm dark:bg-brand-600 dark:hover:bg-brand-700 dark:active:bg-brand-700',
   /** The logo's orange: the main action on a screen (new sale, pay, confirm the invoice). */
   accent: 'bg-accent-600 text-white hover:bg-accent-700 active:bg-accent-700 shadow-sm',
   secondary: 'bg-brand-50 text-brand-800 hover:bg-brand-100',

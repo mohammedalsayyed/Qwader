@@ -4,6 +4,9 @@
 @import '@fontsource/ibm-plex-sans-arabic/600.css';
 @import '@fontsource/ibm-plex-sans-arabic/700.css';
 
+/* «الوضع الليلي»: html[data-theme=dark] (saved per device). `dark:` utilities follow it, not the device setting. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
   --font-sans: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
 
@@ -35,6 +38,65 @@
   --color-danger: #c62828;
 
   --radius-card: 1rem;
+}
+
+/* Night colours: the same names, so every screen follows. Light tints (red-50, amber-50…) become dark tints and the dark text
+   on them becomes light. Screen only: printing stays black on white. */
+@media screen {
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --color-surface: #172033;
+    --color-canvas: #0e1524;
+    --color-line: #2a3650;
+    --color-ink: #e6ebf5;
+    --color-muted: #9aa6bd;
+
+    --color-brand-50: #1a2a45;
+    --color-brand-100: #223658;
+    --color-brand-200: #34507d;
+    --color-brand-500: #6b9be6;
+    --color-brand-600: #3b6fc0;
+    --color-brand-700: #5b90e0;
+    --color-brand-800: #8ab2ee;
+    --color-brand-900: #a9c6f3;
+
+    --color-accent-50: #3a2412;
+    --color-accent-100: #4d2e14;
+
+    --color-success: #4ade80;
+    --color-warning: #fbbf24;
+    --color-danger: #f87171;
+
+    --color-red-50: #3a1a1d;
+    --color-red-100: #4a1f23;
+    --color-red-200: #6b2a2e;
+    --color-red-300: #8a3439;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+    --color-amber-50: #33260f;
+    --color-amber-100: #4a3612;
+    --color-amber-200: #6b4e17;
+    --color-amber-300: #85611b;
+    --color-amber-700: #fcd34d;
+    --color-amber-800: #fde68a;
+    --color-amber-900: #fef3c7;
+    --color-green-50: #13301f;
+    --color-green-100: #184029;
+    --color-green-300: #2f6b45;
+    --color-green-700: #86efac;
+    --color-green-800: #bbf7d0;
+    --color-gray-50: #172033;
+    --color-gray-100: #1f2a40;
+    --color-gray-300: #3a4660;
+    --color-gray-500: #9aa6bd;
+    --color-gray-700: #cbd3e1;
+  }
+  /* The navy logo would vanish on the night background: it sits on a white card. */
+  :root[data-theme='dark'] img[src^='/brand/'] {
+    background: #fff;
+    border-radius: 0.5rem;
+    padding: 2px 4px;
+  }
 }
 
 @layer base {
